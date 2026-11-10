@@ -1,0 +1,5 @@
+/build/
+/.mygo/
+/.local/
+/Data/
+mygo_windows_*.syso
