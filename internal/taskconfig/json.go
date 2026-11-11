@@ -3,12 +3,17 @@ package taskconfig
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 )
+
+// ErrUnsupported distinguishes a closed enum/variant from malformed JSON.
+// Callers must preserve the input instead of loading defaults over it.
+var ErrUnsupported = errors.New("unsupported task configuration type")
 
 // Decode is all-or-error: malformed/unsupported input never becomes an empty list.
 // Unknown members survive round trips, including nested variant members. Unknown
@@ -187,7 +192,7 @@ func validEnum[T ~string](v T, values ...T) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("unsupported value %q", v)
+	return fmt.Errorf("%w: value %q", ErrUnsupported, v)
 }
 func (t *Task) UnmarshalJSON(data []byte) error {
 	type wire Task
@@ -211,7 +216,7 @@ func (t *Task) UnmarshalJSON(data []byte) error {
 	}
 	if w.Kind == "" { // Only absence derives; an explicit empty string is an unknown enum.
 		if _, exists := o["Kind"]; exists {
-			return fmt.Errorf("Kind: unsupported empty value")
+			return fmt.Errorf("Kind: %w: empty value", ErrUnsupported)
 		}
 		w.Kind = Sync
 		for _, d := range w.Destinations {
@@ -281,7 +286,7 @@ func (t *Target) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if k != "local" {
-		return fmt.Errorf("Target: unsupported kind %q", k)
+		return fmt.Errorf("Target: %w: kind %q", ErrUnsupported, k)
 	}
 	w.extra, err = readObject(data, &w, "kind Path", "kind Path")
 	if err != nil {
@@ -314,7 +319,7 @@ func (t *Trigger) UnmarshalJSON(data []byte) error {
 		w.SettleSeconds = &n
 		fields += " SettleSeconds"
 	default:
-		return fmt.Errorf("Trigger: unsupported kind %q", k)
+		return fmt.Errorf("Trigger: %w: kind %q", ErrUnsupported, k)
 	}
 	required := fields
 	if k == "watch" {
@@ -363,7 +368,7 @@ func (r *Rule) UnmarshalJSON(data []byte) error {
 	case "not":
 		fields += " Rule"
 	default:
-		return fmt.Errorf("Filter: unsupported kind %q", k)
+		return fmt.Errorf("Filter: %w: kind %q", ErrUnsupported, k)
 	}
 	w.extra, err = readObject(data, &w, fields, fields)
 	if err != nil {

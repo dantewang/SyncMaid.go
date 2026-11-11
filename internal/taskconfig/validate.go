@@ -15,6 +15,8 @@ type Validation struct{ Unverified []Check }
 // Validate checks in-memory shape and known domain constraints without I/O.
 // Decode deliberately accepts legacy data that is not runnable. Invalid lists
 // can still be inspected/encoded without silently rewriting or losing entries.
+// These domain rules are distinct from load compatibility and from outstanding
+// execution conditions in Unverified. Passing them is not a runtime permit.
 func Validate(tasks []Task) (Validation, error) {
 	var report Validation
 	if _, err := Encode(tasks); err != nil {
