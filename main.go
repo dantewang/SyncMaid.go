@@ -2,8 +2,8 @@ package main
 
 import (
 	"errors"
-	"log"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/egoist/mygo"
@@ -28,17 +28,19 @@ func (a *application) view(c *ui.Context) {
 func run() (result error) {
 	install, err := currentInstallation()
 	if err != nil {
-		return err
+		return startupProblem(err, startupOwnership, "")
 	}
 	owner, err := acquireOwnership(install)
 	if errors.Is(err, errOccupied) {
 		// Activation failure cannot grant writer status to this process.
-		notifyInstallation(install)
+		if activationError := notifyInstallation(install); activationError != nil {
+			return startupProblem(activationError, startupOccupied, install.directory)
+		}
 		slog.Info("ownership-occupied", "directory", install.directory)
 		return nil
 	}
 	if err != nil {
-		return err
+		return startupProblem(err, startupOwnership, install.data)
 	}
 	defer func() { result = errors.Join(result, owner.Close()) }()
 	// Use the pinned target's path, not a mutable Data junction spelling.
@@ -64,7 +66,7 @@ func run() (result error) {
 	mygo.App.WhenReady(func() {
 		icon, err := trayIcon()
 		if err != nil {
-			startupError = err
+			startupError = startupProblem(err, startupFramework, install.directory)
 			mygo.App.Quit()
 			return
 		}
@@ -73,18 +75,27 @@ func run() (result error) {
 		})
 		if err != nil {
 			// Without a tray there must not be an unreachable hidden app.
-			startupError = err
+			startupError = startupProblem(err, startupFramework, install.directory)
 			mygo.App.Quit()
 			return
 		}
-		window := mygo.NewWindow(mygo.WindowOptions{
-			Title:     "SyncMaid",
-			Width:     640,
-			Height:    420,
-			MinWidth:  320,
-			MinHeight: 280,
-			Content:   ui.View(a.view),
+		// Register immediately so a failed window initialization still releases it.
+		a.lifecycle.destroyTray = tray.Destroy
+		window, err := createStartupWindow(func() *mygo.Window {
+			return mygo.NewWindow(mygo.WindowOptions{
+				Title:     "SyncMaid",
+				Width:     640,
+				Height:    420,
+				MinWidth:  320,
+				MinHeight: 280,
+				Content:   ui.View(a.view),
+			})
 		})
+		if err != nil {
+			startupError = startupProblem(err, startupFramework, install.directory)
+			mygo.App.Quit()
+			return
+		}
 		a.lifecycle.ready(window, mygo.App.Quit, tray.Destroy)
 		window.OnClose(func(e *mygo.CloseEvent) {
 			if a.lifecycle.closeRequested() {
@@ -104,13 +115,11 @@ func run() (result error) {
 		slog.Info("native-ready", "directory", pathLabel(install.directory), "data", pathLabel(install.data), "trayBounds", tray.Bounds())
 	})
 	if err := mygo.App.Run(); err != nil {
-		return err
+		return startupProblem(err, startupFramework, install.directory)
 	}
 	return startupError
 }
 
 func main() {
-	if err := run(); err != nil {
-		log.Fatal(err)
-	}
+	os.Exit(runStartup(run, showStartupNotice))
 }

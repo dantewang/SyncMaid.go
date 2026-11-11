@@ -35,7 +35,7 @@ func installationForExecutable(exe string) (installation, error) {
 	directory := filepath.Dir(filepath.Clean(real))
 	object, err := openDirectory(directory)
 	if err != nil {
-		return installation{}, err
+		return installation{}, &locationError{path: directory, cause: err}
 	}
 	defer object.Close()
 	return installation{

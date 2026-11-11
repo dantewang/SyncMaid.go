@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -45,11 +46,12 @@ func startActivation(key string, show func()) (*activationServer, error) {
 			conn.SetDeadline(time.Now().Add(time.Second))
 			var message [1]byte
 			n, err := conn.Read(message[:])
-			conn.Close()
 			if err == nil && n == 1 && message[0] == 1 {
 				slog.Info("activation-received")
 				show()
+				_, _ = conn.Write([]byte{1}) // Receipt: activation was queued, not ownership.
 			}
+			conn.Close()
 		}
 	}()
 	return s, nil
@@ -61,21 +63,30 @@ func (s *activationServer) Close() error {
 	return err
 }
 
-func notifyInstallation(install installation) {
+func notifyInstallation(install installation) error {
 	d, err := openDirectory(install.data)
 	if err != nil {
 		slog.Warn("activation-unavailable", "error", err)
-		return
+		return err
 	}
 	defer d.Close()
 	conn, err := net.DialTimeout("unix", activationPath(d.key), time.Second)
 	if err != nil {
 		slog.Warn("activation-unavailable", "error", err)
-		return
+		return err
 	}
 	defer conn.Close()
-	conn.SetWriteDeadline(time.Now().Add(time.Second))
+	conn.SetDeadline(time.Now().Add(time.Second))
 	if _, err := conn.Write([]byte{1}); err != nil {
 		slog.Warn("activation-unavailable", "error", err)
+		return err
 	}
+	var receipt [1]byte
+	if _, err := io.ReadFull(conn, receipt[:]); err != nil {
+		return fmt.Errorf("activation receipt: %w", err)
+	}
+	if receipt[0] != 1 {
+		return errors.New("invalid activation receipt")
+	}
+	return nil
 }

@@ -68,35 +68,35 @@ func openDirectory(path string) (*directoryObject, error) {
 	// tested. A failure here never falls back to the original pathname.
 	display := strings.TrimPrefix(final, `\\?\`)
 	if strings.HasPrefix(strings.ToUpper(display), `UNC\`) {
-		return nil, errors.New("network Data/install directories are not supported")
+		return nil, fmt.Errorf("%w: network directory", errUnsupportedLocation)
 	}
 	volume := filepath.VolumeName(display)
 	if len(volume) != 2 || volume[1] != ':' {
-		return nil, errors.New("directory has no supported local DOS volume path")
+		return nil, fmt.Errorf("%w: directory has no local DOS volume path", errUnsupportedLocation)
 	}
 	root, err := windows.UTF16PtrFromString(volume + `\`)
 	if err != nil {
 		return nil, err
 	}
 	if windows.GetDriveType(root) != windows.DRIVE_FIXED {
-		return nil, errors.New("ownership requires a local fixed volume")
+		return nil, fmt.Errorf("%w: ownership requires a local fixed volume", errUnsupportedLocation)
 	}
 	var fs [256]uint16
 	if err := windows.GetVolumeInformationByHandle(h, nil, 0, nil, nil, nil, &fs[0], uint32(len(fs))); err != nil {
 		return nil, err
 	}
 	if kind := windows.UTF16ToString(fs[:]); kind != "NTFS" && kind != "ReFS" {
-		return nil, fmt.Errorf("unsupported ownership filesystem %q", kind)
+		return nil, fmt.Errorf("%w: filesystem %q", errUnsupportedLocation, kind)
 	}
 	var id struct {
 		Volume uint64
 		File   [16]byte
 	}
 	if err := windows.GetFileInformationByHandleEx(h, windows.FileIdInfo, (*byte)(unsafe.Pointer(&id)), uint32(unsafe.Sizeof(id))); err != nil {
-		return nil, fmt.Errorf("directory identity: %w", err)
+		return nil, fmt.Errorf("%w: %w", errUnreliableIdentity, err)
 	}
 	if id.File == [16]byte{} {
-		return nil, errors.New("filesystem returned an empty directory identity")
+		return nil, fmt.Errorf("%w: empty directory ID", errUnreliableIdentity)
 	}
 	ok = true
 	return &directoryObject{handle: h, path: final, key: fmt.Sprintf("%016x-%x", id.Volume, id.File)}, nil
@@ -159,12 +159,14 @@ func (o *ownership) Close() error {
 
 func acquireOwnership(install installation) (_ *ownership, result error) {
 	o := &ownership{}
+	var acquiringPath string
 	defer func() {
 		if result != nil {
-			result = errors.Join(result, o.Close())
+			result = &locationError{path: acquiringPath, cause: errors.Join(result, o.Close())}
 		}
 	}()
 	for _, path := range []string{install.directory, install.data} {
+		acquiringPath = path
 		// Data creation is coordination metadata, after install exclusion,
 		// before any configuration/log/UI framework write is allowed.
 		if path == install.data {
