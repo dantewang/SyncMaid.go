@@ -22,6 +22,8 @@ type activationServer struct {
 	done     chan struct{}
 }
 
+var errInvalidActivationReceipt = errors.New("invalid activation receipt")
+
 func startActivation(key string, show func()) (*activationServer, error) {
 	path := activationPath(key)
 	// Only the exclusive Data owner may remove a stale activation endpoint.
@@ -67,7 +69,7 @@ func notifyInstallation(install installation) error {
 	d, err := openDirectory(install.data)
 	if err != nil {
 		slog.Warn("activation-unavailable", "error", err)
-		return err
+		return &locationError{path: install.data, cause: err}
 	}
 	defer d.Close()
 	conn, err := net.DialTimeout("unix", activationPath(d.key), time.Second)
@@ -82,11 +84,13 @@ func notifyInstallation(install installation) error {
 		return err
 	}
 	var receipt [1]byte
+	// An older owner may have queued show but sent no receipt. A failed read
+	// means unconfirmed activation, never proof that the window stayed hidden.
 	if _, err := io.ReadFull(conn, receipt[:]); err != nil {
 		return fmt.Errorf("activation receipt: %w", err)
 	}
 	if receipt[0] != 1 {
-		return errors.New("invalid activation receipt")
+		return errInvalidActivationReceipt
 	}
 	return nil
 }

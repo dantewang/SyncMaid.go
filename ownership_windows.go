@@ -159,24 +159,22 @@ func (o *ownership) Close() error {
 
 func acquireOwnership(install installation) (_ *ownership, result error) {
 	o := &ownership{}
-	var acquiringPath string
 	defer func() {
 		if result != nil {
-			result = &locationError{path: acquiringPath, cause: errors.Join(result, o.Close())}
+			result = errors.Join(result, o.Close())
 		}
 	}()
 	for _, path := range []string{install.directory, install.data} {
-		acquiringPath = path
 		// Data creation is coordination metadata, after install exclusion,
 		// before any configuration/log/UI framework write is allowed.
 		if path == install.data {
 			if err := prepareDataDirectory(path); err != nil {
-				return nil, err
+				return nil, &locationError{path: path, cause: err}
 			}
 		}
 		d, err := openDirectory(path)
 		if err != nil {
-			return nil, err
+			return nil, &locationError{path: path, cause: err}
 		}
 		o.directories = append(o.directories, d)
 		if path == install.data {
@@ -184,7 +182,7 @@ func acquireOwnership(install installation) (_ *ownership, result error) {
 		}
 		h, err := claimDirectory(d)
 		if err != nil {
-			return nil, err
+			return nil, &locationError{path: path, cause: err}
 		}
 		o.claims = append(o.claims, h)
 	}

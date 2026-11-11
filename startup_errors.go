@@ -54,7 +54,9 @@ func startupProblem(err error, fallback startupKind, path string) error {
 		}
 	}
 	kind := fallback
-	if fallback != startupOccupied && fallback != startupFramework {
+	// A directory probe can prove a location/permission problem even during
+	// activation. Socket transport errors cannot prove Data access is denied.
+	if fallback != startupFramework && (fallback != startupOccupied || location != nil) {
 		switch {
 		case errors.Is(err, errUnsupportedLocation):
 			kind = startupUnsupported
@@ -81,7 +83,7 @@ func noticeForStartup(err error) startupNotice {
 	case startupPermission:
 		message = "无法访问或写入安装目录或 Data。\n请关闭可能占用文件的程序，并将 SyncMaid 和 Data 一起放到您有读写权限的目录后重试。"
 	case startupOccupied:
-		message = "已有 SyncMaid 实例可能正在运行或启动，但本次无法恢复它的窗口。\n请稍后重试，或使用已有实例的托盘图标恢复窗口。不要删除锁文件；本次启动不会接管或写入 Data。"
+		message = "已有 SyncMaid 实例可能正在运行或启动，但本次未能确认窗口已恢复。\n请查看已有窗口，或稍后重试、使用托盘图标恢复。不要删除锁文件；本次启动不会接管或写入 Data。"
 	case startupOwnership:
 		message = "无法确认安装目录或 Data 的安全访问状态，程序已停止启动以保护数据。\n请确认 Data 是可访问的目录，并将程序和 Data 一起放到可写的本地固定 NTFS/ReFS 磁盘目录后重试。不要删除正在使用的锁文件。"
 	default:

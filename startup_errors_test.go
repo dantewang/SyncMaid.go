@@ -21,7 +21,7 @@ func TestStartupClassificationPreservesCauseAndReadablePath(t *testing.T) {
 		{windows.ERROR_ACCESS_DENIED, startupOwnership, startupPermission, "读写权限"},
 		{windows.ERROR_WRITE_PROTECT, startupOwnership, startupPermission, "无法访问或写入"},
 		{errUnreliableIdentity, startupOwnership, startupOwnership, "保护数据"},
-		{windows.ERROR_ACCESS_DENIED, startupOccupied, startupOccupied, "已有 SyncMaid"},
+		{windows.ERROR_ACCESS_DENIED, startupOccupied, startupPermission, "读写权限"},
 		{windows.ERROR_ACCESS_DENIED, startupFramework, startupFramework, "原生界面"},
 	} {
 		err := startupProblem(&locationError{path: `\\?\C:\isolated\Data`, cause: tc.cause}, tc.fallback, "fallback")
