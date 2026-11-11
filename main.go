@@ -1,9 +1,9 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"log/slog"
-	"os"
 	"path/filepath"
 
 	"github.com/egoist/mygo"
@@ -25,37 +25,40 @@ func (a *application) view(c *ui.Context) {
 	})
 }
 
-func run() error {
+func run() (result error) {
 	install, err := currentInstallation()
 	if err != nil {
 		return err
 	}
+	owner, err := acquireOwnership(install)
+	if errors.Is(err, errOccupied) {
+		// Activation failure cannot grant writer status to this process.
+		notifyInstallation(install)
+		slog.Info("ownership-occupied", "directory", install.directory)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, owner.Close()) }()
+	// Use the pinned target's path, not a mutable Data junction spelling.
+	install.data = owner.directories[1].path
 	a := &application{installation: install}
-	// MyGo's lock key uses App.Name (plus the packaged identifier), so a
-	// directory-derived internal name scopes the lock to this portable copy.
+	activation, err := startActivation(owner.directories[1].key, func() { mygo.App.WhenReady(a.lifecycle.show) })
+	if err != nil {
+		slog.Warn("activation-server-unavailable", "error", err)
+	} else {
+		defer func() { result = errors.Join(result, activation.Close()) }()
+	}
 	mygo.App.SetName(install.key)
 	mygo.App.SetPath(mygo.PathUserData, install.data)
 	mygo.App.SetPath(mygo.PathCache, filepath.Join(install.data, "cache"))
 	mygo.App.SetPath(mygo.PathLogs, filepath.Join(install.data, "logs"))
-	mygo.App.OnSecondInstance(func([]string, string) {
-		slog.Info("second-instance", "directory", install.directory)
-		a.lifecycle.show()
-	})
-	if !mygo.App.RequestSingleInstanceLock() {
-		slog.Info("activation-forwarded", "directory", install.directory)
-		return nil
-	}
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.lifecycle.beginQuit() })
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.lifecycle.finish() })
 	mygo.App.OnQuit(func() { slog.Info("application-exited") })
 	var startupError error
 	mygo.App.WhenReady(func() {
-		// Only the winning instance prepares its own portable directory.
-		if err := os.MkdirAll(install.data, 0o755); err != nil {
-			startupError = err
-			mygo.App.Quit()
-			return
-		}
 		icon, err := trayIcon()
 		if err != nil {
 			startupError = err

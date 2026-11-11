@@ -1,12 +1,9 @@
 package main
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
 )
 
 // installation identifies the executable's real directory, never the caller's
@@ -34,13 +31,14 @@ func installationForExecutable(exe string) (installation, error) {
 		return installation{}, fmt.Errorf("resolve executable %q: %w", exe, err)
 	}
 	directory := filepath.Dir(filepath.Clean(real))
-	identity := directory
-	if runtime.GOOS == "windows" {
-		identity = strings.ToUpper(identity)
+	object, err := openDirectory(directory)
+	if err != nil {
+		return installation{}, err
 	}
+	defer object.Close()
 	return installation{
-		directory: directory,
-		data:      filepath.Join(directory, "Data"),
-		key:       fmt.Sprintf("SyncMaid-%x", sha256.Sum256([]byte(identity))),
+		directory: object.path,
+		data:      filepath.Join(object.path, "Data"),
+		key:       "SyncMaid-" + object.key,
 	}, nil
 }

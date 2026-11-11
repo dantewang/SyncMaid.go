@@ -8,7 +8,7 @@ SyncMaid.go 是 Windows 优先的单向文件同步项目，目标包括镜像�
 - 所有应用窗口使用 MyGo Native UI，禁止 WebView、HTML/JavaScript 前端。视图构建只描述界面，不无条件执行 I/O 或启动后台工作。
 - 遵循 Go 与 MyGo 的惯用设计；以既有产品的行为和数据兼容性为依据，不逐代码翻译 Rust，不模拟其所有权或 UI 实体体系。按实际职责组织代码，优先标准库和小接口。
 - 避免隐式状态机。跨事件的运行、取消、确认和退出流程应有明确状态、合法转换与单一所有者；简单同步流程使用普通函数。取消请求不等于执行结束，异步结果须能识别过期运行，后台资源须可回收。
-- 当前生命周期由 MyGo 主线程独占：starting→visible；关闭 visible/hidden→hidden；激活 visible/hidden→visible；显式或系统退出→exiting→stopped。退出期间忽略激活，允许原生关闭并只释放一次托盘。Data 按真实可执行文件目录解析；MyGo 的用户数据、缓存和日志路径在启动前指向该 Data。内置单实例锁的异常 fail-open、打包标识边界及与 Rust 旧版的并行协调尚未加固，接入真实写入前须解决。
+- 当前生命周期由 MyGo 主线程独占：starting→visible；关闭 visible/hidden→hidden；激活 visible/hidden→visible；显式或系统退出→exiting→stopped。退出期间忽略激活，允许原生关闭并只释放一次托盘。MyGo 的用户数据、缓存和日志路径在启动前指向实际 Data。安装目录及 Data 的 Windows 排他文件句柄先于应用写入获取，失败关闭；目录对象用卷和128位文件ID识别，规范路径仅用于定位/显示。激活是独立的 best-effort 通道，不能授权写入，不依赖 MyGo identifier。当前只支持本地固定NTFS/ReFS；不可删除或按stale重建协调文件。与 Rust 旧版的并行协调尚未实现，接入真实写入前仍须处理。
 - 文件安全优先：目标写入完成并校验后才替换已有文件；Move 在目标验证成功后才删除源；源不可用、枚举失败或异常为空时不得触发危险镜像删除；大量删除必须关联本次审阅确认；配置不可读时不得以空配置覆盖。保持便携 Data 语义，不直接对用户数据进行迁移试验。
 
 变更后运行适用的 `gofmt`、`go test ./...` 和 `go vet ./...`，以 `CGO_ENABLED=0` 构建。涉及文件安全或并发时补充故障、取消与生命周期测试；涉及 UI 时结合无头视图测试和真实窗口检查。依赖未备齐时如实记录未验证部分，不宣称通过。MyGo 的 Windows 打包使用 `go tool mygo build -skip-installer`，避免默认安装器流程自动下载 NSIS。
