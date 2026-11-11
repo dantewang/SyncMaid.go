@@ -1,0 +1,12 @@
+[
+  {
+    "Name": "合成 Sort",
+    "SourcePath": "C:\\Synthetic\\Inbox",
+    "Trigger": {"kind": "manual"},
+    "Destinations": [
+      {"Name": "First", "Target": {"kind": "local", "Path": "D:\\Synthetic\\First"}, "Filters": [{"kind": "extension", "Extension": "*.jpg"}], "Strategy": "Move"},
+      {"Name": "Remainder", "Target": {"kind": "local", "Path": "D:\\Synthetic\\Rest"}, "Filters": [{"kind": "all"}], "Strategy": "Move"}
+    ]
+  },
+  {"Name": "Draft", "SourcePath": "C:\\Synthetic\\Draft", "Trigger": {"kind": "watch"}, "Destinations": []}
+]

@@ -1,0 +1,21 @@
+[
+  {
+    "Name": "Synthetic backup", "SourcePath": "C:\\Synthetic\\Photos",
+    "Id": "00000000-0000-0000-0000-000000000001", "Kind": "Sync",
+    "Trigger": {"kind": "scheduled", "CronExpression": "5/15 * * * *", "FutureTrigger": {"n": 9007199254740993}},
+    "Destinations": [{
+      "Name": "Backup", "Id": "00000000-0000-0000-0000-000000000002",
+      "Target": {"kind": "local", "Path": "\\\\host\\share\\合成", "FutureTarget": null},
+      "Strategy": "AddOnly", "VerifyContents": true, "DeleteMode": "Permanent",
+      "FlattenStructure": true, "CollisionPolicy": "Suffix", "MassDeleteThreshold": 1,
+      "Filters": [{"kind": "anyOf", "Rules": [
+        {"kind": "allOf", "Rules": [
+          {"kind": "path", "Prefix": "\\photos\\2024\\"},
+          {"kind": "not", "Rule": {"kind": "regex", "Pattern": "(?i)^IMG_\\d+\\.jpg$", "FutureRule": [1, null]}}
+        ]},
+        {"kind": "wildcard", "Pattern": "\\**\\*.png\\"},
+        {"kind": "all"}, {"kind": "extension", "Extension": ".txt"}
+      ]}], "FutureDestination": {"policy": "keep"}
+    }], "FutureTask": false
+  }
+]
