@@ -5,6 +5,7 @@
 // primary and backup before writing, but checks plus rename are NOT cross-process
 // CAS. A stable parent and a single cooperating writer are required; other editors
 // must not write during Save/Recover. This slice does not establish that protocol.
+// Different Store values do not share a mutex, even for the same path.
 package taskstore
 
 import (
@@ -37,6 +38,8 @@ const (
 
 // Status exposes the actual error (including permission errors via errors.Is).
 // Unsupported includes unknown JSON types and non-regular/symlink paths.
+// The state is unified, but their causes remain taskconfig.ErrUnsupported and
+// errors.ErrUnsupported respectively; inspect State or the relevant cause.
 type Status struct {
 	Path  string
 	State State
@@ -84,6 +87,11 @@ func (s *Snapshot) Tasks() ([]taskconfig.Task, error) {
 
 // LoadError supplies diagnostics without a writable snapshot. A good backup is
 // not silently substituted; Recover is a separate explicit operation.
+// An invalid/unreadable backup blocks editing even when primary is valid: a
+// routine save must not silently rotate away unexamined backup data. Explicitly
+// inspect and preserve/resolve that backup, then Load again. This is stricter
+// than legacy Rust's primary-first fallback; Recover is for a bad/missing primary
+// with a valid backup, not automatic repair of an invalid backup.
 type LoadError struct {
 	Primary, Backup Status
 	store           *Store
@@ -238,7 +246,7 @@ func (s *Store) commit(snap *Snapshot, temp string, encoded []byte) (next *Snaps
 		}
 		backup = s.io.read(s.path + ".bak")
 		if backup.status.State != Valid || !bytes.Equal(backup.data, snap.primary.data) {
-			return nil, ErrChanged
+			return nil, errors.Join(ErrChanged, backup.status.Err)
 		}
 	}
 	if err = s.check(snap.primary, backup); err != nil {
