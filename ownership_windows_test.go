@@ -297,3 +297,49 @@ func TestCoordinationHardlinkRejected(t *testing.T) {
 func TestRemoteOwnershipNotYetSupported(t *testing.T) {
 	t.Skip("UNC/mapped network volumes deliberately fail closed; no remote test share configured")
 }
+
+func TestDifferentInstallationsOwnIndependentDataSimultaneously(t *testing.T) {
+	a, b := isolatedInstallation(t), isolatedInstallation(t)
+	first, err := acquireOwnership(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := acquireOwnership(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if first.dataDirectory().key == second.dataDirectory().key {
+		t.Fatal("distinct Data objects collided")
+	}
+	if _, err := acquireOwnership(a); !errors.Is(err, errOccupied) {
+		t.Fatalf("first not protected: %v", err)
+	}
+	if _, err := acquireOwnership(b); !errors.Is(err, errOccupied) {
+		t.Fatalf("second not protected: %v", err)
+	}
+}
+
+func TestCoordinationReparseRejected(t *testing.T) {
+	i := isolatedInstallation(t)
+	// A directory junction needs no symlink privilege on this test host.
+	junction(t, filepath.Join(i.directory, ".syncmaid-owner.lock"), t.TempDir())
+	if _, err := acquireOwnership(i); err == nil || errors.Is(err, errOccupied) {
+		t.Fatalf("reparse coordination object accepted: %v", err)
+	}
+}
+
+func TestCoordinationFileSymlinkRejectedWhenPermitted(t *testing.T) {
+	i := isolatedInstallation(t)
+	target := filepath.Join(t.TempDir(), "target")
+	if err := os.WriteFile(target, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(i.directory, ".syncmaid-owner.lock")); err != nil {
+		t.Skipf("file symlink unavailable: %v", err)
+	}
+	if _, err := acquireOwnership(i); err == nil || errors.Is(err, errOccupied) {
+		t.Fatalf("file symlink accepted: %v", err)
+	}
+}

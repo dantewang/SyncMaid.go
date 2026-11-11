@@ -20,7 +20,7 @@ func prepareDataDirectory(path string) error { return os.MkdirAll(path, 0o755) }
 // object, not a hash of its pathname or a Windows session's object namespace.
 type directoryObject struct {
 	handle windows.Handle
-	path   string
+	path   string // Native operation path, including extended-length prefix.
 	key    string
 }
 
@@ -138,7 +138,11 @@ func claimDirectory(d *directoryObject) (windows.Handle, error) {
 type ownership struct {
 	directories []*directoryObject
 	claims      []windows.Handle
+	data        *directoryObject
 }
+
+// dataDirectory returns the pinned Data object while this receipt is held.
+func (o *ownership) dataDirectory() *directoryObject { return o.data }
 
 func (o *ownership) Close() error {
 	var result error
@@ -149,6 +153,7 @@ func (o *ownership) Close() error {
 		result = errors.Join(result, o.directories[i].Close())
 	}
 	o.claims, o.directories = nil, nil
+	o.data = nil
 	return result
 }
 
@@ -172,6 +177,9 @@ func acquireOwnership(install installation) (_ *ownership, result error) {
 			return nil, err
 		}
 		o.directories = append(o.directories, d)
+		if path == install.data {
+			o.data = d
+		}
 		h, err := claimDirectory(d)
 		if err != nil {
 			return nil, err

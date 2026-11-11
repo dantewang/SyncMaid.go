@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -36,6 +37,9 @@ func startActivation(key string, show func()) (*activationServer, error) {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					slog.Error("activation-accept-failed", "error", err)
+				}
 				return
 			}
 			conn.SetDeadline(time.Now().Add(time.Second))

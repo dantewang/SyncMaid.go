@@ -9,6 +9,8 @@ import (
 // installation identifies the executable's real directory, never the caller's
 // working directory. No configuration files are read while resolving it.
 type installation struct {
+	// Native operation paths; UI uses pathLabel. A future configuration
+	// schema must explicitly choose its representation instead of saving these.
 	directory string
 	data      string
 	key       string

@@ -2,4 +2,5 @@
 /.mygo/
 /.local/
 /Data/
+/.syncmaid-owner.lock
 mygo_windows_*.syso

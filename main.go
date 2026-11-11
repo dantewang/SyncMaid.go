@@ -20,7 +20,7 @@ func (a *application) view(c *ui.Context) {
 		ui.Text(c, "SyncMaid").FontSize(26).Bold()
 		ui.Text(c, "Native UI project initialized.").TextColor(c.Theme().TextMuted)
 		ui.Text(c, "Close hides to the tray. Use Exit to quit.")
-		ui.Text(c, "Data: "+a.installation.data).FontSize(12)
+		ui.Text(c, "Data: "+pathLabel(a.installation.data)).FontSize(12)
 		ui.Button(c, "Exit").OnClick(a.lifecycle.exit)
 	})
 }
@@ -42,15 +42,18 @@ func run() (result error) {
 	}
 	defer func() { result = errors.Join(result, owner.Close()) }()
 	// Use the pinned target's path, not a mutable Data junction spelling.
-	install.data = owner.directories[1].path
+	dataDirectory := owner.dataDirectory()
+	install.data = dataDirectory.path
 	a := &application{installation: install}
-	activation, err := startActivation(owner.directories[1].key, func() { mygo.App.WhenReady(a.lifecycle.show) })
+	activation, err := startActivation(dataDirectory.key, func() { mygo.App.WhenReady(a.lifecycle.show) })
 	if err != nil {
 		slog.Warn("activation-server-unavailable", "error", err)
 	} else {
 		defer func() { result = errors.Join(result, activation.Close()) }()
 	}
 	mygo.App.SetName(install.key)
+	// These MyGo paths are Go filesystem I/O inputs (locale_file.go and
+	// window_state.go), not Shell/UI labels. Preserve extended-length semantics.
 	mygo.App.SetPath(mygo.PathUserData, install.data)
 	mygo.App.SetPath(mygo.PathCache, filepath.Join(install.data, "cache"))
 	mygo.App.SetPath(mygo.PathLogs, filepath.Join(install.data, "logs"))
@@ -98,7 +101,7 @@ func run() (result error) {
 			defer tray.SetMenu(nil)
 			tray.PopUpMenu()
 		})
-		slog.Info("native-ready", "directory", install.directory, "data", install.data, "trayBounds", tray.Bounds())
+		slog.Info("native-ready", "directory", pathLabel(install.directory), "data", pathLabel(install.data), "trayBounds", tray.Bounds())
 	})
 	if err := mygo.App.Run(); err != nil {
 		return err
