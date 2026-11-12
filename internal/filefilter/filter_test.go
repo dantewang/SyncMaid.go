@@ -3,6 +3,7 @@ package filefilter
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -203,6 +204,47 @@ func TestAllNonemptyRegexRemainUnverified(t *testing.T) {
 	for _, pattern := range []string{`\d+`, `\w+`, `\b中文\b`, `(?i)k`, `(?-i)A`, `(?x)a b`, `(?mR)^foo$`, `(?s).`, `^a$`, `a\z`, `a*`, `[`, `(?<=a)b`, `(a)\1`, `[a-z&&[^aeiou]]`} {
 		if m, e := Compile([]taskconfig.Rule{regex(pattern)}); m != nil || !errors.Is(e, ErrUnsupportedRegex) {
 			t.Fatal(pattern, m, e)
+		}
+	}
+}
+
+func TestCompileNodeCountBoundary(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		for _, count := range []int{4096, 4097} {
+			t.Run(fmt.Sprintf("nested=%v/nodes=%d", nested, count), func(t *testing.T) {
+				leafCount := count
+				if nested {
+					leafCount--
+				} // The explicit group counts; the implicit destination OR does not.
+				rules := make([]taskconfig.Rule, leafCount)
+				for i := range rules {
+					rules[i] = taskconfig.Rule{Kind: "all"}
+				}
+				if nested {
+					rules = []taskconfig.Rule{group("anyOf", rules...)}
+				}
+				m, e := Compile(rules)
+				if count > 4096 {
+					var fe *Error
+					if m != nil || !errors.Is(e, ErrInvalidRule) || !errors.As(e, &fe) {
+						t.Fatal(m, e)
+					}
+					want := "Filters[4096]"
+					if nested {
+						want = "Filters[0].Rules[4095]"
+					}
+					if fe.Field != want {
+						t.Fatalf("got field %q, want %q", fe.Field, want)
+					}
+				} else {
+					if e != nil || m == nil {
+						t.Fatal(m, e)
+					}
+					if got, e := m.Match("file.txt"); e != nil || !got {
+						t.Fatal(got, e)
+					}
+				}
+			})
 		}
 	}
 }
