@@ -116,16 +116,18 @@ func TestDirectConstructorsAndJSONHaveOneNormalization(t *testing.T) {
 		match(t, c.direct, c.path, true)
 		match(t, decoded, c.path, true)
 	}
-	// Rust's ordered star-then-dot normalization is not idempotent for alternating
-	// decorations. Refuse its ambiguous residual form instead of normalizing twice.
+	// Canonical residual stars remain literal. Constructors/JSON normalize once;
+	// direct Rule values are already canonical and must not be normalized again.
 	var decoded taskconfig.Rule
 	if e := json.Unmarshal([]byte(`{"kind":"extension","Extension":"*.*.jpg"}`), &decoded); e != nil {
 		t.Fatal(e)
 	}
-	for _, r := range []taskconfig.Rule{decoded, taskconfig.ExtensionFilter("*.*.jpg"), {Kind: "extension", Extension: text("*.jpg")}, {Kind: "path", Prefix: text(`\raw\`)}} {
-		if m, e := Compile([]taskconfig.Rule{r}); m != nil || !errors.Is(e, ErrInvalidRule) {
-			t.Fatal(m, e)
-		}
+	for _, r := range []taskconfig.Rule{decoded, taskconfig.ExtensionFilter("*.*.jpg"), {Kind: "extension", Extension: text("*.jpg")}} {
+		match(t, r, "a.*.jpg", true)
+		match(t, r, "a.jpg", false)
+	}
+	if m, e := Compile([]taskconfig.Rule{{Kind: "path", Prefix: text(`\raw\`)}}); m != nil || !errors.Is(e, ErrInvalidRule) {
+		t.Fatal(m, e)
 	}
 }
 func TestCompileEagerlyRejectsUnsupportedAndUnknown(t *testing.T) {
@@ -162,21 +164,20 @@ func TestCompileEagerlyRejectsUnsupportedAndUnknown(t *testing.T) {
 		t.Fatal(m, e)
 	}
 }
-func TestVerifiedUnicodeAndExplicitLimits(t *testing.T) {
+func TestUnicodeScalarMatching(t *testing.T) {
 	match(t, taskconfig.PathFilter("Ärger/照片"), "ärger/照片/a", true)
 	match(t, taskconfig.WildcardFilter("日本/写真?.ＴＸＴ"), "日本/写真中.ｔｘｔ", true)
 	match(t, taskconfig.WildcardFilter("?"), "😀", true)
 	match(t, taskconfig.WildcardFilter("?"), "a\u0308", false) // Scalars, not grapheme clusters.
 	match(t, taskconfig.Rule{Kind: "all"}, "ß/😀", true)        // No case comparison is needed.
-	if m, e := Compile([]taskconfig.Rule{taskconfig.PathFilter("ß")}); m != nil || !errors.Is(e, ErrUnsupportedUnicode) {
-		t.Fatal(m, e)
-	}
+	match(t, taskconfig.PathFilter("ß"), "SS/a", false)
+	match(t, taskconfig.PathFilter("ﬅ"), "ﬆ/a", true)
 	m, e := Compile([]taskconfig.Rule{{Kind: "all"}, taskconfig.ExtensionFilter("txt")})
 	if e != nil {
 		t.Fatal(e)
 	}
-	if got, e := m.Match("ß.txt"); got || !errors.Is(e, ErrUnsupportedUnicode) {
-		t.Fatal("short circuit concealed unsupported case semantics", got, e)
+	if got, e := m.Match("ß.txt"); !got || e != nil {
+		t.Fatal(got, e)
 	}
 }
 func TestMatcherOwnsInputsAndRejectsInvalidInput(t *testing.T) {

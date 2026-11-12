@@ -5,21 +5,21 @@ package filefilter
 // whole ** segment spans directories; other stars stay inside one segment.
 type segment struct {
 	deep    bool
-	pattern []rune
+	pattern []scalar
 }
 
-func prepareSegments(pattern string) []segment {
+func prepareSegments(pattern string) ([]segment, error) {
+	tokens, err := mapScalars(pattern)
+	if err != nil {
+		return nil, err
+	}
 	var out []segment
-	for _, s := range split(pattern) {
-		out = append(out, segment{deep: s == "**", pattern: []rune(s)})
+	for _, s := range splitScalars(tokens) {
+		out = append(out, segment{deep: len(s) == 2 && s[0].raw == '*' && s[1].raw == '*', pattern: s})
 	}
-	return out
+	return out, nil
 }
-func matchSegments(pattern []segment, path []string) bool {
-	input := make([][]rune, len(path))
-	for i, s := range path {
-		input[i] = []rune(s)
-	}
+func matchSegments(pattern []segment, path [][]scalar) bool {
 	row := make([]bool, len(path)+1)
 	row[0] = true
 	for _, p := range pattern {
@@ -27,7 +27,7 @@ func matchSegments(pattern []segment, path []string) bool {
 		if p.deep {
 			next[0] = row[0]
 		}
-		for j, s := range input {
+		for j, s := range path {
 			if p.deep {
 				next[j+1] = row[j+1] || next[j]
 			} else if row[j] {
@@ -38,16 +38,16 @@ func matchSegments(pattern []segment, path []string) bool {
 	}
 	return row[len(path)]
 }
-func matchSegment(pattern, text []rune) bool {
+func matchSegment(pattern, text []scalar) bool {
 	row := make([]bool, len(text)+1)
 	row[0] = true
 	for _, p := range pattern {
 		next := make([]bool, len(row))
-		if p == '*' {
+		if p.raw == '*' {
 			next[0] = row[0]
 		}
 		for j, c := range text {
-			switch p {
+			switch p.raw {
 			case '*':
 				next[j+1] = row[j+1] || next[j]
 			case '?':

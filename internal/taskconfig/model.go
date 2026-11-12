@@ -127,4 +127,8 @@ type Rule struct {
 	Rules     *[]Rule `json:",omitempty"`
 	Rule      *Rule   `json:",omitempty"`
 	extra     extras
+	// Preserve the original spelling only where legacy one-pass extension
+	// normalization is non-idempotent. Marshal verifies it against the current
+	// canonical value so editing a public field cannot resurrect stale spelling.
+	extensionWire string
 }

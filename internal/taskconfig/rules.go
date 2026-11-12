@@ -11,7 +11,11 @@ func PathFilter(prefix string) Rule {
 }
 func ExtensionFilter(extension string) Rule {
 	s := normalizeExtension(extension)
-	return Rule{Kind: "extension", Extension: &s}
+	r := Rule{Kind: "extension", Extension: &s}
+	if normalizeExtension(s) != s {
+		r.extensionWire = extension
+	}
+	return r
 }
 func WildcardFilter(pattern string) Rule {
 	s := normalizeFilterPath(pattern)

@@ -2,7 +2,8 @@
 // Match inputs are source-root-relative paths supplied by the caller, not OS
 // paths. This package neither enumerates files nor authorizes deletion/execution.
 //
-// Nonempty Rust regex and full Unicode case mappings remain unsupported. All
+// Nonempty Rust regex remains unsupported. Unicode17 full per-scalar mappings
+// are version-checked and independently verified by an offline digest test. All
 // rules are prepared before matching, including branches that could short-circuit.
 // Errors never produce a partial usable matcher or silently mean all/none.
 package filefilter
@@ -11,18 +12,18 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"syncmaid/internal/taskconfig"
 )
 
 var (
-	ErrInvalidRule        = errors.New("invalid or noncanonical filter")
-	ErrUnsupportedRegex   = errors.New("Rust regex compatibility not implemented")
-	ErrUnsupportedUnicode = errors.New("Unicode case compatibility not verified for this character")
-	ErrUnknownFields      = errors.New("unknown filter fields have unverified semantics")
-	ErrInvalidInput       = errors.New("invalid filter path input")
+	ErrInvalidRule      = errors.New("invalid or noncanonical filter")
+	ErrUnsupportedRegex = errors.New("Rust regex compatibility not implemented")
+	ErrUnicodeVersion   = errors.New("Unicode table version mismatch")
+	ErrMapping          = errors.New("uppercase mapping failed")
+	ErrUnknownFields    = errors.New("unknown filter fields have unverified semantics")
+	ErrInvalidInput     = errors.New("invalid filter path input")
 )
 
 type Error struct {
@@ -37,12 +38,11 @@ func (e *Error) Unwrap() error { return e.Err }
 // Its zero value is not prepared. Successful matching covers only filtering,
 // never taskconfig's other Unverified execution conditions.
 type Matcher struct {
-	root      *node
-	caseCheck bool
+	root *node
 }
 type node struct {
 	kind, text string
-	runes      []rune
+	runes      []scalar
 	segments   []segment
 	children   []*node
 }
@@ -50,14 +50,17 @@ type node struct {
 // Compile prepares destination filters as OR in their supplied order; no rules
 // select nothing. Payloads must be canonical model values: JSON Decode or the
 // taskconfig leaf constructors apply legacy normalization exactly once. Raw Go
-// struct literals with leading/trailing separators or extension decorations are
-// refused, not re-normalized (legacy extension normalization is not idempotent).
+// struct literals are canonical values, not raw user spelling. In particular,
+// a canonical extension starting * is literal and is never normalized again.
 func Compile(rules []taskconfig.Rule) (*Matcher, error) {
+	if err := checkUnicodeTables(); err != nil {
+		return nil, &Error{Field: "UnicodeTables", Err: err}
+	}
 	root := &node{kind: "anyOf"}
 	m := &Matcher{root: root}
 	count := 0
 	for i, r := range rules {
-		n, err := prepare(r, fmt.Sprintf("Filters[%d]", i), 0, &count, &m.caseCheck)
+		n, err := prepare(r, fmt.Sprintf("Filters[%d]", i), 0, &count)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +68,7 @@ func Compile(rules []taskconfig.Rule) (*Matcher, error) {
 	}
 	return m, nil
 }
-func prepare(r taskconfig.Rule, field string, depth int, count *int, caseCheck *bool) (*node, error) {
+func prepare(r taskconfig.Rule, field string, depth int, count *int) (*node, error) {
 	*count = *count + 1
 	fail := func(pattern string, err error) (*node, error) {
 		return nil, &Error{Field: field, Pattern: pattern, Err: err}
@@ -105,15 +108,14 @@ func prepare(r taskconfig.Rule, field string, depth int, count *int, caseCheck *
 		}
 	case "extension":
 		n.text, err = leaf(r.Extension)
-		if err == nil && (strings.HasPrefix(n.text, "*") || strings.HasPrefix(n.text, ".")) {
-			err = fmt.Errorf("%w: decorated/ambiguous extension; use canonical constructor output", ErrInvalidRule)
+		if err == nil && strings.HasPrefix(n.text, ".") {
+			err = fmt.Errorf("%w: extension must be canonical; use taskconfig.ExtensionFilter for raw input", ErrInvalidRule)
 		}
 	case "wildcard":
 		n.text, err = leaf(r.Pattern)
 		if err == nil && (strings.Contains(n.text, `\`) || strings.Trim(n.text, "/") != n.text) {
 			err = fmt.Errorf("%w: use taskconfig.WildcardFilter", ErrInvalidRule)
 		}
-		n.segments = prepareSegments(n.text)
 	case "regex":
 		n.text, err = leaf(r.Pattern)
 		if err == nil && n.text != "" {
@@ -137,7 +139,7 @@ func prepare(r taskconfig.Rule, field string, depth int, count *int, caseCheck *
 			if r.Kind == "not" {
 				childField = field + ".Rule"
 			}
-			child, err := prepare(c, childField, depth+1, count, caseCheck)
+			child, err := prepare(c, childField, depth+1, count)
 			if err != nil {
 				return nil, err
 			}
@@ -150,27 +152,22 @@ func prepare(r taskconfig.Rule, field string, depth int, count *int, caseCheck *
 		return fail(n.text, err)
 	}
 	if r.Kind == "path" {
-		n.runes = []rune(n.text)
+		n.runes, err = mapScalars(n.text)
 	}
 	if r.Kind == "extension" {
-		n.runes = []rune("." + n.text)
+		n.runes, err = mapScalars("." + n.text)
 	}
-	if n.text != "" && r.Kind != "regex" {
-		for _, c := range n.text {
-			if r.Kind == "wildcard" && (c == '*' || c == '?' || c == '/') {
-				continue
-			}
-			if !supportedCase(c) {
-				return fail(n.text, fmt.Errorf("%w: U+%04X", ErrUnsupportedUnicode, c))
-			}
-			*caseCheck = true
-		}
+	if r.Kind == "wildcard" {
+		n.segments, err = prepareSegments(n.text)
+	}
+	if err != nil {
+		return fail(n.text, err)
 	}
 	return n, nil
 }
 
-// Match returns an error before evaluating any branch if a required case
-// comparison would exceed the verified character repertoire. A caller must
+// Match prepares each original scalar once for the path, without flattening
+// uppercase expansions or retaining a cache across calls. A caller must
 // propagate errors rather than treating false as a safe filtering decision.
 // Separators are matching syntax only; dot segments are not cleaned/resolved.
 func (m *Matcher) Match(relativePath string) (bool, error) {
@@ -180,28 +177,14 @@ func (m *Matcher) Match(relativePath string) (bool, error) {
 	if !utf8.ValidString(relativePath) || strings.ContainsRune(relativePath, 0) {
 		return false, &Error{Field: "RelativePath", Err: ErrInvalidInput}
 	}
-	if m.caseCheck {
-		for _, c := range relativePath {
-			if !supportedCase(c) {
-				return false, &Error{Field: "RelativePath", Pattern: relativePath, Err: fmt.Errorf("%w: U+%04X", ErrUnsupportedUnicode, c)}
-			}
-		}
+	input, err := preparePath(relativePath)
+	if err != nil {
+		return false, &Error{Field: "RelativePath", Err: err}
 	}
-	return m.root.match(relativePath), nil
+	return m.root.match(&input), nil
 }
 
-// Explicit repertoire, not Go EqualFold masquerading as Rust's per-scalar FULL
-// uppercase comparison. Latin-1 simple mappings (except expanding sharp-s),
-// BMP CJK/kana and fullwidth ASCII have stable audited scalar mappings. Other
-// characters are refused when case comparisons are needed, pending full tables.
-func supportedCase(r rune) bool {
-	return r < 128 || (r >= 0xc0 && r <= 0xff && r != 0xdf) || r == 0x178 || (r >= 0x3000 && r <= 0x30ff) || (r >= 0x3400 && r <= 0x4dbf) || (r >= 0x4e00 && r <= 0x9fff) || (r >= 0xff01 && r <= 0xff5e)
-}
-func split(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' })
-}
-func equal(a, b rune) bool { return unicode.ToUpper(a) == unicode.ToUpper(b) }
-func (n *node) match(p string) bool {
+func (n *node) match(p *pathInput) bool {
 	switch n.kind {
 	case "all":
 		return true
@@ -210,22 +193,25 @@ func (n *node) match(p string) bool {
 			return false
 		}
 		prefix := n.runes
-		input := []rune(strings.TrimLeft(strings.ReplaceAll(p, `\`, "/"), "/"))
+		input := p.scalars
+		for len(input) > 0 && separator(input[0].raw) {
+			input = input[1:]
+		}
 		if len(input) < len(prefix) {
 			return false
 		}
 		for i, c := range prefix {
-			if !equal(c, input[i]) {
+			if !(separator(c.raw) && separator(input[i].raw)) && !equal(c, input[i]) {
 				return false
 			}
 		}
-		return len(input) == len(prefix) || input[len(prefix)] == '/'
+		return len(input) == len(prefix) || separator(input[len(prefix)].raw)
 	case "extension":
 		if n.text == "" {
 			return false
 		}
 		suffix := n.runes
-		input := []rune(p)
+		input := p.scalars
 		if len(input) < len(suffix) {
 			return false
 		}
@@ -237,7 +223,7 @@ func (n *node) match(p string) bool {
 		}
 		return true
 	case "wildcard":
-		return len(n.segments) > 0 && matchSegments(n.segments, split(p))
+		return len(n.segments) > 0 && matchSegments(n.segments, p.segments)
 	case "regex":
 		return false
 	case "not":

@@ -379,7 +379,11 @@ func (r *Rule) UnmarshalJSON(data []byte) error {
 		w.Prefix = &s
 	}
 	if k == "extension" {
-		s := normalizeExtension(*w.Extension)
+		raw := *w.Extension
+		s := normalizeExtension(raw)
+		if normalizeExtension(s) != s {
+			w.extensionWire = raw
+		}
 		w.Extension = &s
 	}
 	if k == "wildcard" {
@@ -401,5 +405,19 @@ func (r Rule) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("Filter: incompatible payload")
 	}
 	type wire Rule
-	return writeObject(wire(r), r.extra)
+	w := wire(r)
+	if r.Kind == "extension" && r.Extension != nil {
+		canonical := *r.Extension
+		if strings.HasPrefix(canonical, ".") {
+			return nil, fmt.Errorf("extension canonical value cannot start with dot: %w", ErrUnsupported)
+		}
+		if normalizeExtension(canonical) != canonical {
+			raw := r.extensionWire
+			if raw == "" || normalizeExtension(raw) != canonical {
+				raw = "*." + canonical
+			}
+			w.Extension = &raw // Decode this wire spelling once to recover the exact literal canonical suffix.
+		}
+	}
+	return writeObject(w, r.extra)
 }
