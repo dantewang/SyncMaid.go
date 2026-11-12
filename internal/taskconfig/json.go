@@ -375,15 +375,15 @@ func (r *Rule) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if k == "path" {
-		s := strings.Trim(strings.ReplaceAll(*w.Prefix, `\`, "/"), "/")
+		s := normalizeFilterPath(*w.Prefix)
 		w.Prefix = &s
 	}
 	if k == "extension" {
-		s := strings.TrimLeft(strings.TrimLeft(*w.Extension, "*"), ".")
+		s := normalizeExtension(*w.Extension)
 		w.Extension = &s
 	}
 	if k == "wildcard" {
-		s := strings.Trim(strings.ReplaceAll(*w.Pattern, `\`, "/"), "/")
+		s := normalizeFilterPath(*w.Pattern)
 		w.Pattern = &s
 	}
 	*r = Rule(w)

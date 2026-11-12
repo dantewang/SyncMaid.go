@@ -100,6 +100,7 @@ func Validate(tasks []Task) (Validation, error) {
 			}
 			extensions(df, d.extra)
 			extensions(df+".Target", d.Target.extra)
+			pending(df+".Filters", "file filter compilation and matching compatibility")
 			for k, r := range d.Filters {
 				checkRule(r, fmt.Sprintf("%s.Filters[%d]", df, k))
 			}
