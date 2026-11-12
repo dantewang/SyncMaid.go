@@ -38,13 +38,15 @@ func (e *Error) Unwrap() error { return e.Err }
 // Its zero value is not prepared. Successful matching covers only filtering,
 // never taskconfig's other Unverified execution conditions.
 type Matcher struct {
-	root *node
+	root          *node
+	regexPrograms []*goRegexProgram
 }
 type node struct {
 	kind, text string
 	runes      []scalar
 	segments   []segment
 	children   []*node
+	regex      *goRegexProgram
 }
 
 // Compile prepares destination filters as OR in their supplied order; no rules
@@ -53,27 +55,55 @@ type node struct {
 // struct literals are canonical values, not raw user spelling. In particular,
 // a canonical extension starting * is literal and is never normalized again.
 func Compile(rules []taskconfig.Rule) (*Matcher, error) {
+	return compileWithRegex(rules, "Filters", func(field, legacy string) (preparedRegex, error) {
+		if legacy != "" {
+			return preparedRegex{}, &Error{Field: field, Pattern: legacy, Err: ErrUnsupportedRegex}
+		}
+		return preparedRegex{kind: regexNone}, nil
+	})
+}
+
+type regexKind uint8
+
+const (
+	regexNone regexKind = iota
+	regexGo
+)
+
+type preparedRegex struct {
+	kind    regexKind
+	program *goRegexProgram
+}
+type regexResolver func(field, legacy string) (preparedRegex, error)
+type preparation struct {
+	count, instructions int
+	programs            []*goRegexProgram
+	resolve             regexResolver
+}
+
+func compileWithRegex(rules []taskconfig.Rule, base string, resolve regexResolver) (*Matcher, error) {
 	if err := checkUnicodeTables(); err != nil {
 		return nil, &Error{Field: "UnicodeTables", Err: err}
 	}
 	root := &node{kind: "anyOf"}
 	m := &Matcher{root: root}
-	count := 0
+	ctx := preparation{resolve: resolve}
 	for i, r := range rules {
-		n, err := prepare(r, fmt.Sprintf("Filters[%d]", i), 0, &count)
+		n, err := prepare(r, fmt.Sprintf("%s[%d]", base, i), 0, &ctx)
 		if err != nil {
 			return nil, err
 		}
 		root.children = append(root.children, n)
 	}
+	m.regexPrograms = ctx.programs
 	return m, nil
 }
-func prepare(r taskconfig.Rule, field string, depth int, count *int) (*node, error) {
-	*count = *count + 1
+func prepare(r taskconfig.Rule, field string, depth int, ctx *preparation) (*node, error) {
+	ctx.count++
 	fail := func(pattern string, err error) (*node, error) {
 		return nil, &Error{Field: field, Pattern: pattern, Err: err}
 	}
-	if depth > 128 || *count > 4096 {
+	if depth > 128 || ctx.count > 4096 {
 		return fail("", fmt.Errorf("%w: filter complexity limit", ErrInvalidRule))
 	}
 	if r.HasUnknownFields() {
@@ -118,9 +148,29 @@ func prepare(r taskconfig.Rule, field string, depth int, count *int) (*node, err
 		}
 	case "regex":
 		n.text, err = leaf(r.Pattern)
-		if err == nil && n.text != "" {
-			return fail(n.text, ErrUnsupportedRegex)
-		} // Only the empty constant-none rule is proven without an engine.
+		if err == nil {
+			resolved, e := ctx.resolve(field, n.text)
+			if e != nil {
+				return nil, e
+			}
+			switch resolved.kind {
+			case regexNone:
+				n.kind = "regex-none"
+			case regexGo:
+				if resolved.program == nil {
+					return fail(n.text, ErrNeedsReview)
+				}
+				ctx.instructions += resolved.program.cost.ProgramInstructions
+				if ctx.instructions > MaxTargetRegexInstructions {
+					return fail(n.text, ErrRegexBudget)
+				}
+				n.kind = "go-regex"
+				n.regex = resolved.program
+				ctx.programs = append(ctx.programs, resolved.program)
+			default:
+				return fail(n.text, ErrRegexProfile)
+			}
+		}
 	case "anyOf", "allOf", "not":
 		var children []taskconfig.Rule
 		if r.Kind == "not" {
@@ -139,7 +189,7 @@ func prepare(r taskconfig.Rule, field string, depth int, count *int) (*node, err
 			if r.Kind == "not" {
 				childField = field + ".Rule"
 			}
-			child, err := prepare(c, childField, depth+1, count)
+			child, err := prepare(c, childField, depth+1, ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -177,9 +227,17 @@ func (m *Matcher) Match(relativePath string) (bool, error) {
 	if !utf8.ValidString(relativePath) || strings.ContainsRune(relativePath, 0) {
 		return false, &Error{Field: "RelativePath", Err: ErrInvalidInput}
 	}
+	if len(m.regexPrograms) > 0 {
+		if err := checkRegexInput(relativePath, "RelativePath"); err != nil {
+			return false, err
+		}
+	}
 	input, err := preparePath(relativePath)
 	if err != nil {
 		return false, &Error{Field: "RelativePath", Err: err}
+	}
+	if len(m.regexPrograms) > 0 {
+		input.regexText = strings.ReplaceAll(relativePath, `\`, "/")
 	}
 	return m.root.match(&input), nil
 }
@@ -224,8 +282,10 @@ func (n *node) match(p *pathInput) bool {
 		return true
 	case "wildcard":
 		return len(n.segments) > 0 && matchSegments(n.segments, p.segments)
-	case "regex":
+	case "regex-none":
 		return false
+	case "go-regex":
+		return n.regex.re.MatchString(p.regexText)
 	case "not":
 		return !n.children[0].match(p)
 	case "anyOf":

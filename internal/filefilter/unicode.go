@@ -86,8 +86,9 @@ func equal(a, b scalar) bool { return a.raw == b.raw || a.upper == b.upper }
 func separator(r rune) bool  { return r == '/' || r == '\\' }
 
 type pathInput struct {
-	scalars  []scalar
-	segments [][]scalar
+	regexText string
+	scalars   []scalar
+	segments  [][]scalar
 }
 
 func preparePath(path string) (pathInput, error) {
