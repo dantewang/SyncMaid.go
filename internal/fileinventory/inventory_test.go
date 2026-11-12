@@ -18,6 +18,7 @@ import (
 type fakeEntry struct {
 	name    string
 	mode    fs.FileMode
+	sys     any // platform attribute data; nil means unavailable
 	infoErr error
 }
 
@@ -33,12 +34,13 @@ func (i fakeInfo) Size() int64        { return 1 }
 func (i fakeInfo) Mode() fs.FileMode  { return i.mode }
 func (i fakeInfo) ModTime() time.Time { return time.Unix(1, 0) }
 func (i fakeInfo) IsDir() bool        { return i.mode.IsDir() }
-func (i fakeInfo) Sys() any           { return nil }
+func (i fakeInfo) Sys() any           { return i.sys }
 
 type fakeTree struct {
 	open      int
 	children  map[string][]fakeEntry
 	readErr   map[string]error // returned after the directory's entries
+	closeErr  map[string]error
 	openErr   map[string]error
 	caseErr   map[string]error
 	sensitive map[string]bool
@@ -96,7 +98,7 @@ func (d *fakeDir) Close() error {
 	}
 	d.closed = true
 	d.tree.open--
-	return nil
+	return d.tree.closeErr[d.path]
 }
 
 const fakeRoot = `C:\fake`
@@ -105,8 +107,10 @@ func (t *fakeTree) scan(ctx context.Context, opts Options) (*Inventory, error) {
 	return scanWith(ctx, fakeRoot, opts, func(string) (directory, error) { return t.openDir("") })
 }
 
-func file(name string) fakeEntry { return fakeEntry{name: name} }
-func dir(name string) fakeEntry  { return fakeEntry{name: name, mode: fs.ModeDir} }
+func file(name string) fakeEntry { return fakeEntry{name: name, sys: attrSys(0)} }
+func dir(name string) fakeEntry {
+	return fakeEntry{name: name, mode: fs.ModeDir, sys: attrSys(fs.ModeDir)}
+}
 
 func assertKind(t *testing.T, err error, kind ErrorKind) *ScanError {
 	t.Helper()
@@ -120,12 +124,13 @@ func assertKind(t *testing.T, err error, kind ErrorKind) *ScanError {
 func TestInjectedFailuresYieldNoListing(t *testing.T) {
 	boom := errors.New("injected")
 	tests := []struct {
-		name string
-		tree fakeTree
-		ctx  func() context.Context
-		opts Options
-		kind ErrorKind
-		path string
+		name  string
+		tree  fakeTree
+		ctx   func() context.Context
+		opts  Options
+		kind  ErrorKind
+		path  string
+		attrs bool // needs Windows attribute data
 	}{
 		{name: "read error after entries", kind: Enumeration, path: "a",
 			tree: fakeTree{children: map[string][]fakeEntry{"": {dir("a"), file("z")}, "a": {file("x")}},
@@ -153,6 +158,10 @@ func TestInjectedFailuresYieldNoListing(t *testing.T) {
 			tree: fakeTree{children: map[string][]fakeEntry{"": {file(`x\..\y`)}}}},
 		{name: "dotdot name", kind: Unsupported, path: "..",
 			tree: fakeTree{children: map[string][]fakeEntry{"": {dir("..")}}}},
+		{name: "regular mode but reparse attribute", kind: Unsupported, path: "dedup", attrs: true,
+			tree: fakeTree{children: map[string][]fakeEntry{"": {{name: "dedup", sys: attrReparse()}}}}},
+		{name: "attributes unavailable", kind: Unsupported, path: "opaque", attrs: true,
+			tree: fakeTree{children: map[string][]fakeEntry{"": {{name: "opaque"}}}}},
 		{name: "case-sensitive directory", kind: Unsupported, path: "a",
 			tree: fakeTree{children: map[string][]fakeEntry{"": {dir("a")}, "a": {file("x"), file("X")}}, sensitive: map[string]bool{"a": true}}},
 		{name: "canceled before start", kind: Canceled,
@@ -160,6 +169,9 @@ func TestInjectedFailuresYieldNoListing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.attrs && !attrChecksSupported {
+				t.Skip("attribute checks are Windows-only")
+			}
 			ctx := context.Background()
 			if tt.ctx != nil {
 				ctx = tt.ctx()
@@ -216,12 +228,12 @@ func TestDistinctUnicodeNamesAreNotCaseDuplicates(t *testing.T) {
 }
 
 func TestUnsupportedNames(t *testing.T) {
-	for _, name := range []string{"a.", "a ", "CON", "con.txt", "Nul", "COM1.log", "LPT¹", "CONIN$", "a\uFFFDb", "a:b", "a\x01"} {
+	for _, name := range []string{"a.", "a ", "CON", "con.txt", "Nul", "COM1", "com1.log", "COM9.txt", "LPT1", "lpt9.tar.gz", "COM¹", "com².txt", "LPT³", "CONIN$", "conout$", "a\uFFFDb", "a:b", "a\x01"} {
 		if unsupportedName(name) == "" {
 			t.Errorf("%q accepted", name)
 		}
 	}
-	for _, name := range []string{"COM0x", "console", "a.b", ".git", "日本語", "e\u0301", "COMA"} {
+	for _, name := range []string{"COM0", "com0", "COM0.txt", "com0.tar.gz", "LPT0", "lpt0.log", "COM0x", "console", "a.b", ".git", "日本語", "e\u0301", "COMA", "COM", "LPT"} {
 		if r := unsupportedName(name); r != "" {
 			t.Errorf("%q rejected: %s", name, r)
 		}
@@ -421,4 +433,31 @@ func TestRealDirectoryAcrossReadBatches(t *testing.T) {
 	}
 	_, err = Scan(context.Background(), root, Options{MaxEntries: readBatch*2 + 6})
 	assertKind(t, err, LimitExceeded)
+}
+
+func TestCloseErrorKeepsCauseAndKind(t *testing.T) {
+	boom := errors.New("injected read")
+	closeBoom := errors.New("injected close")
+	tree := fakeTree{
+		children: map[string][]fakeEntry{"": {dir("a"), file("z")}, "a": {file("x")}},
+		readErr:  map[string]error{"a": boom},
+		closeErr: map[string]error{"a": closeBoom},
+	}
+	_, err := tree.scan(context.Background(), Options{})
+	se := assertKind(t, err, Enumeration)
+	if !errors.Is(err, boom) || !errors.Is(err, closeBoom) {
+		t.Fatalf("cause lost: %v", err)
+	}
+	if se.Path != "a" || tree.open != 0 {
+		t.Fatalf("path %q open %d", se.Path, tree.open)
+	}
+
+	// A close error on an otherwise successful scan is still a failure, and it
+	// is not reported as a complete listing.
+	only := fakeTree{children: map[string][]fakeEntry{"": {file("f")}}, closeErr: map[string]error{"": closeBoom}}
+	inv, err := only.scan(context.Background(), Options{})
+	if inv != nil || !errors.Is(err, closeBoom) {
+		t.Fatalf("close-only: inv=%v err=%v", inv, err)
+	}
+	assertKind(t, err, Enumeration)
 }

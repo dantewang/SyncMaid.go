@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -165,5 +166,34 @@ func TestRealCaseSensitivityQueryOnTempVolume(t *testing.T) {
 	}
 	if sensitive {
 		t.Fatal("new temp directory unexpectedly case-sensitive")
+	}
+}
+
+func TestRealReservedDeviceNamesOnlyRejectCOM1to9AndLPT1to9(t *testing.T) {
+	root := t.TempDir()
+	legal := []string{"COM0", "com0.txt", "LPT0", "lpt0.log", "COM0.tar.gz"}
+	for _, name := range legal {
+		write(t, filepath.Join(root, name))
+	}
+	inv, err := Scan(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatalf("COM0/LPT0 are ordinary file names: %v", err)
+	}
+	if got := paths(inv.Files(), func(f File) string { return f.Path }); !slices.Equal(got, slices.Sorted(slices.Values(legal))) {
+		t.Fatalf("files %q", got)
+	}
+
+	// These names can be created as literal files on this build, so the scan
+	// still refuses them on purpose: the refusal is a conservative policy, not
+	// proof that the file cannot exist.
+	reserved := []string{"COM1", "com9.txt", "LPT1", "lpt9.tar.gz", "COM¹", "LPT²"}
+	for _, name := range reserved {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+			t.Skipf("reserved-name fixture %q cannot be created here: %v", name, err)
+		}
+	}
+	se := scanUnsupported(t, root)
+	if se.UnsupportedTotal != len(reserved) {
+		t.Fatalf("unsupported %+v", se.Unsupported)
 	}
 }

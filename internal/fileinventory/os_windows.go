@@ -106,16 +106,15 @@ func (d *osDirectory) CaseSensitive() (bool, error) {
 	return false, err
 }
 
-// isReparse reports entries carrying FILE_ATTRIBUTE_REPARSE_POINT, except
-// deduplicated regular files, which Go 1.27.3 maps to a regular mode (all
-// other reparse tags become ModeSymlink, ModeIrregular or a non-directory).
-func isReparse(info fs.FileInfo) bool {
-	if info.Mode()&fs.ModeSymlink != 0 {
-		return true
-	}
+// reparseStatus reports the FILE_ATTRIBUTE_REPARSE_POINT bit and whether the
+// attributes could be read at all. Every reparse tag is refused: dedup files
+// and cloud placeholders do exist, but no tag set is verified here and
+// DirEntry.Info exposes attributes (Sys) without the tag, so a regular Mode
+// alone is not evidence of an ordinary file.
+func reparseStatus(info fs.FileInfo) (reparse, known bool) {
 	data, ok := info.Sys().(*syscall.Win32FileAttributeData)
-	if !ok || data.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0 {
-		return false
+	if !ok {
+		return false, false
 	}
-	return !(info.Mode().Type() == 0 && data.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0)
+	return data.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0, true
 }

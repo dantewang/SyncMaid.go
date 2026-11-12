@@ -33,6 +33,21 @@ func (s *scanner) addUnsupported(path, reason string) {
 	}
 }
 
+// closeFailure keeps both the original cause and the close error, so a
+// cancellation or an I/O failure is still recognizable after cleanup.
+func (s *scanner) closeFailure(err error, rel string, closeErr error) error {
+	wrapped := fmt.Errorf("close directory: %w", closeErr)
+	var se *ScanError
+	if errors.As(err, &se) {
+		se.Err = errors.Join(se.Err, wrapped)
+		return err
+	}
+	if err == nil {
+		return s.fail(Enumeration, rel, wrapped)
+	}
+	return s.fail(Enumeration, rel, errors.Join(err, wrapped))
+}
+
 func join(rel, name string) string {
 	if rel == "" {
 		return name
@@ -45,8 +60,8 @@ func join(rel, name string) string {
 // relative to it) and is always closed before walk returns.
 func (s *scanner) walk(d directory, rel string, depth int) (err error) {
 	defer func() {
-		if closeErr := d.Close(); closeErr != nil && err == nil {
-			err = s.fail(Enumeration, rel, fmt.Errorf("close directory: %w", closeErr))
+		if closeErr := d.Close(); closeErr != nil {
+			err = s.closeFailure(err, rel, closeErr)
 		}
 	}()
 	sensitive, err := d.CaseSensitive()
@@ -130,9 +145,14 @@ func (s *scanner) entry(entry fs.DirEntry, rel string, folded map[string]string,
 		return s.fail(Enumeration, path, err)
 	}
 	mode := info.Mode()
+	reparse, known := reparseStatus(info)
 	switch {
-	case isReparse(info):
-		s.addUnsupported(path, "link or reparse point (junction, symlink, placeholder) is not followed")
+	case !known:
+		// A regular Mode alone is not evidence of an ordinary file; without
+		// the attributes a link or placeholder cannot be ruled out.
+		s.addUnsupported(path, "file attributes unavailable; cannot rule out a link or reparse point")
+	case reparse:
+		s.addUnsupported(path, "link or reparse point (junction, symlink, dedup, cloud placeholder) is not followed")
 	case mode.IsDir():
 		s.dirs = append(s.dirs, Directory{Path: path, Modified: info.ModTime().UTC()})
 		*subdirs = append(*subdirs, name)
@@ -180,8 +200,10 @@ func isDeviceName(name string) bool {
 	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
 		return true
 	}
+	// Reserved are COM1-9/LPT1-9 and the superscript 1-3 forms; COM0/LPT0
+	// name ordinary files. See notes/file-inventory-device-names.md.
 	if r := []rune(base); len(r) == 4 && (string(r[:3]) == "COM" || string(r[:3]) == "LPT") {
-		return strings.ContainsRune("0123456789¹²³", r[3])
+		return strings.ContainsRune("123456789¹²³", r[3])
 	}
 	return false
 }
