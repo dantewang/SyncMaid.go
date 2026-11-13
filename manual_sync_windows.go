@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,7 +48,7 @@ func openTransferRoots(ctx context.Context, q manualRequest) (roots *transferRoo
 	r := &transferRoots{}
 	defer func() {
 		if err != nil {
-			err = errors.Join(err, cleanupTransferIO(ctx, r.Close))
+			err = errors.Join(err, protectedTransferIO(ctx, r.Close))
 		}
 	}()
 	if r.source, err = openDirectory(q.Source); err != nil {
@@ -92,7 +90,7 @@ func validateManual(ctx context.Context, q manualRequest) (result manualRequest,
 	if err != nil {
 		return result, err
 	}
-	defer func() { err = errors.Join(err, cleanupTransferIO(ctx, r.Close)) }()
+	defer func() { err = errors.Join(err, protectedTransferIO(ctx, r.Close)) }()
 	return manualRequest{Source: r.source.path, Target: r.target.path}, nil
 }
 
@@ -106,6 +104,16 @@ type transferIO struct {
 	publish func(*os.File, windows.Handle, string, bool) error
 }
 
+type transferPublication uint8
+
+const (
+	transferStaged transferPublication = iota
+	transferPublishUnknown
+	transferPublished
+)
+
+var errTransferPublicationUnknown = errors.New("发布结果无法确认，已保留文件对象，请检查目标及临时文件")
+
 func runManualWith(ctx context.Context, q manualRequest, notify func(transferProgress), ops transferIO) (p transferProgress, err error) {
 	update := func() {
 		if notify != nil {
@@ -116,7 +124,7 @@ func runManualWith(ctx context.Context, q manualRequest, notify func(transferPro
 	if err != nil {
 		return p, err
 	}
-	defer func() { err = errors.Join(err, cleanupTransferIO(ctx, r.Close)) }()
+	defer func() { err = errors.Join(err, protectedTransferIO(ctx, r.Close)) }()
 	p.Stage = "扫描源文件夹"
 	update()
 	inventory, err := fileinventory.Scan(ctx, r.source.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
@@ -164,7 +172,7 @@ func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory
 	}
 	parents := []*os.File{}
 	defer func() {
-		err = errors.Join(err, cleanupTransferIO(ctx, func() (e error) {
+		err = errors.Join(err, protectedTransferIO(ctx, func() (e error) {
 			for i := len(parents) - 1; i >= 0; i-- {
 				e = errors.Join(e, parents[i].Close())
 			}
@@ -202,7 +210,7 @@ func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory
 	if e != nil {
 		return false, e
 	}
-	defer func() { err = errors.Join(err, cleanupTransferIO(ctx, source.Close)) }()
+	defer func() { err = errors.Join(err, protectedTransferIO(ctx, source.Close)) }()
 	stamp, e := source.Stat()
 	if e != nil {
 		return false, e
@@ -220,14 +228,14 @@ func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory
 		replace = true
 		defer func() {
 			if existing != nil {
-				err = errors.Join(err, cleanupTransferIO(ctx, existing.Close))
+				err = errors.Join(err, protectedTransferIO(ctx, existing.Close))
 			}
 		}()
 		destStamp, se := existing.Stat()
 		if se != nil {
 			return false, se
 		}
-		if stamp.Size() == destStamp.Size() && stamp.ModTime().Unix() == destStamp.ModTime().Unix() {
+		if !transferNeeded(stamp.Size(), stamp.ModTime(), destStamp.Size(), destStamp.ModTime()) {
 			return false, nil
 		}
 	} else if !errors.Is(e, windows.ERROR_FILE_NOT_FOUND) {
@@ -241,10 +249,10 @@ func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory
 	if e != nil {
 		return false, e
 	}
-	published := false
+	publication := transferStaged
 	defer func() {
-		err = errors.Join(err, cleanupTransferIO(ctx, func() (e error) {
-			if !published {
+		err = errors.Join(err, protectedTransferIO(ctx, func() (e error) {
+			if publication == transferStaged {
 				e = discardTransfer(temp)
 			}
 			return errors.Join(e, temp.Close())
@@ -273,59 +281,21 @@ func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory
 			return false, e
 		}
 	}
-	if e = ops.publish(temp, dp, name, replace); e != nil {
-		return false, e
-	}
-	published = true
-	return true, nil
-}
-
-func copyChecked(ctx context.Context, source, temp *os.File, progress func(int64)) error {
-	h := sha256.New()
-	buffer := make([]byte, 256<<10)
-	if _, err := copyTransfer(ctx, io.MultiWriter(temp, h), source, buffer, progress); err != nil {
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		return err
-	}
-	if _, err := temp.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	actual := sha256.New()
-	if _, err := copyTransfer(ctx, actual, temp, buffer, nil); err != nil {
-		return err
-	}
-	if string(h.Sum(nil)) != string(actual.Sum(nil)) {
-		return errors.New("目标临时文件完整性校验失败")
-	}
-	return ctx.Err()
-}
-
-func copyTransfer(ctx context.Context, dst io.Writer, src io.Reader, buffer []byte, progress func(int64)) (total int64, err error) {
-	for {
-		if err = ctx.Err(); err != nil {
-			return total, err
+	e = protectedTransferIO(ctx, func() error {
+		if e := ctx.Err(); e != nil {
+			return e
 		}
-		n, re := src.Read(buffer)
-		if n > 0 {
-			written, we := dst.Write(buffer[:n])
-			total += int64(written)
-			if progress != nil {
-				progress(int64(written))
-			}
-			if we != nil {
-				return total, we
-			}
-			if written != n {
-				return total, io.ErrShortWrite
-			}
+		// Once publish is attempted, an error alone is insufficient evidence
+		// that this handle still names our temp. Never delete that object on
+		// an uncertain result: it might already be the new target. Do not infer
+		// success from a missing path, either. No Windows bug is assumed here.
+		publication = transferPublishUnknown
+		if e := ops.publish(temp, dp, name, replace); e != nil {
+			return fmt.Errorf("%w (临时名称 %q): %w", errTransferPublicationUnknown, temp.Name(), e)
 		}
-		if re == io.EOF {
-			return total, nil
-		}
-		if re != nil {
-			return total, re
-		}
-	}
+		publication = transferPublished
+		copied = true
+		return nil
+	})
+	return copied, e
 }

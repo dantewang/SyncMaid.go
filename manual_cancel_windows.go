@@ -18,17 +18,20 @@ type transferIOGate struct {
 	enabled bool
 }
 
-// Cancellation must not interrupt deletion/close of the temporary file itself.
-func cleanupTransferIO(ctx context.Context, cleanup func() error) error {
+// Exclude new CancelSynchronousIo calls from cleanup and the publish/result
+// interval. The same mutex covers the cancellation syscall, so a call already
+// issuing finishes before masking. An OS cancellation request already issued
+// cannot be withdrawn; this is not a hard guarantee about driver completion.
+func protectedTransferIO(ctx context.Context, action func() error) error {
 	g, ok := ctx.Value(transferIOKey{}).(*transferIOGate)
 	if !ok {
-		return cleanup()
+		return action()
 	}
 	g.mu.Lock()
 	g.enabled = false
 	g.mu.Unlock()
 	defer func() { g.mu.Lock(); g.enabled = ctx.Err() == nil; g.mu.Unlock() }()
-	return cleanup()
+	return action()
 }
 
 // Keep synchronous file operations on a known thread so stopping also asks

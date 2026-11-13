@@ -3,9 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
-	"golang.org/x/sys/windows"
 	"os"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 func ntError(err error) error {
@@ -59,7 +60,11 @@ func openTransferChild(parent windows.Handle, name string, dir bool, disposition
 		windows.CloseHandle(h)
 		return nil, e
 	}
-	return os.NewFile(uintptr(h), name), nil
+	f := os.NewFile(uintptr(h), name)
+	if f == nil {
+		return nil, errors.Join(errors.New("invalid file handle"), windows.CloseHandle(h))
+	}
+	return f, nil
 }
 
 // Windows-specific variable-length NT buffers live here, not in the UI/service.

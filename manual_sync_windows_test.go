@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -148,7 +147,18 @@ func TestManualFailureAndCancellationPreserveDestination(t *testing.T) {
 				t.Fatalf("%+v %v", p, e)
 			}
 			manualRead(t, filepath.Join(q.Target, "f"), "original")
-			noTransferTemps(t, q.Target)
+			if failure == "publish" {
+				if !errors.Is(e, errTransferPublicationUnknown) {
+					t.Fatal(e)
+				}
+				files, err := filepath.Glob(filepath.Join(q.Target, ".syncmaid-*.tmp"))
+				if err != nil || len(files) != 1 {
+					t.Fatal(files, err)
+				}
+				manualRead(t, files[0], strings.Repeat("new", 100000))
+			} else {
+				noTransferTemps(t, q.Target)
+			}
 		})
 	}
 }
@@ -254,13 +264,6 @@ func TestManualDestinationFileSymlinkRejected(t *testing.T) {
 	}
 	manualRead(t, outside, "outside")
 }
-func TestCopyTransferShortWrite(t *testing.T) {
-	_, e := copyTransfer(context.Background(), shortTransferWriter{}, strings.NewReader("input"), make([]byte, 8), nil)
-	if !errors.Is(e, io.ErrShortWrite) {
-		t.Fatal(e)
-	}
-}
-
 func TestManualPinsOpenFilesAndDirectory(t *testing.T) {
 	q := manualFixture(t)
 	s, d := filepath.Join(q.Source, "sub", "f"), filepath.Join(q.Target, "sub", "f")
@@ -296,10 +299,6 @@ func TestManualHardLinkRefused(t *testing.T) {
 	}
 	noTransferTemps(t, q.Target)
 }
-
-type shortTransferWriter struct{}
-
-func (shortTransferWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
 
 func TestManualSessionStopAndQuit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -349,7 +348,7 @@ func TestManualCleanupDisablesIOInterruption(t *testing.T) {
 	ctx = context.WithValue(ctx, transferIOKey{}, g)
 	cancel()
 	sentinel := errors.New("cleanup fault")
-	e := cleanupTransferIO(ctx, func() error {
+	e := protectedTransferIO(ctx, func() error {
 		if g.enabled {
 			t.Fatal("cleanup interruption enabled")
 		}
