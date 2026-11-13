@@ -38,7 +38,7 @@ type mainWindow interface {
 
 // lifecycle and its window/tray are owned exclusively by MyGo's main thread.
 // The phase is the only authority for hide/show/quit decisions. See AGENT.md
-// for the transition contract; there is no background application work yet.
+// for the transition contract. Session work is canceled before explicit quit.
 type lifecycle struct {
 	phase       phase
 	window      mainWindow

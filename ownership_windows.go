@@ -25,11 +25,15 @@ type directoryObject struct {
 }
 
 func openDirectory(path string) (*directoryObject, error) {
+	return openDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
+}
+
+func openDirectoryAccess(path string, access uint32) (*directoryObject, error) {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, err
 	}
-	h, err := windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES,
+	h, err := windows.CreateFile(name, access,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
 		windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	if err != nil {

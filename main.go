@@ -13,16 +13,12 @@ import (
 type application struct {
 	installation installation
 	lifecycle    lifecycle
+	manual       manualSession
+	window       *mygo.Window
 }
 
 func (a *application) view(c *ui.Context) {
-	ui.Column(c).Fill().Center().Gap(16).Padding(24).Children(func() {
-		ui.Text(c, "SyncMaid").FontSize(26).Bold()
-		ui.Text(c, "Native UI project initialized.").TextColor(c.Theme().TextMuted)
-		ui.Text(c, "Close hides to the tray. Use Exit to quit.")
-		ui.Text(c, "Data: "+pathLabel(a.installation.data)).FontSize(12)
-		ui.Button(c, "Exit").OnClick(a.lifecycle.exit)
-	})
+	a.manualView(c)
 }
 
 func run() (result error) {
@@ -59,7 +55,7 @@ func run() (result error) {
 	mygo.App.SetPath(mygo.PathUserData, install.data)
 	mygo.App.SetPath(mygo.PathCache, filepath.Join(install.data, "cache"))
 	mygo.App.SetPath(mygo.PathLogs, filepath.Join(install.data, "logs"))
-	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.lifecycle.beginQuit() })
+	mygo.App.OnBeforeQuit(a.beforeQuit)
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.lifecycle.finish() })
 	mygo.App.OnQuit(func() { slog.Info("application-exited") })
 	var startupError error
@@ -84,10 +80,10 @@ func run() (result error) {
 		window, err := createStartupWindow(func() *mygo.Window {
 			return mygo.NewWindow(mygo.WindowOptions{
 				Title:     "SyncMaid",
-				Width:     640,
-				Height:    420,
-				MinWidth:  320,
-				MinHeight: 280,
+				Width:     760,
+				Height:    620,
+				MinWidth:  600,
+				MinHeight: 520,
 				Content:   ui.View(a.view),
 			})
 		})
@@ -97,6 +93,7 @@ func run() (result error) {
 			return
 		}
 		a.lifecycle.ready(window, mygo.App.Quit, tray.Destroy)
+		a.window = window
 		window.OnClose(func(e *mygo.CloseEvent) {
 			if a.lifecycle.closeRequested() {
 				e.PreventDefault()
@@ -104,7 +101,7 @@ func run() (result error) {
 		})
 		menu := mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "Show main window", Click: func(*mygo.MenuItem, *mygo.Window) { a.lifecycle.show() }},
-			{Label: "Exit", Click: func(*mygo.MenuItem, *mygo.Window) { a.lifecycle.exit() }},
+			{Label: "Exit", Click: func(*mygo.MenuItem, *mygo.Window) { a.requestQuit() }},
 		})
 		tray.OnClick(a.lifecycle.show)
 		tray.OnRightClick(func() {
