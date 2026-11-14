@@ -18,6 +18,7 @@ type manualDestination struct {
 	Collision  taskconfig.CollisionPolicy
 }
 type manualTaskRequest struct {
+	Trigger      taskconfig.Trigger
 	Kind         taskconfig.TaskKind
 	Source       string
 	Destinations []manualDestination

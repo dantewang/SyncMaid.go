@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"syncmaid/internal/taskconfig"
 
 	"github.com/egoist/mygo"
@@ -12,13 +13,17 @@ import (
 )
 
 type application struct {
-	installation installation
-	lifecycle    lifecycle
-	manual       manualSession
-	window       *mygo.Window
-	tasks        *savedTaskLibrary
-	taskError    error
-	results      map[taskconfig.ID]savedTaskResult
+	watchWorkers  sync.WaitGroup
+	watches       map[taskconfig.ID]*watchedTask
+	watchPhase    watchServicePhase
+	watchActivity string
+	installation  installation
+	lifecycle     lifecycle
+	manual        manualSession
+	window        *mygo.Window
+	tasks         *savedTaskLibrary
+	taskError     error
+	results       map[taskconfig.ID]savedTaskResult
 }
 
 func (a *application) view(c *ui.Context) {
@@ -47,6 +52,7 @@ func run() (result error) {
 	dataDirectory := owner.dataDirectory()
 	install.data = dataDirectory.path
 	a := &application{installation: install}
+	defer a.watchWorkers.Wait()
 	activation, err := startActivation(dataDirectory.key, func() { mygo.App.WhenReady(a.lifecycle.show) })
 	if err != nil {
 		slog.Warn("activation-server-unavailable", "error", err)
@@ -60,7 +66,7 @@ func run() (result error) {
 	mygo.App.SetPath(mygo.PathCache, filepath.Join(install.data, "cache"))
 	mygo.App.SetPath(mygo.PathLogs, filepath.Join(install.data, "logs"))
 	mygo.App.OnBeforeQuit(a.beforeQuit)
-	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.lifecycle.finish() })
+	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.stopWatches(watchesStopped); a.lifecycle.finish() })
 	mygo.App.OnQuit(func() { slog.Info("application-exited") })
 	var startupError error
 	mygo.App.WhenReady(func() {

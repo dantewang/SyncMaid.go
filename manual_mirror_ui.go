@@ -48,6 +48,7 @@ func (a *application) confirmMirror(ctx context.Context, p mirrorPreview) error 
 	reply := make(chan error, 1)
 	a.window.Update(func() {
 		if ctx.Err() == nil {
+			a.lifecycle.show()
 			a.manual.mirrorPreview = &p
 			a.manual.mirrorReply = reply
 		}

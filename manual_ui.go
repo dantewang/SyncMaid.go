@@ -29,25 +29,28 @@ const (
 // All session state belongs to the native main thread. Workers only receive
 // immutable requests and post value copies. Persistence also runs off-thread.
 type manualSession struct {
-	kind               taskconfig.TaskKind
-	phase              manualPhase
-	source, target     string
-	request            manualTaskRequest
-	cancel             context.CancelFunc
-	progress           transferProgress
-	message            string
-	quitPending        bool
-	id                 taskconfig.ID
-	name               string
-	targets            []manualDestination
-	targetID           taskconfig.ID
-	targetName         string
-	dirty              bool
-	destinationResults multipleResult
-	filterEditor       filterEditor
-	filterDrafts       map[taskconfig.ID]filterEditor
-	mirrorPreview      *mirrorPreview
-	mirrorReply        chan error
+	trigger                 taskconfig.Trigger
+	quietText, triggerError string
+	onEdit                  func()
+	kind                    taskconfig.TaskKind
+	phase                   manualPhase
+	source, target          string
+	request                 manualTaskRequest
+	cancel                  context.CancelFunc
+	progress                transferProgress
+	message                 string
+	quitPending             bool
+	id                      taskconfig.ID
+	name                    string
+	targets                 []manualDestination
+	targetID                taskconfig.ID
+	targetName              string
+	dirty                   bool
+	destinationResults      multipleResult
+	filterEditor            filterEditor
+	filterDrafts            map[taskconfig.ID]filterEditor
+	mirrorPreview           *mirrorPreview
+	mirrorReply             chan error
 }
 
 type savedTaskResult struct {
@@ -62,6 +65,9 @@ func (s *manualSession) busy() bool {
 func (s *manualSession) edited() {
 	if s.busy() {
 		return
+	}
+	if s.onEdit != nil {
+		s.onEdit()
 	}
 	s.phase = manualDraft
 	s.flushTarget()
@@ -92,6 +98,12 @@ func (a *application) manualView(c *ui.Context) {
 								label = "● " + label
 							}
 							id := t.ID
+							if w := a.watches[id]; w != nil {
+								ui.Text(c, w.status).FontSize(11)
+							}
+							if result, ok := a.results[id]; ok {
+								ui.Text(c, result.message).FontSize(11)
+							}
 							ui.Button(c, label).FillWidth().Disabled(s.busy() || s.dirty || a.taskError != nil).OnClick(func() { a.selectManual(id) })
 						}
 					}
@@ -102,6 +114,7 @@ func (a *application) manualView(c *ui.Context) {
 			ui.Column(c).FillWidth().Gap(8).Padding(16).Children(func() {
 				ui.Text(c, "SyncMaid").FontSize(26).Bold()
 				a.manualActions(c, locked)
+				a.watchView(c)
 				a.mirrorPreviewView(c)
 			})
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
@@ -121,6 +134,7 @@ func (a *application) manualView(c *ui.Context) {
 						ui.TextInput(c, &s.source).Label("源文件夹路径").Grow(1).Placeholder("源文件夹绝对路径").ReadOnly(locked).OnChange(s.edited)
 						ui.Button(c, "选择源").Disabled(locked).OnClick(func() { a.chooseFolder(true) })
 					})
+					a.triggerView(c, locked)
 					a.manualKindView(c, locked)
 					a.manualTargetsView(c, locked)
 					ui.Text(c, "新增/更新依大小和整秒修改时间判断；Mirror移除另行确认。")
@@ -158,6 +172,8 @@ func (a *application) chooseFolder(source bool) {
 			}
 			if s.quitPending {
 				a.requestQuit()
+			} else {
+				a.drainWatches()
 			}
 		})
 	}()
@@ -167,13 +183,34 @@ func (a *application) startManual() {
 	if a.tasks == nil || a.taskError != nil || a.selectedTaskIssue() != nil || s.dirty || (s.phase != manualReady && s.phase != manualFinished) {
 		return
 	}
+	a.startTaskRun(s.id, s.name, s.request, false)
+}
+func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRequest, automatic bool) {
+	s := &a.manual
+	if s.busy() {
+		return
+	}
+	if !automatic {
+		if w := a.watches[id]; w != nil {
+			w.ticket.invalidate(watchArmed)
+			if w.timer != nil {
+				w.timer.Stop()
+			}
+		}
+	}
+	previous := s.phase
+	showResult := s.id == id && !s.dirty
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	s.phase = manualRunning
-	s.message = "正在运行…"
-	s.progress = transferProgress{}
-	q := s.request
-	s.destinationResults = initialDestinationResults(q)
+	a.watchActivity = name + ": 正在运行"
+	if showResult {
+		s.message = "正在运行…"
+	}
+	if showResult {
+		s.progress = transferProgress{}
+		s.destinationResults = initialDestinationResults(q)
+	}
 	go func() {
 		last := time.Time{}
 		var lastID taskconfig.ID
@@ -188,6 +225,9 @@ func (a *application) startManual() {
 			lastState = r.State
 			lastStage = r.Progress.Stage
 			a.window.Update(func() {
+				if !showResult {
+					return
+				}
 				s.destinationResults[r.ID] = r
 				s.progress = r.Progress
 				if r.State != destinationRunning {
@@ -204,6 +244,27 @@ func (a *application) startManual() {
 		a.window.Update(func() {
 			cancel()
 			s.cancel = nil
+			if a.results == nil {
+				a.results = map[taskconfig.ID]savedTaskResult{}
+			}
+			message := "运行完成"
+			if err != nil {
+				message = "运行未完成: " + err.Error()
+			}
+			a.results[id] = savedTaskResult{message: message, destinations: results}
+			a.watchActivity = name + ": " + message
+			if w := a.watches[id]; w != nil && w.ticket.phase == watchArmed {
+				w.status = message
+			}
+			if !showResult {
+				s.phase = previous
+				if s.quitPending {
+					a.requestQuit()
+				} else {
+					a.drainWatches()
+				}
+				return
+			}
 			s.destinationResults = results
 			s.phase = manualFinished
 			switch {
@@ -217,19 +278,22 @@ func (a *application) startManual() {
 			if err != nil {
 				slog.Warn("multiple-sync-ended", "error", err, "targets", len(q.Destinations))
 			}
-			if s.id != "" {
+			if id != "" {
 				if a.results == nil {
 					a.results = make(map[taskconfig.ID]savedTaskResult)
 				}
-				a.results[s.id] = savedTaskResult{message: s.message, progress: s.progress, destinations: s.destinationResults}
+				a.results[id] = savedTaskResult{message: s.message, progress: s.progress, destinations: s.destinationResults}
 			}
 			if s.quitPending {
 				a.requestQuit()
+			} else {
+				a.drainWatches()
 			}
 		})
 	}()
 }
 func (a *application) stopManual() {
+	a.stopWatches(watchesPaused)
 	s := &a.manual
 	if s.phase != manualRunning && s.phase != manualChecking {
 		return
@@ -239,6 +303,7 @@ func (a *application) stopManual() {
 	s.cancel()
 }
 func (a *application) requestQuit() {
+	a.stopWatches(watchesStopped)
 	s := &a.manual
 	if s.busy() {
 		s.quitPending = true
@@ -254,6 +319,7 @@ func (a *application) requestQuit() {
 	a.lifecycle.exit()
 }
 func (a *application) beforeQuit(e *mygo.QuitEvent) {
+	a.stopWatches(watchesStopped)
 	if a.manual.busy() {
 		e.PreventDefault()
 		a.manual.quitPending = true

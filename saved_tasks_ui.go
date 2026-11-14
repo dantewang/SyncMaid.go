@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -24,7 +25,7 @@ func (a *application) newManual() {
 		return
 	}
 	d := manualDestination{ID: taskconfig.NewID(), Name: "目标 1", Filters: allFileRules()}
-	a.manual = manualSession{phase: manualDraft, quitPending: a.manual.quitPending, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, message: "请输入名称与路径，然后保存任务。"}
+	a.manual = manualSession{onEdit: func() { a.pauseEditingWatch(a.manual.id) }, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, message: "请输入名称与路径，然后保存任务。"}
 }
 func (a *application) selectManual(id taskconfig.ID) {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
@@ -35,7 +36,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 		a.manual.message = err.Error()
 		return
 	}
-	s := manualSession{kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
+	s := manualSession{onEdit: func() { a.pauseEditingWatch(a.manual.id) }, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
 	for _, d := range t.Destinations {
 		s.targets = append(s.targets, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy})
 	}
@@ -45,6 +46,9 @@ func (a *application) selectManual(id taskconfig.ID) {
 		s.targetName = d.Name
 		s.target = d.Path
 		s.loadFilterDraft(d.ID)
+	}
+	if t.Trigger.SettleSeconds != nil {
+		s.quietText = fmt.Sprint(*t.Trigger.SettleSeconds)
 	}
 	s.request, err = multipleRequestFromSaved(t)
 	if err != nil {
@@ -100,6 +104,7 @@ func (a *application) reloadTasks() {
 					a.newManual()
 				}
 			}
+			a.syncWatches()
 			if s.quitPending {
 				a.requestQuit()
 			}
@@ -116,6 +121,10 @@ func (a *application) createManual() {
 	}
 	if strings.TrimSpace(s.name) == "" {
 		s.message = "请输入任务名称"
+		return
+	}
+	if s.triggerError != "" {
+		s.message = s.triggerError
 		return
 	}
 	if err := s.filterDraftError(); err != nil {
@@ -160,6 +169,7 @@ func (a *application) finishTaskSave(next *savedTaskLibrary, id taskconfig.ID, v
 		a.pauseQuitAfterTaskError()
 		return
 	}
+	a.syncWatches()
 	if s.quitPending {
 		a.requestQuit()
 	}
@@ -167,6 +177,7 @@ func (a *application) finishTaskSave(next *savedTaskLibrary, id taskconfig.ID, v
 func (a *application) pauseQuitAfterTaskError() {
 	if a.manual.quitPending {
 		a.manual.quitPending = false
+		a.watchPhase = watchesPaused
 		a.manual.message += "；退出已暂停，请先核对未保存的编辑。"
 		a.lifecycle.show()
 	}
@@ -182,6 +193,7 @@ func (a *application) confirmDeleteManual() {
 		return
 	}
 	id, name, previous := s.id, s.name, s.phase
+	a.pauseEditingWatch(id)
 	s.phase = manualChoosing
 	go func() {
 		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: a.window, Type: mygo.MessageWarning, Title: "删除任务", Message: "确认删除任务「" + name + "」？", Detail: "只删除任务记录，不删除源或目标文件。未保存编辑也会放弃。", Buttons: []string{"取消", "删除"}, DefaultButton: 0, CancelButton: 0, DestructiveButtons: []int{1}})
@@ -193,12 +205,14 @@ func (a *application) confirmDeleteManual() {
 			}
 			if err != nil {
 				s.message = "删除确认失败: " + err.Error()
+				a.syncWatches()
 				return
 			}
 			if result.Button == 1 {
 				a.deleteManual(id)
 			} else {
 				s.message = "已取消删除"
+				a.syncWatches()
 			}
 		})
 	}()
@@ -234,6 +248,7 @@ func (a *application) deleteManual(id taskconfig.ID) {
 				}
 				s.message = "任务已删除，源与目标文件保留。"
 			}
+			a.syncWatches()
 			if s.quitPending {
 				a.requestQuit()
 			}

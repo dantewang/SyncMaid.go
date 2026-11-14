@@ -17,7 +17,7 @@ func (s *manualSession) flushTarget() {
 	}
 }
 func (s *manualSession) draftRequest() manualTaskRequest {
-	return manualTaskRequest{Kind: manualKind(s.kind), Source: s.source, Destinations: append([]manualDestination(nil), s.targets...)}
+	return manualTaskRequest{Kind: manualKind(s.kind), Trigger: s.trigger, Source: s.source, Destinations: append([]manualDestination(nil), s.targets...)}
 }
 func (s *manualSession) selectTarget(id taskconfig.ID) {
 	if s.busy() {
@@ -107,10 +107,12 @@ func (a *application) discardManual() {
 	if id != "" {
 		if _, err := a.tasks.find(id); err == nil {
 			a.selectManual(id)
+			a.syncWatches()
 			return
 		}
 	}
 	a.newManual()
+	a.syncWatches()
 }
 
 func (a *application) manualTargetsView(c *ui.Context, locked bool) {

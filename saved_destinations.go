@@ -15,13 +15,16 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 	if t.HasUnknownFields() || t.Trigger.HasUnknownFields() {
 		return manualTaskRequest{}, errors.New("任务含未支持字段")
 	}
-	if (t.Kind != taskconfig.Sync && t.Kind != taskconfig.Moving) || t.Trigger.Kind != "manual" || len(t.Destinations) == 0 {
-		return manualTaskRequest{}, errors.New("仅支持有目标的手动Sync/Move任务")
+	if (t.Kind != taskconfig.Sync && t.Kind != taskconfig.Moving) || (t.Trigger.Kind != "manual" && t.Trigger.Kind != "watch") || len(t.Destinations) == 0 {
+		return manualTaskRequest{}, errors.New("仅支持有目标的Manual/Watch Sync/Move任务")
 	}
 	if strings.TrimSpace(t.Name) == "" {
 		return manualTaskRequest{}, errors.New("任务名称为空")
 	}
-	q := manualTaskRequest{Kind: t.Kind, Source: t.SourcePath}
+	if e := validateApplicationTrigger(t.Trigger); e != nil {
+		return manualTaskRequest{}, e
+	}
+	q := manualTaskRequest{Kind: t.Kind, Trigger: t.Trigger, Source: t.SourcePath}
 	seen := map[taskconfig.ID]bool{}
 	for _, d := range t.Destinations {
 		if d.ID == "" || seen[d.ID] {
@@ -33,6 +36,9 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 		}
 		if d.Target.Kind != "local" || (t.Kind == taskconfig.Sync && ((d.Strategy != taskconfig.AddOnly && d.Strategy != taskconfig.Mirror) || d.FlattenStructure)) || (t.Kind == taskconfig.Moving && (d.Strategy != taskconfig.Move || (d.CollisionPolicy != "" && d.CollisionPolicy != taskconfig.Skip))) {
 			return manualTaskRequest{}, errors.New("不支持此任务策略、目标类型、平铺或冲突配置")
+		}
+		if t.Kind == taskconfig.Sync && d.CollisionPolicy != taskconfig.Skip && d.CollisionPolicy != "" {
+			return manualTaskRequest{}, errors.New("Sync暂不支持此冲突策略")
 		}
 		if strings.TrimSpace(d.Name) == "" {
 			return manualTaskRequest{}, errors.New("目标名称为空")
@@ -101,6 +107,9 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 			modeErr = validateMoveDestination(edit)
 		} else {
 			modeErr = validateDestinationMode(edit)
+			if edit.Collision != "" && edit.Collision != taskconfig.Skip {
+				modeErr = errors.New("Sync暂不支持此冲突策略")
+			}
 			if edit.Flatten {
 				modeErr = errors.New("Sync不能平铺")
 			}
@@ -132,6 +141,17 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 			}
 		}
 	}
+	trigger := q.Trigger
+	if trigger.Kind == "" {
+		trigger = taskconfig.Trigger{Kind: "manual"}
+	}
+	if trigger.Kind != "manual" && trigger.Kind != "watch" {
+		return nil, id, errors.New("不支持此触发方式")
+	}
+	if e := validateApplicationTrigger(trigger); e != nil {
+		return nil, id, e
+	}
+	task.Trigger = trigger
 	task.Name = name
 	task.SourcePath = q.Source
 	task.Destinations = destinations
