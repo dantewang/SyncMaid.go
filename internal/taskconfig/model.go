@@ -102,6 +102,13 @@ type Target struct {
 	extra extras
 }
 
+// HasUnknownFields reports preserved members whose meaning is not implemented.
+// These methods inspect this object only; consumers must check nested objects.
+func (t Task) HasUnknownFields() bool        { return len(t.extra) != 0 }
+func (d Destination) HasUnknownFields() bool { return len(d.extra) != 0 }
+func (t Target) HasUnknownFields() bool      { return len(t.extra) != 0 }
+func (t Trigger) HasUnknownFields() bool     { return len(t.extra) != 0 }
+
 // Trigger/Rule use explicit discriminators. The codec and Validate reject
 // incompatible payloads created in Go; no implicit nil/bool lifecycle exists.
 type Trigger struct {

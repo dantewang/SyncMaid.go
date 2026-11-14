@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/taskconfig"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -15,6 +16,9 @@ type application struct {
 	lifecycle    lifecycle
 	manual       manualSession
 	window       *mygo.Window
+	tasks        *savedTaskLibrary
+	taskError    error
+	results      map[taskconfig.ID]savedTaskResult
 }
 
 func (a *application) view(c *ui.Context) {
@@ -80,10 +84,10 @@ func run() (result error) {
 		window, err := createStartupWindow(func() *mygo.Window {
 			return mygo.NewWindow(mygo.WindowOptions{
 				Title:     "SyncMaid",
-				Width:     760,
-				Height:    620,
-				MinWidth:  600,
-				MinHeight: 520,
+				Width:     1000,
+				Height:    700,
+				MinWidth:  760,
+				MinHeight: 560,
 				Content:   ui.View(a.view),
 			})
 		})
@@ -94,6 +98,7 @@ func run() (result error) {
 		}
 		a.lifecycle.ready(window, mygo.App.Quit, tray.Destroy)
 		a.window = window
+		a.reloadTasks()
 		window.OnClose(func(e *mygo.CloseEvent) {
 			if a.lifecycle.closeRequested() {
 				e.PreventDefault()

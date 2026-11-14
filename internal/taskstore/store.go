@@ -1,5 +1,6 @@
-// Package taskstore stores only tasks.json. It is not connected to production
-// Data or UI. Successful decoding and saving never authorize task execution.
+// Package taskstore atomically stores a caller-selected task file. The app uses
+// its Go-specific file in owned Data, never the legacy Rust tasks.json.
+// Successful decoding and saving never authorize task execution.
 //
 // A Store serializes its own operations. Snapshots detect observed changes to
 // primary and backup before writing, but checks plus rename are NOT cross-process
