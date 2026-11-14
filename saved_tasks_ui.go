@@ -23,7 +23,7 @@ func (a *application) newManual() {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
 		return
 	}
-	d := manualDestination{ID: taskconfig.NewID(), Name: "目标 1"}
+	d := manualDestination{ID: taskconfig.NewID(), Name: "目标 1", Filters: allFileRules()}
 	a.manual = manualSession{phase: manualDraft, quitPending: a.manual.quitPending, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, message: "请输入名称与路径，然后保存任务。"}
 }
 func (a *application) selectManual(id taskconfig.ID) {
@@ -37,13 +37,14 @@ func (a *application) selectManual(id taskconfig.ID) {
 	}
 	s := manualSession{phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
 	for _, d := range t.Destinations {
-		s.targets = append(s.targets, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path})
+		s.targets = append(s.targets, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters})
 	}
 	if len(s.targets) > 0 {
 		d := s.targets[0]
 		s.targetID = d.ID
 		s.targetName = d.Name
 		s.target = d.Path
+		s.loadFilterDraft(d.ID)
 	}
 	s.request, err = multipleRequestFromSaved(t)
 	if err != nil {
@@ -117,6 +118,10 @@ func (a *application) createManual() {
 		s.message = "请输入任务名称"
 		return
 	}
+	if err := s.filterDraftError(); err != nil {
+		s.message = "过滤尚未保存: " + err.Error()
+		return
+	}
 	id, name, q := s.id, s.name, s.draftRequest()
 	library := a.tasks
 	s.phase = manualSaving
@@ -172,6 +177,10 @@ func (a *application) confirmDeleteManual() {
 	if s.busy() || a.tasks == nil || a.taskError != nil || s.id == "" || a.selectedTaskIssue() != nil {
 		return
 	}
+	if err := a.taskDeletionIssue(); err != nil {
+		s.message = err.Error()
+		return
+	}
 	id, name, previous := s.id, s.name, s.phase
 	s.phase = manualChoosing
 	go func() {
@@ -197,6 +206,10 @@ func (a *application) confirmDeleteManual() {
 func (a *application) deleteManual(id taskconfig.ID) {
 	s := &a.manual
 	if s.busy() || a.tasks == nil || a.taskError != nil || s.id != id || a.selectedTaskIssue() != nil {
+		return
+	}
+	if err := a.taskDeletionIssue(); err != nil {
+		s.message = err.Error()
 		return
 	}
 	library := a.tasks

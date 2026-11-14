@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/sys/windows"
 	"syncmaid/internal/fileinventory"
+	"syncmaid/internal/taskconfig"
 )
 
 // manualRequest is a session task, deliberately separate from persisted legacy tasks.
@@ -19,6 +20,8 @@ type transferProgress struct {
 	Stage, Path              string
 	Total, Copied, Unchanged int
 	Bytes                    int64
+	SourceFiles              int
+	SourceEmpty              bool
 }
 
 type transferRoots struct {
@@ -121,6 +124,12 @@ const (
 var errTransferPublicationUnknown = errors.New("发布结果无法确认，已保留文件对象，请检查目标及临时文件")
 
 func runManualWith(ctx context.Context, q manualRequest, notify func(transferProgress), ops transferIO) (p transferProgress, err error) {
+	return runManualWithFilters(ctx, q, notify, ops, []taskconfig.Rule{{Kind: "all"}})
+}
+func runManualFiltered(ctx context.Context, q manualRequest, rules []taskconfig.Rule, notify func(transferProgress)) (transferProgress, error) {
+	return runManualWithFilters(ctx, q, notify, transferIO{copy: copyChecked, publish: publishTransfer}, rules)
+}
+func runManualWithFilters(ctx context.Context, q manualRequest, notify func(transferProgress), ops transferIO, rules []taskconfig.Rule) (p transferProgress, err error) {
 	update := func() {
 		if notify != nil {
 			notify(p)
@@ -137,8 +146,21 @@ func runManualWith(ctx context.Context, q manualRequest, notify func(transferPro
 	if err != nil {
 		return p, err
 	} // No destination mutation before a complete source scan.
-	files := inventory.Files()
+	raw := inventory.Files()
+	p.SourceFiles = len(raw)
+	p.SourceEmpty = inventory.Empty()
+	p.Stage = "准备过滤"
+	update()
+	files, filterErr := selectFilteredFiles(ctx, raw, rules)
+	if filterErr != nil {
+		return p, filterErr
+	}
 	p.Total = len(files)
+	if len(files) == 0 {
+		p.Stage = "无匹配文件"
+		update()
+		return p, ctx.Err()
+	}
 	p.Stage = "同步中"
 	update()
 	for _, entry := range files {

@@ -62,10 +62,13 @@ func requestFromSaved(t taskconfig.Task) (manualRequest, error) {
 	if len(q.Destinations) != 1 {
 		return manualRequest{}, errors.New("需要单目标任务")
 	}
+	if !isAllFileRules(q.Destinations[0].Filters) {
+		return manualRequest{}, errors.New("无过滤的单目标接口不能忽略现有过滤规则")
+	}
 	return manualRequest{Source: q.Source, Target: q.Destinations[0].Path}, nil
 }
 func (l *savedTaskLibrary) save(id taskconfig.ID, name string, q manualRequest) (*savedTaskLibrary, taskconfig.ID, error) {
-	d := manualDestination{ID: taskconfig.NewID(), Name: "目标", Path: q.Target}
+	d := manualDestination{ID: taskconfig.NewID(), Name: "目标", Path: q.Target, Filters: allFileRules()}
 	if id != "" {
 		t, err := l.find(id)
 		if err != nil {
@@ -80,6 +83,10 @@ func (l *savedTaskLibrary) save(id taskconfig.ID, name string, q manualRequest) 
 		}
 		d.ID = old.Destinations[0].ID
 		d.Name = old.Destinations[0].Name
+		if !isAllFileRules(old.Destinations[0].Filters) {
+			return nil, id, errors.New("无过滤的单目标保存接口不能覆盖过滤规则")
+		}
+		d.Filters = old.Destinations[0].Filters
 	}
 	return l.saveMultiple(id, name, manualTaskRequest{Source: q.Source, Destinations: []manualDestination{d}})
 }
@@ -91,7 +98,7 @@ func (l *savedTaskLibrary) remove(id taskconfig.ID) (*savedTaskLibrary, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err = multipleRequestFromSaved(task); err != nil {
+	if err = filterDeletionIssue(task); err != nil {
 		return nil, err
 	}
 	tasks, err := l.snapshot.Tasks()

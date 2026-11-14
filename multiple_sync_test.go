@@ -18,7 +18,7 @@ func multiFixture(t *testing.T) (manualTaskRequest, manualRequest) {
 	if e := os.Mkdir(second, 0700); e != nil {
 		t.Fatal(e)
 	}
-	q := manualTaskRequest{Source: first.Source, Destinations: []manualDestination{{ID: taskconfig.NewID(), Name: "First", Path: first.Target}, {ID: taskconfig.NewID(), Name: "Second", Path: second}}}
+	q := manualTaskRequest{Source: first.Source, Destinations: []manualDestination{{ID: taskconfig.NewID(), Name: "First", Path: first.Target, Filters: allFileRules()}, {ID: taskconfig.NewID(), Name: "Second", Path: second, Filters: allFileRules()}}}
 	return q, first
 }
 func TestMultipleDestinationsCRUDKeepsIDsAndFields(t *testing.T) {

@@ -43,6 +43,8 @@ type manualSession struct {
 	targetName         string
 	dirty              bool
 	destinationResults multipleResult
+	filterEditor       filterEditor
+	filterDrafts       map[taskconfig.ID]filterEditor
 }
 
 type savedTaskResult struct {
@@ -93,41 +95,37 @@ func (a *application) manualView(c *ui.Context) {
 				})
 			})
 		})
-		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
-			ui.Column(c).FillWidth().Gap(12).Padding(20).Children(func() {
+		ui.Column(c).Grow(1).FillHeight().Children(func() {
+			ui.Column(c).FillWidth().Gap(8).Padding(16).Children(func() {
 				ui.Text(c, "SyncMaid").FontSize(26).Bold()
-				ui.Text(c, "手动仅添加 · 任务保存在 tasks-go.json")
-				if a.taskError != nil {
-					ui.Text(c, "任务文件不可用，已阻止保存与运行: "+a.taskError.Error())
-					ui.Text(c, "修复文件或备份问题后重新载入。不会以空列表覆盖。")
-				}
-				if issue := a.selectedTaskIssue(); issue != nil {
-					ui.Text(c, "此任务不可运行或编辑: "+issue.Error())
-				}
-				ui.Text(c, "任务名称")
-				ui.TextInput(c, &s.name).Label("任务名称").ReadOnly(locked).OnChange(s.edited)
-				ui.Text(c, "源文件夹")
-				ui.Row(c).Gap(8).Children(func() {
-					ui.TextInput(c, &s.source).Label("源文件夹路径").Grow(1).Placeholder("源文件夹绝对路径").ReadOnly(locked).OnChange(s.edited)
-					ui.Button(c, "选择源").Disabled(locked).OnClick(func() { a.chooseFolder(true) })
+				a.manualActions(c, locked)
+			})
+			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+				ui.Column(c).FillWidth().Gap(12).Padding(20).Children(func() {
+					ui.Text(c, "手动仅添加 · 任务保存在 tasks-go.json")
+					if a.taskError != nil {
+						ui.Text(c, "任务文件不可用，已阻止保存与运行: "+a.taskError.Error())
+						ui.Text(c, "修复文件或备份问题后重新载入。不会以空列表覆盖。")
+					}
+					if issue := a.selectedTaskIssue(); issue != nil {
+						ui.Text(c, "此任务不可运行或编辑: "+issue.Error())
+					}
+					ui.Text(c, "任务名称")
+					ui.TextInput(c, &s.name).Label("任务名称").ReadOnly(locked).OnChange(s.edited)
+					ui.Text(c, "源文件夹")
+					ui.Row(c).Gap(8).Children(func() {
+						ui.TextInput(c, &s.source).Label("源文件夹路径").Grow(1).Placeholder("源文件夹绝对路径").ReadOnly(locked).OnChange(s.edited)
+						ui.Button(c, "选择源").Disabled(locked).OnClick(func() { a.chooseFolder(true) })
+					})
+					a.manualTargetsView(c, locked)
+					ui.Text(c, "更新大小或整秒修改时间不同的文件；不删除目标额外文件。")
+					ui.Text(c, s.message)
+					p := s.progress
+					ui.Text(c, fmt.Sprintf("当前/最后目标 %s · 已发布 %d / %d · 未变化 %d · 已传输 %d 字节", p.Stage, p.Copied, p.Total, p.Unchanged, p.Bytes))
+					ui.Text(c, p.Path).FontSize(12)
+					ui.Text(c, "关闭窗口隐藏到托盘，不停止任务。停止保留已发布文件。")
+					ui.Text(c, "Data: "+pathLabel(a.installation.data)).FontSize(12)
 				})
-				a.manualTargetsView(c, locked)
-				ui.Text(c, "更新大小或整秒修改时间不同的文件；不删除目标额外文件。")
-				ui.Row(c).Gap(8).Children(func() {
-					ui.Button(c, "保存任务").Disabled(locked || a.taskError != nil).OnClick(a.createManual)
-					ui.Button(c, "删除任务").Disabled(locked || a.taskError != nil || s.id == "").OnClick(a.confirmDeleteManual)
-				})
-				ui.Row(c).Gap(8).Children(func() {
-					ui.Button(c, "运行").Disabled(a.taskError != nil || (s.phase != manualReady && s.phase != manualFinished)).OnClick(a.startManual)
-					ui.Button(c, "停止").Disabled(s.phase != manualRunning && s.phase != manualChecking).OnClick(a.stopManual)
-					ui.Button(c, "Exit").OnClick(a.requestQuit)
-				})
-				ui.Text(c, s.message)
-				p := s.progress
-				ui.Text(c, fmt.Sprintf("当前/最后目标 %s · 已发布 %d / %d · 未变化 %d · 已传输 %d 字节", p.Stage, p.Copied, p.Total, p.Unchanged, p.Bytes))
-				ui.Text(c, p.Path).FontSize(12)
-				ui.Text(c, "关闭窗口隐藏到托盘，不停止任务。停止保留已发布文件。")
-				ui.Text(c, "Data: "+pathLabel(a.installation.data)).FontSize(12)
 			})
 		})
 	})
@@ -252,4 +250,18 @@ func (a *application) beforeQuit(e *mygo.QuitEvent) {
 		return
 	}
 	a.lifecycle.beginQuit()
+}
+
+func (a *application) manualActions(c *ui.Context, locked bool) {
+	s := &a.manual
+	ui.Row(c).Gap(8).Children(func() {
+		ui.Button(c, "保存任务").Disabled(locked || a.taskError != nil).OnClick(a.createManual)
+		ui.Button(c, "删除任务").Disabled(locked || a.taskError != nil || s.id == "").OnClick(a.confirmDeleteManual)
+	})
+	ui.Row(c).Gap(8).Children(func() {
+		ui.Button(c, "运行").Disabled(a.taskError != nil || (s.phase != manualReady && s.phase != manualFinished)).OnClick(a.startManual)
+		ui.Button(c, "停止").Disabled(s.phase != manualRunning && s.phase != manualChecking).OnClick(a.stopManual)
+		ui.Button(c, "Exit").OnClick(a.requestQuit)
+	})
+
 }

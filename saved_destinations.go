@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"syncmaid/internal/filefilter"
 
 	"syncmaid/internal/taskconfig"
 	"syncmaid/internal/taskstore"
@@ -33,17 +34,10 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 		if d.Strategy != taskconfig.AddOnly || d.Target.Kind != "local" || d.FlattenStructure {
 			return manualTaskRequest{}, errors.New("仅支持保留目录结构的本地 Add-only")
 		}
-		if len(d.Filters) != 1 {
-			return manualTaskRequest{}, errors.New("当前界面不支持过滤规则")
-		}
-		r := d.Filters[0]
-		if r.Kind != "all" || r.HasUnknownFields() || r.Prefix != nil || r.Extension != nil || r.Pattern != nil || r.Rules != nil || r.Rule != nil {
-			return manualTaskRequest{}, errors.New("当前界面不支持此过滤规则")
-		}
 		if strings.TrimSpace(d.Name) == "" {
 			return manualTaskRequest{}, errors.New("目标名称为空")
 		}
-		q.Destinations = append(q.Destinations, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path})
+		q.Destinations = append(q.Destinations, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters})
 	}
 	return q, nil
 }
@@ -96,7 +90,23 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		}
 		d.Name = edit.Name
 		d.Target.Path = edit.Path
+		if !sameFilterRules(d.Filters, edit.Filters) {
+			if ok && projectFilterEditor(d.Filters).Mode == filterReadOnly {
+				return nil, id, errors.New("只读过滤规则不能改写")
+			}
+			if form := projectFilterEditor(edit.Filters); form.Mode == filterReadOnly {
+				return nil, id, errors.New("编辑器不能保存此复杂或不支持的过滤规则")
+			}
+			d.Filters = edit.Filters
+		}
 		destinations = append(destinations, d)
+	}
+	for oldID, d := range old {
+		if !seen[oldID] {
+			if _, err := filefilter.Compile(d.Filters); err != nil {
+				return nil, id, errors.New("不能移除含不支持过滤的目标")
+			}
+		}
 	}
 	task.Name = name
 	task.SourcePath = q.Source

@@ -11,6 +11,7 @@ import (
 type manualDestination struct {
 	ID         taskconfig.ID
 	Name, Path string
+	Filters    []taskconfig.Rule
 }
 type manualTaskRequest struct {
 	Source       string
@@ -22,6 +23,7 @@ const (
 	destinationWaiting   destinationState = "未开始"
 	destinationRunning   destinationState = "运行中"
 	destinationSucceeded destinationState = "完成"
+	destinationNoMatches destinationState = "无匹配"
 	destinationFailed    destinationState = "失败"
 	destinationCanceled  destinationState = "已停止"
 	destinationSkipped   destinationState = "未执行"
@@ -78,7 +80,7 @@ func runMultiple(ctx context.Context, q manualTaskRequest, notify func(destinati
 			if notify != nil {
 				notify(r)
 			}
-			p, e := runManual(ctx, plan.requests[d.ID], func(p transferProgress) {
+			p, e := runManualFiltered(ctx, plan.requests[d.ID], d.Filters, func(p transferProgress) {
 				r.Progress = p
 				results[d.ID] = r
 				if notify != nil {
@@ -88,7 +90,11 @@ func runMultiple(ctx context.Context, q manualTaskRequest, notify func(destinati
 			r.Progress = p
 			switch {
 			case e == nil:
-				r.State = destinationSucceeded
+				if p.Total == 0 {
+					r.State = destinationNoMatches
+				} else {
+					r.State = destinationSucceeded
+				}
 			case errors.Is(e, context.Canceled) || ctx.Err() != nil:
 				r.State = destinationCanceled
 				r.Error = e.Error()
