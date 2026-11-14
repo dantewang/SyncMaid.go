@@ -42,6 +42,12 @@ func (r *transferRoots) Close() (err error) {
 // Pin both roots and their ancestors. Identity comparisons detect aliases;
 // no-delete-sharing handles keep the resolved operation paths stable for Scan.
 func openTransferRoots(ctx context.Context, q manualRequest) (roots *transferRoots, err error) {
+	return openTransferRootsAccess(ctx, q, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE)
+}
+
+var errTransferOverlap = errors.New("源与同步目标不可重叠")
+
+func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess uint32) (roots *transferRoots, err error) {
 	if !filepath.IsAbs(q.Source) || !filepath.IsAbs(q.Target) {
 		return nil, errors.New("源与目标必须是现有文件夹的绝对路径")
 	}
@@ -54,11 +60,11 @@ func openTransferRoots(ctx context.Context, q manualRequest) (roots *transferRoo
 	if r.source, err = openDirectory(q.Source); err != nil {
 		return nil, fmt.Errorf("源文件夹: %w", err)
 	}
-	if r.target, err = openDirectoryAccess(q.Target, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE); err != nil {
+	if r.target, err = openDirectoryAccess(q.Target, targetAccess); err != nil {
 		return nil, fmt.Errorf("目标文件夹: %w", err)
 	}
 	if r.source.key == r.target.key {
-		return nil, errors.New("源与目标指向同一文件夹")
+		return nil, fmt.Errorf("%w: 源与目标指向同一文件夹", errTransferOverlap)
 	}
 	for _, pair := range [][2]*directoryObject{{r.source, r.target}, {r.target, r.source}} {
 		if err = ordinaryDirectory(pair[0].handle); err != nil {
@@ -75,7 +81,7 @@ func openTransferRoots(ctx context.Context, q manualRequest) (roots *transferRoo
 			}
 			r.ancestors = append(r.ancestors, parent)
 			if parent.key == pair[1].key {
-				return nil, errors.New("源与目标不能互相包含（包括目录别名）")
+				return nil, fmt.Errorf("%w: 源与目标互相包含（包括目录别名）", errTransferOverlap)
 			}
 			if filepath.Dir(path) == path {
 				break

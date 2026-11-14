@@ -2,9 +2,7 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"path/filepath"
-	"strings"
 
 	"syncmaid/internal/taskconfig"
 	"syncmaid/internal/taskstore"
@@ -55,81 +53,35 @@ func (l *savedTaskLibrary) find(id taskconfig.ID) (taskconfig.Task, error) {
 	return taskconfig.Task{}, errors.New("未找到此任务，请重新载入或新建")
 }
 
-// Only the slice this UI actually implements can be run or edited. Other
-// records stay intact in the library; saving another record preserves them.
+// The single-target accessor remains for callers that explicitly require a pair.
 func requestFromSaved(t taskconfig.Task) (manualRequest, error) {
-	if t.HasUnknownFields() || t.Trigger.HasUnknownFields() {
-		return manualRequest{}, errors.New("任务含未支持字段")
-	}
-	if t.Kind != taskconfig.Sync || t.Trigger.Kind != "manual" || len(t.Destinations) != 1 {
-		return manualRequest{}, errors.New("当前仅支持手动、单目标 Sync 任务")
-	}
-	d := t.Destinations[0]
-	if d.HasUnknownFields() || d.Target.HasUnknownFields() {
-		return manualRequest{}, errors.New("目标含未支持字段")
-	}
-	if d.Strategy != taskconfig.AddOnly || d.Target.Kind != "local" || d.FlattenStructure {
-		return manualRequest{}, errors.New("当前仅支持保留目录结构的本地 Add-only")
-	}
-	if len(d.Filters) != 1 {
-		return manualRequest{}, errors.New("当前界面不支持过滤规则")
-	}
-	r := d.Filters[0]
-	if r.Kind != "all" || r.HasUnknownFields() || r.Prefix != nil || r.Extension != nil || r.Pattern != nil || r.Rules != nil || r.Rule != nil {
-		return manualRequest{}, errors.New("当前界面不支持此过滤规则")
-	}
-	if strings.TrimSpace(t.Name) == "" {
-		return manualRequest{}, errors.New("任务名称为空")
-	}
-	return manualRequest{Source: t.SourcePath, Target: d.Target.Path}, nil
-}
-
-func (l *savedTaskLibrary) save(id taskconfig.ID, name string, q manualRequest) (*savedTaskLibrary, taskconfig.ID, error) {
-	if l == nil || l.snapshot == nil {
-		return nil, id, taskstore.ErrBlocked
-	}
-	if strings.TrimSpace(name) == "" {
-		return nil, id, errors.New("请输入任务名称")
-	}
-	tasks, err := l.snapshot.Tasks()
+	q, err := multipleRequestFromSaved(t)
 	if err != nil {
-		return nil, id, err
+		return manualRequest{}, err
 	}
-	index := -1
-	var task taskconfig.Task
+	if len(q.Destinations) != 1 {
+		return manualRequest{}, errors.New("需要单目标任务")
+	}
+	return manualRequest{Source: q.Source, Target: q.Destinations[0].Path}, nil
+}
+func (l *savedTaskLibrary) save(id taskconfig.ID, name string, q manualRequest) (*savedTaskLibrary, taskconfig.ID, error) {
+	d := manualDestination{ID: taskconfig.NewID(), Name: "目标", Path: q.Target}
 	if id != "" {
-		for i, t := range tasks {
-			if t.ID == id {
-				index = i
-				task = t
-				break
-			}
-		}
-		if index < 0 {
-			return nil, id, errors.New("任务已不存在，请新建")
-		}
-		if _, err = requestFromSaved(task); err != nil {
+		t, err := l.find(id)
+		if err != nil {
 			return nil, id, err
 		}
-		task.Destinations = append([]taskconfig.Destination(nil), task.Destinations...)
-	} else {
-		id = taskconfig.NewID()
-		task = taskconfig.Task{ID: id, Kind: taskconfig.Sync, Trigger: taskconfig.Trigger{Kind: "manual"}, Destinations: []taskconfig.Destination{{ID: taskconfig.NewID(), Name: "目标", Strategy: taskconfig.AddOnly, Target: taskconfig.Target{Kind: "local"}, Filters: []taskconfig.Rule{{Kind: "all"}}, VerifyContents: true, DeleteMode: taskconfig.Recycle, CollisionPolicy: taskconfig.Skip, MassDeleteThreshold: 0.5}}}
+		old, err := multipleRequestFromSaved(t)
+		if err != nil {
+			return nil, id, err
+		}
+		if len(old.Destinations) != 1 {
+			return nil, id, errors.New("单目标保存不能缩减多目标任务")
+		}
+		d.ID = old.Destinations[0].ID
+		d.Name = old.Destinations[0].Name
 	}
-	task.Name = name
-	task.SourcePath = q.Source
-	task.Destinations[0].Target.Path = q.Target
-	if index < 0 {
-		tasks = append(tasks, task)
-	} else {
-		tasks[index] = task
-	}
-	next, err := l.snapshot.Save(tasks)
-	if err != nil {
-		return nil, id, fmt.Errorf("保存任务: %w", err)
-	}
-	library, err := savedLibrary(next)
-	return library, id, err
+	return l.saveMultiple(id, name, manualTaskRequest{Source: q.Source, Destinations: []manualDestination{d}})
 }
 func (l *savedTaskLibrary) remove(id taskconfig.ID) (*savedTaskLibrary, error) {
 	if l == nil || l.snapshot == nil {
@@ -139,7 +91,7 @@ func (l *savedTaskLibrary) remove(id taskconfig.ID) (*savedTaskLibrary, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err = requestFromSaved(task); err != nil {
+	if _, err = multipleRequestFromSaved(task); err != nil {
 		return nil, err
 	}
 	tasks, err := l.snapshot.Tasks()

@@ -16,17 +16,18 @@ func (a *application) selectedTaskIssue() error {
 	if err != nil {
 		return err
 	}
-	_, err = requestFromSaved(t)
+	_, err = multipleRequestFromSaved(t)
 	return err
 }
 func (a *application) newManual() {
-	if a.manual.busy() || a.tasks == nil || a.taskError != nil {
+	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
 		return
 	}
-	a.manual = manualSession{phase: manualDraft, quitPending: a.manual.quitPending, message: "请输入名称与路径，然后保存任务。"}
+	d := manualDestination{ID: taskconfig.NewID(), Name: "目标 1"}
+	a.manual = manualSession{phase: manualDraft, quitPending: a.manual.quitPending, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, message: "请输入名称与路径，然后保存任务。"}
 }
 func (a *application) selectManual(id taskconfig.ID) {
-	if a.manual.busy() || a.tasks == nil || a.taskError != nil {
+	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
 		return
 	}
 	t, err := a.tasks.find(id)
@@ -35,10 +36,16 @@ func (a *application) selectManual(id taskconfig.ID) {
 		return
 	}
 	s := manualSession{phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
-	if len(t.Destinations) == 1 {
-		s.target = t.Destinations[0].Target.Path
+	for _, d := range t.Destinations {
+		s.targets = append(s.targets, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path})
 	}
-	s.request, err = requestFromSaved(t)
+	if len(s.targets) > 0 {
+		d := s.targets[0]
+		s.targetID = d.ID
+		s.targetName = d.Name
+		s.target = d.Path
+	}
+	s.request, err = multipleRequestFromSaved(t)
 	if err != nil {
 		s.message = "此任务不可运行或编辑: " + err.Error()
 	} else {
@@ -48,6 +55,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 			s.phase = manualFinished
 			s.message = result.message
 			s.progress = result.progress
+			s.destinationResults = result.destinations
 		}
 	}
 	a.manual = s
@@ -58,7 +66,7 @@ func (a *application) reloadTasks() {
 	if s.busy() {
 		return
 	}
-	keepDraft := s.phase == manualDraft && (s.name != "" || s.source != "" || s.target != "")
+	keepDraft := s.dirty
 	id := s.id
 	s.phase = manualLoading
 	s.message = "正在载入 Go 专用任务文件…"
@@ -109,16 +117,16 @@ func (a *application) createManual() {
 		s.message = "请输入任务名称"
 		return
 	}
-	id, name, q := s.id, s.name, manualRequest{Source: s.source, Target: s.target}
+	id, name, q := s.id, s.name, s.draftRequest()
 	library := a.tasks
 	s.phase = manualSaving
 	s.message = "检查路径并保存任务…"
 	go func() {
-		_, validationErr := validateManual(context.Background(), q)
+		validationErr := validateMultiple(context.Background(), q)
 		var writeErr error
 		var next *savedTaskLibrary
 		if validationErr == nil {
-			next, id, writeErr = library.save(id, name, q)
+			next, id, writeErr = library.saveMultiple(id, name, q)
 		}
 		a.window.Update(func() { a.finishTaskSave(next, id, validationErr, writeErr) })
 	}()
@@ -139,6 +147,7 @@ func (a *application) finishTaskSave(next *savedTaskLibrary, id taskconfig.ID, v
 	default:
 		a.tasks = next
 		delete(a.results, id)
+		s.dirty = false
 		a.selectManual(id)
 		s.message = "任务已保存，可以运行。"
 	}
@@ -204,6 +213,7 @@ func (a *application) deleteManual(id taskconfig.ID) {
 			} else {
 				a.tasks = next
 				delete(a.results, id)
+				s.dirty = false
 				if len(next.tasks) > 0 {
 					a.selectManual(next.tasks[0].ID)
 				} else {

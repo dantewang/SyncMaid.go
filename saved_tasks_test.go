@@ -205,10 +205,10 @@ func TestSavedTaskSelectionAndRunningGuards(t *testing.T) {
 	}
 	a := &application{tasks: l}
 	a.selectManual(id2)
-	if a.manual.id != id2 || a.manual.request != q2 {
+	if a.manual.id != id2 || a.manual.request.Source != q2.Source || len(a.manual.request.Destinations) != 1 || a.manual.request.Destinations[0].Path != q2.Target {
 		t.Fatal(a.manual)
 	}
-	if _, err = runManual(context.Background(), a.manual.request, nil); err != nil {
+	if _, err = runMultiple(context.Background(), a.manual.request, nil); err != nil {
 		t.Fatal(err)
 	}
 	manualRead(t, filepath.Join(q2.Target, "second"), "two")
