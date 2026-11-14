@@ -40,7 +40,7 @@ func (s *manualSession) filterDraftError() error {
 }
 func (a *application) filterEdited() {
 	s := &a.manual
-	if !a.targetEditAllowed() || s.filterEditor.Mode == filterReadOnly {
+	if !a.targetEditAllowed() || a.selectedMirror() || s.filterEditor.Mode == filterReadOnly {
 		return
 	}
 	rules, err := s.filterEditor.rules()
@@ -59,7 +59,7 @@ func (a *application) filterEdited() {
 	s.edited()
 }
 func (a *application) setFilterMode(mode filterMode) {
-	if !a.targetEditAllowed() || a.manual.filterEditor.Mode == filterReadOnly || a.manual.filterEditor.Mode == mode {
+	if !a.targetEditAllowed() || a.selectedMirror() || a.manual.filterEditor.Mode == filterReadOnly || a.manual.filterEditor.Mode == mode {
 		return
 	}
 	a.manual.filterEditor.Mode = mode

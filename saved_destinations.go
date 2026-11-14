@@ -31,13 +31,13 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 		if d.HasUnknownFields() || d.Target.HasUnknownFields() {
 			return manualTaskRequest{}, errors.New("目标含未支持字段")
 		}
-		if d.Strategy != taskconfig.AddOnly || d.Target.Kind != "local" || d.FlattenStructure {
+		if (d.Strategy != taskconfig.AddOnly && d.Strategy != taskconfig.Mirror) || d.Target.Kind != "local" || d.FlattenStructure {
 			return manualTaskRequest{}, errors.New("仅支持保留目录结构的本地 Add-only")
 		}
 		if strings.TrimSpace(d.Name) == "" {
 			return manualTaskRequest{}, errors.New("目标名称为空")
 		}
-		q.Destinations = append(q.Destinations, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters})
+		q.Destinations = append(q.Destinations, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode})
 	}
 	return q, nil
 }
@@ -90,6 +90,11 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		}
 		d.Name = edit.Name
 		d.Target.Path = edit.Path
+		if err := validateDestinationMode(edit); err != nil {
+			return nil, id, err
+		}
+		d.Strategy = destinationStrategy(edit)
+		d.DeleteMode = destinationDeleteMode(edit)
 		if !sameFilterRules(d.Filters, edit.Filters) {
 			if ok && projectFilterEditor(d.Filters).Mode == filterReadOnly {
 				return nil, id, errors.New("只读过滤规则不能改写")

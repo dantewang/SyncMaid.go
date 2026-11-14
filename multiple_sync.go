@@ -12,6 +12,8 @@ type manualDestination struct {
 	ID         taskconfig.ID
 	Name, Path string
 	Filters    []taskconfig.Rule
+	Strategy   taskconfig.Strategy
+	DeleteMode taskconfig.DeleteMode
 }
 type manualTaskRequest struct {
 	Source       string
@@ -50,6 +52,10 @@ func initialDestinationResults(q manualTaskRequest) multipleResult {
 // into success or a reason to skip healthy targets. Cancellation stops the rest.
 // Events are value copies; the final map is handed over only after work ends.
 func runMultiple(ctx context.Context, q manualTaskRequest, notify func(destinationResult)) (results multipleResult, err error) {
+	return runMultipleConfirmed(ctx, q, notify, nil)
+}
+
+func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(destinationResult), confirm mirrorConfirmation) (results multipleResult, err error) {
 	results = initialDestinationResults(q)
 	plan, err := openMultiplePlan(ctx, q)
 	if err != nil {
@@ -80,13 +86,22 @@ func runMultiple(ctx context.Context, q manualTaskRequest, notify func(destinati
 			if notify != nil {
 				notify(r)
 			}
-			p, e := runManualFiltered(ctx, plan.requests[d.ID], d.Filters, func(p transferProgress) {
+			progress := func(p transferProgress) {
 				r.Progress = p
 				results[d.ID] = r
 				if notify != nil {
 					notify(r)
 				}
-			})
+			}
+			var p transferProgress
+			e := validateDestinationMode(d)
+			if e == nil {
+				if destinationStrategy(d) == taskconfig.Mirror {
+					p, e = runMirror(ctx, plan.requests[d.ID], d, progress, confirm)
+				} else {
+					p, e = runManualFiltered(ctx, plan.requests[d.ID], d.Filters, progress)
+				}
+			}
 			r.Progress = p
 			switch {
 			case e == nil:

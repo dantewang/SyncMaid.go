@@ -10,7 +10,7 @@ import (
 func TestNativeView(t *testing.T) {
 	a := &application{installation: installation{data: `\\?\C:\isolated\Data`}}
 	tt := ui.NewTester(a.view, 640, 420)
-	if !tt.HasText("SyncMaid") || !tt.HasText("手动仅添加 · 任务保存在 tasks-go.json") || !tt.HasText("任务列表") {
+	if !tt.HasText("SyncMaid") || !tt.HasText("手动同步 · 任务保存在 tasks-go.json") || !tt.HasText("任务列表") {
 		t.Fatalf("unexpected startup view: %q", tt.Texts())
 	}
 	if !tt.HasText(`Data: C:\isolated\Data`) {

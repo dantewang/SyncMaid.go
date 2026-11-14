@@ -100,6 +100,7 @@ func run() (result error) {
 		a.window = window
 		a.reloadTasks()
 		window.OnClose(func(e *mygo.CloseEvent) {
+			a.answerMirror(false)
 			if a.lifecycle.closeRequested() {
 				e.PreventDefault()
 			}

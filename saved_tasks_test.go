@@ -98,7 +98,7 @@ func TestSavedTaskUnknownFieldsAndStrategyAreNotDowngraded(t *testing.T) {
 			case "Rule":
 				object = d["Filters"].([]any)[0].(map[string]any)
 			case "Strategy":
-				d["Strategy"] = "Mirror"
+				d["Strategy"] = "Move"
 			}
 			if object != nil {
 				object["Future"] = json.RawMessage(`{"Counter":900719925474099312345}`)
@@ -133,7 +133,7 @@ func TestSavedTaskUnknownFieldsAndStrategyAreNotDowngraded(t *testing.T) {
 				t.Fatal(err)
 			}
 			if unsupported == "Strategy" {
-				if !bytes.Contains(b, []byte(`"Mirror"`)) {
+				if !bytes.Contains(b, []byte(`"Move"`)) {
 					t.Fatal("strategy lost")
 				}
 			} else if !bytes.Contains(b, []byte("900719925474099312345")) {

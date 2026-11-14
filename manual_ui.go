@@ -45,6 +45,8 @@ type manualSession struct {
 	destinationResults multipleResult
 	filterEditor       filterEditor
 	filterDrafts       map[taskconfig.ID]filterEditor
+	mirrorPreview      *mirrorPreview
+	mirrorReply        chan error
 }
 
 type savedTaskResult struct {
@@ -99,10 +101,11 @@ func (a *application) manualView(c *ui.Context) {
 			ui.Column(c).FillWidth().Gap(8).Padding(16).Children(func() {
 				ui.Text(c, "SyncMaid").FontSize(26).Bold()
 				a.manualActions(c, locked)
+				a.mirrorPreviewView(c)
 			})
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Padding(20).Children(func() {
-					ui.Text(c, "手动仅添加 · 任务保存在 tasks-go.json")
+					ui.Text(c, "手动同步 · 任务保存在 tasks-go.json")
 					if a.taskError != nil {
 						ui.Text(c, "任务文件不可用，已阻止保存与运行: "+a.taskError.Error())
 						ui.Text(c, "修复文件或备份问题后重新载入。不会以空列表覆盖。")
@@ -118,7 +121,7 @@ func (a *application) manualView(c *ui.Context) {
 						ui.Button(c, "选择源").Disabled(locked).OnClick(func() { a.chooseFolder(true) })
 					})
 					a.manualTargetsView(c, locked)
-					ui.Text(c, "更新大小或整秒修改时间不同的文件；不删除目标额外文件。")
+					ui.Text(c, "新增/更新依大小和整秒修改时间判断；Mirror移除另行确认。")
 					ui.Text(c, s.message)
 					p := s.progress
 					ui.Text(c, fmt.Sprintf("当前/最后目标 %s · 已发布 %d / %d · 未变化 %d · 已传输 %d 字节", p.Stage, p.Copied, p.Total, p.Unchanged, p.Bytes))
@@ -173,13 +176,15 @@ func (a *application) startManual() {
 		last := time.Time{}
 		var lastID taskconfig.ID
 		var lastState destinationState
+		var lastStage string
 		notify := func(r destinationResult) {
-			if r.ID == lastID && r.State == lastState && time.Since(last) < 100*time.Millisecond {
+			if r.ID == lastID && r.State == lastState && r.Progress.Stage == lastStage && time.Since(last) < 100*time.Millisecond {
 				return
 			}
 			last = time.Now()
 			lastID = r.ID
 			lastState = r.State
+			lastStage = r.Progress.Stage
 			a.window.Update(func() {
 				s.destinationResults[r.ID] = r
 				s.progress = r.Progress
@@ -189,7 +194,11 @@ func (a *application) startManual() {
 			})
 		}
 		var results multipleResult
-		err := interruptibleIO(ctx, func(ctx context.Context) error { var e error; results, e = runMultiple(ctx, q, notify); return e })
+		err := interruptibleIO(ctx, func(ctx context.Context) error {
+			var e error
+			results, e = runMultipleConfirmed(ctx, q, notify, a.confirmMirror)
+			return e
+		})
 		a.window.Update(func() {
 			cancel()
 			s.cancel = nil

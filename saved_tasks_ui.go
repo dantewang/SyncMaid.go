@@ -37,7 +37,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 	}
 	s := manualSession{phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
 	for _, d := range t.Destinations {
-		s.targets = append(s.targets, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters})
+		s.targets = append(s.targets, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode})
 	}
 	if len(s.targets) > 0 {
 		d := s.targets[0]

@@ -20,6 +20,7 @@ type transferProgress struct {
 	Stage, Path              string
 	Total, Copied, Unchanged int
 	Bytes                    int64
+	Removed                  int
 	SourceFiles              int
 	SourceEmpty              bool
 }

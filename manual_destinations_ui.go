@@ -129,7 +129,7 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 					ui.Button(c, "下移").Label("下移 " + d.Name).Disabled(locked || i == len(s.targets)-1).OnClick(func() { a.moveManualTarget(id, 1) })
 				})
 				if r, ok := s.destinationResults[id]; ok {
-					ui.Text(c, fmt.Sprintf("%s: %s · 原始文件 %d · 匹配 %d · 已发布 %d · 未变化 %d", r.Name, r.State, r.Progress.SourceFiles, r.Progress.Total, r.Progress.Copied, r.Progress.Unchanged)).FontSize(12)
+					ui.Text(c, fmt.Sprintf("%s: %s · 原始文件 %d · 匹配 %d · 已发布 %d · 未变化 %d · 已移除 %d", r.Name, r.State, r.Progress.SourceFiles, r.Progress.Total, r.Progress.Copied, r.Progress.Unchanged, r.Progress.Removed)).FontSize(12)
 					if r.Error != "" {
 						ui.Text(c, r.Error).FontSize(12)
 					}
@@ -147,5 +147,6 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 		ui.TextInput(c, &s.target).Label("目标文件夹路径").Grow(1).Placeholder("现有目标文件夹绝对路径").ReadOnly(locked).OnChange(s.edited)
 		ui.Button(c, "选择目标").Disabled(locked).OnClick(func() { a.chooseFolder(false) })
 	})
-	a.filtersView(c, locked)
+	a.destinationModeView(c, locked)
+	a.filtersView(c, locked || a.selectedMirror())
 }
