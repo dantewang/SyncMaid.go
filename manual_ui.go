@@ -29,6 +29,7 @@ const (
 // All session state belongs to the native main thread. Workers only receive
 // immutable requests and post value copies. Persistence also runs off-thread.
 type manualSession struct {
+	kind               taskconfig.TaskKind
 	phase              manualPhase
 	source, target     string
 	request            manualTaskRequest
@@ -120,6 +121,7 @@ func (a *application) manualView(c *ui.Context) {
 						ui.TextInput(c, &s.source).Label("源文件夹路径").Grow(1).Placeholder("源文件夹绝对路径").ReadOnly(locked).OnChange(s.edited)
 						ui.Button(c, "选择源").Disabled(locked).OnClick(func() { a.chooseFolder(true) })
 					})
+					a.manualKindView(c, locked)
 					a.manualTargetsView(c, locked)
 					ui.Text(c, "新增/更新依大小和整秒修改时间判断；Mirror移除另行确认。")
 					ui.Text(c, s.message)

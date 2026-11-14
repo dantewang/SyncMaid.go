@@ -17,7 +17,7 @@ func (s *manualSession) flushTarget() {
 	}
 }
 func (s *manualSession) draftRequest() manualTaskRequest {
-	return manualTaskRequest{Source: s.source, Destinations: append([]manualDestination(nil), s.targets...)}
+	return manualTaskRequest{Kind: manualKind(s.kind), Source: s.source, Destinations: append([]manualDestination(nil), s.targets...)}
 }
 func (s *manualSession) selectTarget(id taskconfig.ID) {
 	if s.busy() {
@@ -45,6 +45,10 @@ func (a *application) addManualTarget() {
 	s := &a.manual
 	s.flushTarget()
 	d := manualDestination{ID: taskconfig.NewID(), Name: fmt.Sprintf("目标 %d", len(s.targets)+1), Filters: allFileRules()}
+	if manualKind(s.kind) == taskconfig.Moving {
+		d.Strategy = taskconfig.Move
+		d.Collision = taskconfig.Skip
+	}
 	s.targets = append(s.targets, d)
 	s.selectTarget(d.ID)
 	s.edited()
@@ -129,7 +133,7 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 					ui.Button(c, "下移").Label("下移 " + d.Name).Disabled(locked || i == len(s.targets)-1).OnClick(func() { a.moveManualTarget(id, 1) })
 				})
 				if r, ok := s.destinationResults[id]; ok {
-					ui.Text(c, fmt.Sprintf("%s: %s · 原始文件 %d · 匹配 %d · 已发布 %d · 未变化 %d · 已移除 %d", r.Name, r.State, r.Progress.SourceFiles, r.Progress.Total, r.Progress.Copied, r.Progress.Unchanged, r.Progress.Removed)).FontSize(12)
+					ui.Text(c, fmt.Sprintf("%s: %s · 原始文件 %d · 匹配 %d · 已发布 %d · 未变化 %d · 已移除 %d · 移动 %d · 保留 %d · 失败 %d · 源未匹配 %d", r.Name, r.State, r.Progress.SourceFiles, r.Progress.Total, r.Progress.Copied, r.Progress.Unchanged, r.Progress.Removed, r.Progress.Moved, r.Progress.Retained, r.Progress.Failed, r.Progress.Unmatched)).FontSize(12)
 					if r.Error != "" {
 						ui.Text(c, r.Error).FontSize(12)
 					}
@@ -147,6 +151,10 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 		ui.TextInput(c, &s.target).Label("目标文件夹路径").Grow(1).Placeholder("现有目标文件夹绝对路径").ReadOnly(locked).OnChange(s.edited)
 		ui.Button(c, "选择目标").Disabled(locked).OnClick(func() { a.chooseFolder(false) })
 	})
-	a.destinationModeView(c, locked)
+	if manualKind(s.kind) == taskconfig.Moving {
+		a.moveOptionsView(c, locked)
+	} else {
+		a.destinationModeView(c, locked)
+	}
 	a.filtersView(c, locked || a.selectedMirror())
 }

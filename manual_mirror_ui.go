@@ -8,7 +8,7 @@ import (
 )
 
 func (a *application) setDestinationMode(strategy taskconfig.Strategy, mode taskconfig.DeleteMode) {
-	if !a.targetEditAllowed() {
+	if !a.targetEditAllowed() || manualKind(a.manual.kind) == taskconfig.Moving {
 		return
 	}
 	for i := range a.manual.targets {

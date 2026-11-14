@@ -17,12 +17,13 @@ import (
 // manualRequest is a session task, deliberately separate from persisted legacy tasks.
 type manualRequest struct{ Source, Target string }
 type transferProgress struct {
-	Stage, Path              string
-	Total, Copied, Unchanged int
-	Bytes                    int64
-	Removed                  int
-	SourceFiles              int
-	SourceEmpty              bool
+	Stage, Path                        string
+	Total, Copied, Unchanged           int
+	Bytes                              int64
+	Removed                            int
+	Moved, Retained, Failed, Unmatched int
+	SourceFiles                        int
+	SourceEmpty                        bool
 }
 
 type transferRoots struct {
@@ -110,8 +111,9 @@ func runManual(ctx context.Context, q manualRequest, notify func(transferProgres
 
 // Only the two fallible transfer boundaries are injectable; tests still use real files.
 type transferIO struct {
-	copy    func(context.Context, *os.File, *os.File, func(int64)) error
-	publish func(*os.File, windows.Handle, string, bool) error
+	copy         func(context.Context, *os.File, *os.File, func(int64)) error
+	publish      func(*os.File, windows.Handle, string, bool) error
+	sourceDelete func(*os.File) error
 }
 
 type transferPublication uint8
@@ -189,7 +191,10 @@ func runManualWithFilters(ctx context.Context, q manualRequest, notify func(tran
 	return p, nil
 }
 
-func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory.File, ops transferIO, progress func(int64)) (copied bool, err error) {
+func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory.File, ops transferIO, progress func(int64)) (bool, error) {
+	return transferFileTo(ctx, roots, entry, entry.Path, nil, ops, progress)
+}
+func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinventory.File, targetRel string, expected *mirrorStamp, ops transferIO, progress func(int64)) (copied bool, err error) {
 	if err = ctx.Err(); err != nil {
 		return false, err
 	}
@@ -210,7 +215,7 @@ func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory
 	}()
 	// Open every actual directory relative to a pinned handle; never follow a
 	// replaced junction. Held no-delete-sharing handles also pin its spelling.
-	openParents := func(root windows.Handle, create bool) (windows.Handle, error) {
+	openParents := func(root windows.Handle, create bool, parts []string) (windows.Handle, error) {
 		parent := root
 		for _, part := range parts[:len(parts)-1] {
 			mode := uint32(windows.FILE_OPEN)
@@ -230,12 +235,16 @@ func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory
 		}
 		return parent, nil
 	}
-	sp, e := openParents(roots.source.handle, false)
+	sp, e := openParents(roots.source.handle, false, parts)
 	if e != nil {
 		return false, e
 	}
 	name := parts[len(parts)-1]
-	source, e := openTransferChild(sp, name, false, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ)
+	access := uint32(windows.GENERIC_READ)
+	if expected != nil {
+		access |= windows.DELETE
+	}
+	source, e := openTransferChild(sp, name, false, windows.FILE_OPEN, access, windows.FILE_SHARE_READ)
 	if e != nil {
 		return false, e
 	}
@@ -247,13 +256,32 @@ func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory
 	if stamp.Size() != entry.Size || !stamp.ModTime().Equal(entry.Modified) {
 		return false, errors.New("源文件已在扫描后改变，请重新运行")
 	}
-	dp, e := openParents(roots.target.handle, true)
+	if expected != nil {
+		actual, e := mirrorFileStamp(source)
+		if e != nil {
+			return false, e
+		}
+		if actual != *expected {
+			return false, errors.New("源对象已变化，请重新运行")
+		}
+	}
+	targetParts := strings.Split(targetRel, "/")
+	for _, part := range targetParts {
+		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, `\:`) {
+			return false, errors.New("非法目标相对路径")
+		}
+	}
+	name = targetParts[len(targetParts)-1]
+	dp, e := openParents(roots.target.handle, true, targetParts)
 	if e != nil {
 		return false, e
 	}
 	existing, e := openTransferChild(dp, name, false, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
 	replace := false
 	if e == nil {
+		if expected != nil {
+			return false, existing.Close()
+		}
 		replace = true
 		defer func() {
 			if existing != nil {
@@ -326,5 +354,27 @@ func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory
 		copied = true
 		return nil
 	})
+	if e == nil && copied && expected != nil {
+		e = protectedTransferIO(ctx, func() error {
+			if e := ctx.Err(); e != nil {
+				return e
+			}
+			actual, e := mirrorFileStamp(source)
+			if e != nil {
+				return e
+			}
+			if actual != *expected {
+				return errors.New("目标已发布，但源对象已变化，未移除源")
+			}
+			remove := ops.sourceDelete
+			if remove == nil {
+				remove = discardTransfer
+			}
+			if e := remove(source); e != nil {
+				return fmt.Errorf("目标已发布，源移除未完成，请检查两处文件: %w", e)
+			}
+			return nil
+		})
+	}
 	return copied, e
 }

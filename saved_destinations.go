@@ -15,13 +15,13 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 	if t.HasUnknownFields() || t.Trigger.HasUnknownFields() {
 		return manualTaskRequest{}, errors.New("任务含未支持字段")
 	}
-	if t.Kind != taskconfig.Sync || t.Trigger.Kind != "manual" || len(t.Destinations) == 0 {
-		return manualTaskRequest{}, errors.New("仅支持有目标的手动 Sync 任务")
+	if (t.Kind != taskconfig.Sync && t.Kind != taskconfig.Moving) || t.Trigger.Kind != "manual" || len(t.Destinations) == 0 {
+		return manualTaskRequest{}, errors.New("仅支持有目标的手动Sync/Move任务")
 	}
 	if strings.TrimSpace(t.Name) == "" {
 		return manualTaskRequest{}, errors.New("任务名称为空")
 	}
-	q := manualTaskRequest{Source: t.SourcePath}
+	q := manualTaskRequest{Kind: t.Kind, Source: t.SourcePath}
 	seen := map[taskconfig.ID]bool{}
 	for _, d := range t.Destinations {
 		if d.ID == "" || seen[d.ID] {
@@ -31,13 +31,13 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 		if d.HasUnknownFields() || d.Target.HasUnknownFields() {
 			return manualTaskRequest{}, errors.New("目标含未支持字段")
 		}
-		if (d.Strategy != taskconfig.AddOnly && d.Strategy != taskconfig.Mirror) || d.Target.Kind != "local" || d.FlattenStructure {
-			return manualTaskRequest{}, errors.New("仅支持保留目录结构的本地 Add-only")
+		if d.Target.Kind != "local" || (t.Kind == taskconfig.Sync && ((d.Strategy != taskconfig.AddOnly && d.Strategy != taskconfig.Mirror) || d.FlattenStructure)) || (t.Kind == taskconfig.Moving && (d.Strategy != taskconfig.Move || (d.CollisionPolicy != "" && d.CollisionPolicy != taskconfig.Skip))) {
+			return manualTaskRequest{}, errors.New("不支持此任务策略、目标类型、平铺或冲突配置")
 		}
 		if strings.TrimSpace(d.Name) == "" {
 			return manualTaskRequest{}, errors.New("目标名称为空")
 		}
-		q.Destinations = append(q.Destinations, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode})
+		q.Destinations = append(q.Destinations, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy})
 	}
 	return q, nil
 }
@@ -54,7 +54,10 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		return nil, id, err
 	}
 	index := -1
-	task := taskconfig.Task{Kind: taskconfig.Sync, Trigger: taskconfig.Trigger{Kind: "manual"}}
+	if manualKind(q.Kind) != taskconfig.Sync && manualKind(q.Kind) != taskconfig.Moving {
+		return nil, id, errors.New("未知任务类型")
+	}
+	task := taskconfig.Task{Kind: manualKind(q.Kind), Trigger: taskconfig.Trigger{Kind: "manual"}}
 	if id != "" {
 		for i, t := range tasks {
 			if t.ID == id {
@@ -73,6 +76,9 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		id = taskconfig.NewID()
 		task.ID = id
 	}
+	if task.Kind != manualKind(q.Kind) {
+		return nil, id, errors.New("已保存任务不能改变Sync/Move类型")
+	}
 	old := map[taskconfig.ID]taskconfig.Destination{}
 	for _, d := range task.Destinations {
 		old[d.ID] = d
@@ -90,11 +96,24 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		}
 		d.Name = edit.Name
 		d.Target.Path = edit.Path
-		if err := validateDestinationMode(edit); err != nil {
+		var modeErr error
+		if task.Kind == taskconfig.Moving {
+			modeErr = validateMoveDestination(edit)
+		} else {
+			modeErr = validateDestinationMode(edit)
+			if edit.Flatten {
+				modeErr = errors.New("Sync不能平铺")
+			}
+		}
+		if err := modeErr; err != nil {
 			return nil, id, err
 		}
 		d.Strategy = destinationStrategy(edit)
 		d.DeleteMode = destinationDeleteMode(edit)
+		d.FlattenStructure = edit.Flatten
+		if task.Kind == taskconfig.Moving {
+			d.CollisionPolicy = taskconfig.Skip
+		}
 		if !sameFilterRules(d.Filters, edit.Filters) {
 			if ok && projectFilterEditor(d.Filters).Mode == filterReadOnly {
 				return nil, id, errors.New("只读过滤规则不能改写")

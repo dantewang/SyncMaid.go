@@ -14,8 +14,11 @@ type manualDestination struct {
 	Filters    []taskconfig.Rule
 	Strategy   taskconfig.Strategy
 	DeleteMode taskconfig.DeleteMode
+	Flatten    bool
+	Collision  taskconfig.CollisionPolicy
 }
 type manualTaskRequest struct {
+	Kind         taskconfig.TaskKind
 	Source       string
 	Destinations []manualDestination
 }
@@ -56,6 +59,9 @@ func runMultiple(ctx context.Context, q manualTaskRequest, notify func(destinati
 }
 
 func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(destinationResult), confirm mirrorConfirmation) (results multipleResult, err error) {
+	if manualKind(q.Kind) == taskconfig.Moving {
+		return runMove(ctx, q, notify)
+	}
 	results = initialDestinationResults(q)
 	plan, err := openMultiplePlan(ctx, q)
 	if err != nil {
