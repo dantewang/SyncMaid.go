@@ -20,8 +20,8 @@ func validateMoveDestination(d manualDestination) error {
 	if d.Strategy != taskconfig.Move {
 		return errors.New("Move任务只能使用Move目标")
 	}
-	if d.Collision != "" && d.Collision != taskconfig.Skip {
-		return errors.New("当前Move仅支持冲突保留源，暂不支持加编号")
+	if d.Collision != "" && d.Collision != taskconfig.Skip && d.Collision != taskconfig.Suffix {
+		return errors.New("Move仅支持Skip或Suffix冲突策略")
 	}
 	return nil
 }
@@ -142,7 +142,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 			if d.Flatten {
 				rel = path.Base(rel)
 			}
-			published, e := moveFile(ctx, roots, f, rel, stamps[f.Path], func(n int64) { r.Progress.Bytes += n; emit() })
+			published, e := moveFile(ctx, roots, f, rel, stamps[f.Path], d.Collision, func(n int64) { r.Progress.Bytes += n; emit() })
 			if published {
 				r.Progress.Copied++
 			}

@@ -33,6 +33,9 @@ func destinationDeleteMode(d manualDestination) taskconfig.DeleteMode {
 }
 
 func validateDestinationMode(d manualDestination) error {
+	if d.Collision != "" && d.Collision != taskconfig.Skip {
+		return errors.New("Sync暂不支持此冲突策略")
+	}
 	switch destinationStrategy(d) {
 	case taskconfig.AddOnly:
 	case taskconfig.Mirror:

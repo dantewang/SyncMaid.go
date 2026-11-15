@@ -111,6 +111,7 @@ func runManual(ctx context.Context, q manualRequest, notify func(transferProgres
 
 // Only the two fallible transfer boundaries are injectable; tests still use real files.
 type transferIO struct {
+	collision    taskconfig.CollisionPolicy
 	copy         func(context.Context, *os.File, *os.File, func(int64)) error
 	publish      func(*os.File, windows.Handle, string, bool) error
 	sourceDelete func(*os.File) error
@@ -276,27 +277,32 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	if e != nil {
 		return false, e
 	}
-	existing, e := openTransferChild(dp, name, false, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
+	var existing *os.File
 	replace := false
-	if e == nil {
-		if expected != nil {
-			return false, existing.Close()
-		}
-		replace = true
-		defer func() {
-			if existing != nil {
-				err = errors.Join(err, protectedTransferIO(ctx, existing.Close))
+	suffix := expected != nil && ops.collision == taskconfig.Suffix
+	if !suffix {
+		existing, e = openTransferChild(dp, name, false, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
+		if e == nil {
+			if expected != nil {
+				return false, existing.Close()
 			}
-		}()
-		destStamp, se := existing.Stat()
-		if se != nil {
-			return false, se
+			replace = true
+			defer func() {
+				if existing != nil {
+					err = errors.Join(err, protectedTransferIO(ctx, existing.Close))
+				}
+			}()
+			destStamp, se := existing.Stat()
+			if se != nil {
+				return false, se
+			}
+			if !transferNeeded(stamp.Size(), stamp.ModTime(), destStamp.Size(), destStamp.ModTime()) {
+				return false, nil
+			}
+		} else if !errors.Is(e, windows.ERROR_FILE_NOT_FOUND) {
+			return false, e
 		}
-		if !transferNeeded(stamp.Size(), stamp.ModTime(), destStamp.Size(), destStamp.ModTime()) {
-			return false, nil
-		}
-	} else if !errors.Is(e, windows.ERROR_FILE_NOT_FOUND) {
-		return false, e
+
 	}
 	if err = ctx.Err(); err != nil {
 		return false, err
@@ -338,22 +344,28 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 			return false, e
 		}
 	}
-	e = protectedTransferIO(ctx, func() error {
-		if e := ctx.Err(); e != nil {
-			return e
-		}
-		// Once publish is attempted, an error alone is insufficient evidence
-		// that this handle still names our temp. Never delete that object on
-		// an uncertain result: it might already be the new target. Do not infer
-		// success from a missing path, either. No Windows bug is assumed here.
-		publication = transferPublishUnknown
-		if e := ops.publish(temp, dp, name, replace); e != nil {
-			return fmt.Errorf("%w (临时名称 %q): %w", errTransferPublicationUnknown, temp.Name(), e)
-		}
-		publication = transferPublished
-		copied = true
-		return nil
-	})
+	if suffix {
+		publication, e = publishMoveSuffix(ctx, temp, dp, name, ops.publish)
+		copied = publication == transferPublished
+	} else {
+		e = protectedTransferIO(ctx, func() error {
+			if e := ctx.Err(); e != nil {
+				return e
+			}
+			// Once publish is attempted, an error alone is insufficient evidence
+			// that this handle still names our temp. Never delete that object on
+			// an uncertain result: it might already be the new target. Do not infer
+			// success from a missing path, either. No Windows bug is assumed here.
+			publication = transferPublishUnknown
+			if e := ops.publish(temp, dp, name, replace); e != nil {
+				return fmt.Errorf("%w (临时名称 %q): %w", errTransferPublicationUnknown, temp.Name(), e)
+			}
+			publication = transferPublished
+			copied = true
+			return nil
+		})
+
+	}
 	if e == nil && copied && expected != nil {
 		e = protectedTransferIO(ctx, func() error {
 			if e := ctx.Err(); e != nil {

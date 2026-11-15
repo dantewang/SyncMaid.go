@@ -233,9 +233,9 @@ func TestMovePersistenceAndGuards(t *testing.T) {
 		t.Fatal("running edit")
 	}
 	task, _ := l.find(id)
-	task.Destinations[0].CollisionPolicy = taskconfig.Suffix
+	task.Destinations[0].CollisionPolicy = taskconfig.CollisionPolicy("Future")
 	if _, e := multipleRequestFromSaved(task); e == nil {
-		t.Fatal("unsupported suffix ignored")
+		t.Fatal("unsupported collision policy ignored")
 	}
 	q.Kind = taskconfig.Sync
 	if _, _, e = l.saveMultiple(id, "wrong kind", q); e == nil {

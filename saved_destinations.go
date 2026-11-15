@@ -35,7 +35,7 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 		if d.HasUnknownFields() || d.Target.HasUnknownFields() {
 			return manualTaskRequest{}, errors.New("目标含未支持字段")
 		}
-		if d.Target.Kind != "local" || (t.Kind == taskconfig.Sync && ((d.Strategy != taskconfig.AddOnly && d.Strategy != taskconfig.Mirror) || d.FlattenStructure)) || (t.Kind == taskconfig.Moving && (d.Strategy != taskconfig.Move || (d.CollisionPolicy != "" && d.CollisionPolicy != taskconfig.Skip))) {
+		if d.Target.Kind != "local" || (t.Kind == taskconfig.Sync && ((d.Strategy != taskconfig.AddOnly && d.Strategy != taskconfig.Mirror) || d.FlattenStructure)) || (t.Kind == taskconfig.Moving && (d.Strategy != taskconfig.Move || (d.CollisionPolicy != "" && d.CollisionPolicy != taskconfig.Skip && d.CollisionPolicy != taskconfig.Suffix))) {
 			return manualTaskRequest{}, errors.New("不支持此任务策略、目标类型、平铺或冲突配置")
 		}
 		if t.Kind == taskconfig.Sync && d.CollisionPolicy != taskconfig.Skip && d.CollisionPolicy != "" {
@@ -122,7 +122,10 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		d.DeleteMode = destinationDeleteMode(edit)
 		d.FlattenStructure = edit.Flatten
 		if task.Kind == taskconfig.Moving {
-			d.CollisionPolicy = taskconfig.Skip
+			d.CollisionPolicy = edit.Collision
+			if d.CollisionPolicy == "" {
+				d.CollisionPolicy = taskconfig.Skip
+			}
 		}
 		if !sameFilterRules(d.Filters, edit.Filters) {
 			if ok && projectFilterEditor(d.Filters).Mode == filterReadOnly {

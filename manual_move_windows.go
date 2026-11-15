@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"syncmaid/internal/fileinventory"
+	"syncmaid/internal/taskconfig"
 	"time"
 )
 
@@ -24,6 +25,6 @@ func scanMoveFiles(ctx context.Context, root *directoryObject) ([]fileinventory.
 	}
 	return files, listing.Files, nil
 }
-func moveFile(ctx context.Context, roots *transferRoots, f fileinventory.File, target string, expected mirrorStamp, progress func(int64)) (bool, error) {
-	return transferFileTo(ctx, roots, f, target, &expected, transferIO{copy: copyChecked, publish: publishTransfer}, progress)
+func moveFile(ctx context.Context, roots *transferRoots, f fileinventory.File, target string, expected mirrorStamp, collision taskconfig.CollisionPolicy, progress func(int64)) (bool, error) {
+	return transferFileTo(ctx, roots, f, target, &expected, transferIO{copy: copyChecked, publish: publishTransfer, collision: collision}, progress)
 }
