@@ -13,6 +13,7 @@ import (
 )
 
 type application struct {
+	cards           taskCardLayout
 	regexSession    *regexSession
 	importPreview   *legacyImport
 	importPrevious  manualPhase

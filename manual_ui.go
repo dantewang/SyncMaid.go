@@ -82,117 +82,41 @@ func (s *manualSession) edited() {
 	s.destinationResults = nil
 }
 
-func (a *application) manualView(c *ui.Context) {
+func (a *application) taskEditorView(c *ui.Context) {
 	s := &a.manual
 	locked := s.busy() || a.tasks == nil || a.selectedTaskIssue() != nil
-	ui.Row(c).Fill().Children(func() {
-		ui.Column(c).Width(210).FillHeight().Gap(10).Padding(16).Children(func() {
-			ui.Text(c, a.tr("任务列表")).FontSize(22).Bold()
-			ui.Button(c, a.tr("新建任务")).Disabled(s.busy() || s.dirty || a.tasks == nil || a.taskError != nil).OnClick(a.newManual)
-			ui.Button(c, a.tr("放弃编辑")).Disabled(s.busy() || !s.dirty || a.tasks == nil || a.taskError != nil).OnClick(a.discardManual)
-			ui.Button(c, a.tr("重新载入")).Disabled(s.busy()).OnClick(a.reloadTasks)
-			ui.Button(c, a.tr("导入旧任务")).Disabled(s.busy() || s.dirty || a.tasks == nil || a.taskError != nil).OnClick(a.beginImport)
-			ui.Button(c, a.tr("旧正则迁移")).Disabled(s.busy() || s.dirty || a.tasks == nil || a.taskError != nil || s.id == "").OnClick(a.beginRegexMigration)
-			ui.Scroll(c).Grow(1).Children(func() {
-				ui.Column(c).Gap(8).Children(func() {
-					if a.tasks != nil {
-						for _, t := range a.tasks.tasks {
-							label := t.Name
-							if _, err := multipleRequestFromSaved(t); err != nil {
-								label += a.tr("（不支持）")
-							}
-							if t.ID == s.id {
-								label = "● " + label
-							}
-							id := t.ID
-							if w := a.watches[id]; w != nil {
-								ui.Text(c, a.render(w.status)).FontSize(11)
-							}
-							if result, ok := a.results[id]; ok {
-								ui.Text(c, a.render(result.message)).FontSize(11)
-								if !result.started.IsZero() {
-									ui.Text(c, a.tr("最近开始: ")+result.started.Local().Format("01-02 15:04:05")).FontSize(11)
-								}
-							}
-							ui.Button(c, label).FillWidth().Disabled(s.busy() || s.dirty || a.taskError != nil).OnClick(func() { a.selectManual(id) })
-						}
-					}
-				})
+	ui.Row(c).Gap(8).Children(func() {
+		ui.Text(c, a.tr("编辑任务")).Bold()
+		ui.Button(c, a.tr("关闭编辑")).OnClick(a.closeTaskEditor)
+	})
+	a.manualActions(c, locked)
+	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+		ui.Column(c).FillWidth().Gap(12).Padding(20).Children(func() {
+			ui.Text(c, a.tr("手动同步 · 任务保存在 tasks-go.json"))
+			if a.taskError != nil {
+				ui.Text(c, a.tr("任务文件不可用，已阻止保存与运行: ")+a.taskError.Error())
+				ui.Text(c, a.tr("修复文件或备份问题后重新载入。不会以空列表覆盖。"))
+			}
+			if issue := a.selectedTaskIssue(); issue != nil {
+				ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error())
+			}
+			ui.Text(c, a.tr("任务名称"))
+			ui.TextInput(c, &s.name).Label(a.tr("任务名称")).ReadOnly(locked).OnChange(s.edited)
+			ui.Text(c, a.tr("源文件夹"))
+			ui.Row(c).Gap(8).Children(func() {
+				ui.TextInput(c, &s.source).Label(a.tr("源文件夹路径")).Grow(1).Placeholder(a.tr("源文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
+				ui.Button(c, a.tr("选择源")).Disabled(locked).OnClick(func() { a.chooseFolder(true) })
 			})
-		})
-		ui.Column(c).Grow(1).FillHeight().Children(func() {
-			ui.Column(c).FillWidth().Gap(8).Padding(16).Children(func() {
-				ui.Text(c, "SyncMaid").FontSize(26).Bold()
-				settingsLabel := a.tr("设置")
-				if a.settingsOpen {
-					settingsLabel = a.tr("返回任务编辑")
-				}
-				ui.Button(c, settingsLabel).Disabled(a.importPreview != nil || a.regexSession != nil).OnClick(func() {
-					a.settingsOpen = !a.settingsOpen
-					if a.settingsOpen {
-						a.historyOpen = false
-					}
-				})
-				a.manualActions(c, locked)
-				a.watchView(c)
-				if a.importError != nil && a.importPreview == nil {
-					ui.Text(c, a.tr("导入拒绝，旧文件和任务库未修改：%s", a.importError.Error()))
-				}
-				historyLabel := "查看运行记录"
-				if a.historyOpen {
-					historyLabel = "返回任务编辑"
-				}
-				ui.Button(c, a.tr(historyLabel)).Disabled(a.importPreview != nil || a.regexSession != nil).OnClick(a.toggleHistory)
-				if a.historyError != nil {
-					ui.Text(c, a.tr("运行记录不可用或未保存；文件执行结果仍有效：")+historyText(a.historyError.Error(), historyErrorBytes)).FontSize(12)
-				}
-				a.mirrorPreviewView(c)
-			})
-			if a.regexSession != nil {
-				a.regexMigrationView(c)
-				return
-			}
-			if a.importPreview != nil {
-				a.importView(c)
-				return
-			}
-			if a.settingsOpen {
-				a.settingsView(c)
-				return
-			}
-			if a.historyOpen {
-				a.historyViewContent(c)
-				return
-			}
-			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-				ui.Column(c).FillWidth().Gap(12).Padding(20).Children(func() {
-					ui.Text(c, a.tr("手动同步 · 任务保存在 tasks-go.json"))
-					if a.taskError != nil {
-						ui.Text(c, a.tr("任务文件不可用，已阻止保存与运行: ")+a.taskError.Error())
-						ui.Text(c, a.tr("修复文件或备份问题后重新载入。不会以空列表覆盖。"))
-					}
-					if issue := a.selectedTaskIssue(); issue != nil {
-						ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error())
-					}
-					ui.Text(c, a.tr("任务名称"))
-					ui.TextInput(c, &s.name).Label(a.tr("任务名称")).ReadOnly(locked).OnChange(s.edited)
-					ui.Text(c, a.tr("源文件夹"))
-					ui.Row(c).Gap(8).Children(func() {
-						ui.TextInput(c, &s.source).Label(a.tr("源文件夹路径")).Grow(1).Placeholder(a.tr("源文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
-						ui.Button(c, a.tr("选择源")).Disabled(locked).OnClick(func() { a.chooseFolder(true) })
-					})
-					a.triggerView(c, locked)
-					a.manualKindView(c, locked)
-					a.manualTargetsView(c, locked)
-					ui.Text(c, a.tr("新增/更新依大小和整秒修改时间判断；Mirror移除另行确认。"))
-					ui.Text(c, a.render(s.message))
-					p := s.progress
-					ui.Text(c, fmt.Sprintf(a.tr("当前/最后目标 %s · 已发布 %d / %d · 未变化 %d · 已传输 %d 字节"), a.tr(p.Stage), p.Copied, p.Total, p.Unchanged, p.Bytes))
-					ui.Text(c, p.Path).FontSize(12)
-					ui.Text(c, a.tr("关闭行为可在设置中选择；停止保留已发布文件。"))
-					ui.Text(c, "Data: "+pathLabel(a.installation.data)).FontSize(12)
-				})
-			})
+			a.triggerView(c, locked)
+			a.manualKindView(c, locked)
+			a.manualTargetsView(c, locked)
+			ui.Text(c, a.tr("新增/更新依大小和整秒修改时间判断；Mirror移除另行确认。"))
+			ui.Text(c, a.render(s.message))
+			p := s.progress
+			ui.Text(c, fmt.Sprintf(a.tr("当前/最后目标 %s · 已发布 %d / %d · 未变化 %d · 已传输 %d 字节"), a.tr(p.Stage), p.Copied, p.Total, p.Unchanged, p.Bytes))
+			ui.Text(c, p.Path).FontSize(12)
+			ui.Text(c, a.tr("关闭行为可在设置中选择；停止保留已发布文件。"))
+			ui.Text(c, "Data: "+pathLabel(a.installation.data)).FontSize(12)
 		})
 	})
 }
@@ -238,6 +162,7 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 	if s.busy() {
 		return
 	}
+	a.cards.running = id
 	if !automatic {
 		if w := a.watches[id]; w != nil {
 			w.ticket.invalidate(watchArmed)

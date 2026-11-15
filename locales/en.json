@@ -251,5 +251,13 @@
   "不匹配": "No match",
   "匹配": "Match",
   "已有正则确认记录；执行仍会检查全部规则、绑定及版本。": "Regex decisions are saved; execution still checks all rules, bindings and versions.",
-  "确认无效，需重新预览：": "Invalid confirmation; preview again: "
+  "确认无效，需重新预览：": "Invalid confirmation; preview again: ",
+  "全部折叠": "Collapse all",
+  "展开或折叠任务": "Expand or collapse task",
+  "编辑目标": "Edit destination",
+  "关闭编辑": "Close editor",
+  "任务概览": "Task overview",
+  "按目标顺序首个匹配；失败不转投后续目标。": "First matching destination in order; failures do not fall through.",
+  "全部展开": "Expand all",
+  "编辑任务": "Edit task"
 }
