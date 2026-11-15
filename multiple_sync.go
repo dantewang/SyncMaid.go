@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"syncmaid/internal/taskconfig"
 )
@@ -26,21 +27,23 @@ type manualTaskRequest struct {
 type destinationState string
 
 const (
-	destinationWaiting   destinationState = "未开始"
-	destinationRunning   destinationState = "运行中"
-	destinationSucceeded destinationState = "完成"
-	destinationNoMatches destinationState = "无匹配"
-	destinationFailed    destinationState = "失败"
-	destinationCanceled  destinationState = "已停止"
-	destinationSkipped   destinationState = "未执行"
+	destinationWaiting     destinationState = "未开始"
+	destinationRunning     destinationState = "运行中"
+	destinationSucceeded   destinationState = "完成"
+	destinationNoMatches   destinationState = "无匹配"
+	destinationFailed      destinationState = "失败"
+	destinationCanceled    destinationState = "已停止"
+	destinationSkipped     destinationState = "未执行"
+	destinationInterrupted destinationState = "中断/结果未知"
 )
 
 type destinationResult struct {
-	ID       taskconfig.ID
-	Name     string
-	State    destinationState
-	Progress transferProgress
-	Error    string
+	Started, Ended time.Time
+	ID             taskconfig.ID
+	Name           string
+	State          destinationState
+	Progress       transferProgress
+	Error          string
 }
 type multipleResult map[taskconfig.ID]destinationResult
 
@@ -67,6 +70,7 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 	plan, err := openMultiplePlan(ctx, q)
 	if err != nil {
 		for id, r := range results {
+			r.Ended = time.Now()
 			r.State = destinationSkipped
 			r.Error = err.Error()
 			results[id] = r
@@ -78,6 +82,7 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 	for _, d := range q.Destinations {
 		r := results[d.ID]
 		if e := ctx.Err(); e != nil {
+			r.Ended = time.Now()
 			r.State = destinationSkipped
 			r.Error = "已停止，未执行"
 			results[d.ID] = r
@@ -88,6 +93,7 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 			r.Error = e.Error()
 			failures = append(failures, fmt.Errorf("%s: %w", d.Name, e))
 		} else {
+			r.Started = time.Now()
 			r.State = destinationRunning
 			results[d.ID] = r
 			if notify != nil {
@@ -128,6 +134,7 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 				failures = append(failures, fmt.Errorf("%s: %w", d.Name, e))
 			}
 		}
+		r.Ended = time.Now()
 		results[d.ID] = r
 		if notify != nil {
 			notify(r)

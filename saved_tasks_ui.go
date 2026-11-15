@@ -82,14 +82,20 @@ func (a *application) reloadTasks() {
 	data := a.installation.data
 	go func() {
 		library, err := loadSavedTasks(data)
+		history := loadRunHistory(data)
 		a.window.Update(func() {
 			s.phase = manualDraft
 			a.taskError = err
+			a.history = history
+			a.historyError = history.err
+			if history.err == nil {
+				a.historyView = history.data
+			}
 			if err != nil {
 				s.message = "载入失败，已阻止写入: " + err.Error()
 			} else {
 				a.tasks = library
-				a.results = nil
+				a.restoreRunResults()
 				switch {
 				case keepDraft:
 					if _, e := library.find(s.id); s.id != "" && e != nil {
@@ -164,7 +170,6 @@ func (a *application) finishTaskSave(next *savedTaskLibrary, id taskconfig.ID, v
 		s.message = "保存失败或结果待核对，编辑仍在。请重新载入: " + writeErr.Error()
 	default:
 		a.tasks = next
-		delete(a.results, id)
 		s.dirty = false
 		a.selectManual(id)
 		s.message = "任务已保存，可以运行。"

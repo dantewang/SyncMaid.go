@@ -55,9 +55,10 @@ type manualSession struct {
 }
 
 type savedTaskResult struct {
-	message      string
-	progress     transferProgress
-	destinations multipleResult
+	started, ended time.Time
+	message        string
+	progress       transferProgress
+	destinations   multipleResult
 }
 
 func (s *manualSession) busy() bool {
@@ -104,6 +105,9 @@ func (a *application) manualView(c *ui.Context) {
 							}
 							if result, ok := a.results[id]; ok {
 								ui.Text(c, result.message).FontSize(11)
+								if !result.started.IsZero() {
+									ui.Text(c, "最近开始: "+result.started.Local().Format("01-02 15:04:05")).FontSize(11)
+								}
 							}
 							ui.Button(c, label).FillWidth().Disabled(s.busy() || s.dirty || a.taskError != nil).OnClick(func() { a.selectManual(id) })
 						}
@@ -116,8 +120,20 @@ func (a *application) manualView(c *ui.Context) {
 				ui.Text(c, "SyncMaid").FontSize(26).Bold()
 				a.manualActions(c, locked)
 				a.watchView(c)
+				historyLabel := "查看运行记录"
+				if a.historyOpen {
+					historyLabel = "返回任务编辑"
+				}
+				ui.Button(c, historyLabel).OnClick(a.toggleHistory)
+				if a.historyError != nil {
+					ui.Text(c, "运行记录不可用或未保存；文件执行结果仍有效："+historyText(a.historyError.Error(), historyErrorBytes)).FontSize(12)
+				}
 				a.mirrorPreviewView(c)
 			})
+			if a.historyOpen {
+				a.historyViewContent(c)
+				return
+			}
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Padding(20).Children(func() {
 					ui.Text(c, "手动同步 · 任务保存在 tasks-go.json")
@@ -215,6 +231,12 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 		s.progress = transferProgress{}
 		s.destinationResults = initialDestinationResults(q)
 	}
+	history := a.history
+	active := []taskconfig.ID(nil)
+	if a.tasks != nil {
+		active = taskIDs(a.tasks.tasks)
+	}
+	recordStart, recordStartErr := newRunRecord(id, name, q, automatic, time.Now())
 	go func() {
 		last := time.Time{}
 		var lastID taskconfig.ID
@@ -239,23 +261,30 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 				}
 			})
 		}
-		var results multipleResult
-		err := interruptibleIO(ctx, func(ctx context.Context) error {
-			var e error
-			results, e = runMultipleConfirmed(ctx, q, notify, a.confirmMirror)
-			return e
+		historyView, recordEnd, results, err, historyErr := executeRecordedRun(history, recordStart, recordStartErr, active, func() (multipleResult, error) {
+			var results multipleResult
+			err := interruptibleIO(ctx, func(ctx context.Context) error {
+				var e error
+				results, e = runMultipleConfirmed(ctx, q, notify, a.confirmMirror)
+				return e
+			})
+			return results, err
 		})
 		a.window.Update(func() {
 			cancel()
 			s.cancel = nil
+			a.historyError = historyErr
+			if historyView.Version == 1 {
+				a.historyView = historyView
+			}
 			if a.results == nil {
 				a.results = map[taskconfig.ID]savedTaskResult{}
 			}
 			message := "运行完成"
 			if err != nil {
-				message = "运行未完成: " + err.Error()
+				message = "运行未完成: " + historyText(err.Error(), historyErrorBytes)
 			}
-			a.results[id] = savedTaskResult{message: message, destinations: results}
+			a.results[id] = savedTaskResult{message: message, destinations: results, started: recordEnd.Started, ended: recordEnd.Ended}
 			a.watchActivity = name + ": " + message
 			if w := a.watches[id]; w != nil && w.ticket.phase == watchArmed {
 				w.status = message
@@ -275,9 +304,9 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 			case err == nil:
 				s.message = "全部目标同步完成"
 			case errors.Is(err, context.Canceled):
-				s.message = "任务已停止；已完成目标不回滚。详情: " + err.Error()
+				s.message = "任务已停止；已完成目标不回滚。详情: " + historyText(err.Error(), historyErrorBytes)
 			default:
-				s.message = "任务存在失败或未执行目标: " + err.Error()
+				s.message = "任务存在失败或未执行目标: " + historyText(err.Error(), historyErrorBytes)
 			}
 			if err != nil {
 				slog.Warn("multiple-sync-ended", "error", err, "targets", len(q.Destinations))
@@ -286,7 +315,7 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 				if a.results == nil {
 					a.results = make(map[taskconfig.ID]savedTaskResult)
 				}
-				a.results[id] = savedTaskResult{message: s.message, progress: s.progress, destinations: s.destinationResults}
+				a.results[id] = savedTaskResult{message: s.message, progress: s.progress, destinations: s.destinationResults, started: recordEnd.Started, ended: recordEnd.Ended}
 			}
 			if s.quitPending {
 				a.requestQuit()

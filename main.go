@@ -13,17 +13,22 @@ import (
 )
 
 type application struct {
-	watchWorkers  sync.WaitGroup
-	watches       map[taskconfig.ID]*watchedTask
-	watchPhase    watchServicePhase
-	watchActivity string
-	installation  installation
-	lifecycle     lifecycle
-	manual        manualSession
-	window        *mygo.Window
-	tasks         *savedTaskLibrary
-	taskError     error
-	results       map[taskconfig.ID]savedTaskResult
+	history         *runHistoryStore
+	historyView     runHistoryData
+	historyError    error
+	historyOpen     bool
+	historySelected taskconfig.ID
+	watchWorkers    sync.WaitGroup
+	watches         map[taskconfig.ID]*watchedTask
+	watchPhase      watchServicePhase
+	watchActivity   string
+	installation    installation
+	lifecycle       lifecycle
+	manual          manualSession
+	window          *mygo.Window
+	tasks           *savedTaskLibrary
+	taskError       error
+	results         map[taskconfig.ID]savedTaskResult
 }
 
 func (a *application) view(c *ui.Context) {

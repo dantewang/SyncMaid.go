@@ -8,6 +8,7 @@ import (
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
+	"time"
 )
 
 func manualKind(k taskconfig.TaskKind) taskconfig.TaskKind {
@@ -69,6 +70,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 	results = initialDestinationResults(q)
 	failAll := func(e error) (multipleResult, error) {
 		for id, r := range results {
+			r.Ended = time.Now()
 			r.State = destinationFailed
 			r.Error = e.Error()
 			results[id] = r
@@ -93,6 +95,9 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 		r := results[d.ID]
 		r.Progress = transferProgress{SourceFiles: len(files), Total: len(routes[i]), Unmatched: unmatched}
 		emit := func() {
+			if r.State != destinationRunning && r.State != destinationWaiting && r.Ended.IsZero() {
+				r.Ended = time.Now()
+			}
 			results[d.ID] = r
 			if notify != nil {
 				notify(r)
@@ -105,6 +110,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 			continue
 		}
 		if e := plan.failures[d.ID]; e != nil {
+			r.Ended = time.Now()
 			r.State = destinationFailed
 			r.Error = e.Error()
 			r.Progress.Failed = len(routes[i])
@@ -120,6 +126,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 		}
 		roots, e := openTransferRoots(ctx, plan.requests[d.ID])
 		if e != nil {
+			r.Ended = time.Now()
 			r.State = destinationFailed
 			r.Error = e.Error()
 			r.Progress.Retained = len(routes[i])
@@ -127,6 +134,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 			emit()
 			continue
 		}
+		r.Started = time.Now()
 		r.State = destinationRunning
 		emit()
 		var targetErrors []error

@@ -136,8 +136,11 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 				})
 				if r, ok := s.destinationResults[id]; ok {
 					ui.Text(c, fmt.Sprintf("%s: %s · 原始文件 %d · 匹配 %d · 已发布 %d · 未变化 %d · 已移除 %d · 移动 %d · 保留 %d · 失败 %d · 源未匹配 %d", r.Name, r.State, r.Progress.SourceFiles, r.Progress.Total, r.Progress.Copied, r.Progress.Unchanged, r.Progress.Removed, r.Progress.Moved, r.Progress.Retained, r.Progress.Failed, r.Progress.Unmatched)).FontSize(12)
+					if !r.Ended.IsZero() {
+						ui.Text(c, "最近结束: "+r.Ended.Local().Format("01-02 15:04:05")).FontSize(12)
+					}
 					if r.Error != "" {
-						ui.Text(c, r.Error).FontSize(12)
+						ui.Text(c, historyText(r.Error, historyErrorBytes)).FontSize(12)
 					}
 				}
 			}
