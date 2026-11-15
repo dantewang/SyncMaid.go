@@ -218,5 +218,19 @@
   "已登记，但被系统禁用": "Registered, disabled by system",
   "已登记，系统批准状态未知": "Registered; system approval unknown",
   "同名启动项命令不同，未修改": "Same-name startup command differs; unchanged",
-  "关闭行为可在设置中选择；停止保留已发布文件。": "Choose close behavior in Settings. Stop keeps published files."
+  "关闭行为可在设置中选择；停止保留已发布文件。": "Choose close behavior in Settings. Stop keeps published files.",
+  "导入旧任务": "Import legacy tasks",
+  "选择旧任务 JSON 或备份": "Choose legacy tasks JSON or backup",
+  "导入拒绝，旧文件和任务库未修改：%s": "Import rejected; source and task library unchanged: %s",
+  "已追加导入 %d 个任务；全部为手动触发，尚未运行。": "Appended %d tasks; all Manual, not run yet.",
+  "旧任务导入预览": "Legacy task import preview",
+  "确认将追加任务，不覆盖现有任务；旧主文件和备份均不修改。": "Confirmation appends tasks without replacing existing ones. Legacy files and backups stay unchanged.",
+  "所有导入任务将设为 Manual，原自动触发配置会被替换。不会自动执行。": "All imported tasks become Manual, replacing their automatic trigger configuration. Nothing runs automatically.",
+  "运行前必须退出旧 Rust 版；Go 的锁不能阻止旧版同时操作文件。": "Exit the legacy Rust app before running. Go locks cannot stop it from operating on the same files.",
+  "未知类型整份拒绝；可保留的未知成员或旧非空正则不会获得运行许可。文件系统条件仍在运行时检查。": "Unknown types reject the whole import. Preserved unknown fields or nonempty legacy regex do not authorize execution. Folders are checked when running.",
+  "保留但存在运行限制：": "Preserved, with execution restrictions: ",
+  "当前功能支持；尚未验证实际文件夹。": "Supported by current features; actual folders not checked yet.",
+  "保存失败或结果待核对，预览保留。取消后重新载入任务库，勿重复提交：": "Save failed or needs checking; preview kept. Cancel and reload the library; do not submit again: ",
+  "取消导入": "Cancel import",
+  "确认追加并设为手动": "Confirm append as Manual"
 }

@@ -13,6 +13,9 @@ import (
 )
 
 type application struct {
+	importPreview   *legacyImport
+	importPrevious  manualPhase
+	importError     error
 	common          *commonSettingsStore
 	commonValue     commonSettings
 	commonBusy      bool

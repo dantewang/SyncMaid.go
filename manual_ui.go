@@ -24,6 +24,7 @@ const (
 	manualFinished
 	manualLoading
 	manualSaving
+	manualImporting
 )
 
 // All session state belongs to the native main thread. Workers only receive
@@ -62,7 +63,7 @@ type savedTaskResult struct {
 }
 
 func (s *manualSession) busy() bool {
-	return s.phase == manualChecking || s.phase == manualRunning || s.phase == manualStopping || s.phase == manualChoosing || s.phase == manualLoading || s.phase == manualSaving
+	return s.phase == manualChecking || s.phase == manualRunning || s.phase == manualStopping || s.phase == manualChoosing || s.phase == manualLoading || s.phase == manualSaving || s.phase == manualImporting
 }
 func (s *manualSession) edited() {
 	if s.busy() {
@@ -88,6 +89,7 @@ func (a *application) manualView(c *ui.Context) {
 			ui.Button(c, a.tr("新建任务")).Disabled(s.busy() || s.dirty || a.tasks == nil || a.taskError != nil).OnClick(a.newManual)
 			ui.Button(c, a.tr("放弃编辑")).Disabled(s.busy() || !s.dirty || a.tasks == nil || a.taskError != nil).OnClick(a.discardManual)
 			ui.Button(c, a.tr("重新载入")).Disabled(s.busy()).OnClick(a.reloadTasks)
+			ui.Button(c, a.tr("导入旧任务")).Disabled(s.busy() || s.dirty || a.tasks == nil || a.taskError != nil).OnClick(a.beginImport)
 			ui.Scroll(c).Grow(1).Children(func() {
 				ui.Column(c).Gap(8).Children(func() {
 					if a.tasks != nil {
@@ -122,7 +124,7 @@ func (a *application) manualView(c *ui.Context) {
 				if a.settingsOpen {
 					settingsLabel = a.tr("返回任务编辑")
 				}
-				ui.Button(c, settingsLabel).OnClick(func() {
+				ui.Button(c, settingsLabel).Disabled(a.importPreview != nil).OnClick(func() {
 					a.settingsOpen = !a.settingsOpen
 					if a.settingsOpen {
 						a.historyOpen = false
@@ -130,16 +132,23 @@ func (a *application) manualView(c *ui.Context) {
 				})
 				a.manualActions(c, locked)
 				a.watchView(c)
+				if a.importError != nil && a.importPreview == nil {
+					ui.Text(c, a.tr("导入拒绝，旧文件和任务库未修改：%s", a.importError.Error()))
+				}
 				historyLabel := "查看运行记录"
 				if a.historyOpen {
 					historyLabel = "返回任务编辑"
 				}
-				ui.Button(c, a.tr(historyLabel)).OnClick(a.toggleHistory)
+				ui.Button(c, a.tr(historyLabel)).Disabled(a.importPreview != nil).OnClick(a.toggleHistory)
 				if a.historyError != nil {
 					ui.Text(c, a.tr("运行记录不可用或未保存；文件执行结果仍有效：")+historyText(a.historyError.Error(), historyErrorBytes)).FontSize(12)
 				}
 				a.mirrorPreviewView(c)
 			})
+			if a.importPreview != nil {
+				a.importView(c)
+				return
+			}
 			if a.settingsOpen {
 				a.settingsView(c)
 				return
@@ -352,6 +361,9 @@ func (a *application) stopManual() {
 }
 func (a *application) requestQuit() {
 	a.stopWatches(watchesStopped)
+	if a.manual.phase == manualImporting {
+		a.cancelImport()
+	}
 	s := &a.manual
 	if a.languageBusy || a.commonBusy {
 		s.quitPending = true
@@ -372,6 +384,9 @@ func (a *application) requestQuit() {
 }
 func (a *application) beforeQuit(e *mygo.QuitEvent) {
 	a.stopWatches(watchesStopped)
+	if a.manual.phase == manualImporting {
+		a.cancelImport()
+	}
 	if a.manual.busy() || a.languageBusy || a.commonBusy {
 		e.PreventDefault()
 		a.manual.quitPending = true
