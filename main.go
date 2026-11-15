@@ -13,6 +13,13 @@ import (
 )
 
 type application struct {
+	common          *commonSettingsStore
+	commonValue     commonSettings
+	commonBusy      bool
+	commonError     error
+	startupEntry    startupEntry
+	startupStatus   startupStatus
+	startupError    error
 	history         *runHistoryStore
 	historyView     runHistoryData
 	historyError    error
@@ -61,6 +68,12 @@ func run() (result error) {
 	dataDirectory := owner.dataDirectory()
 	install.data = dataDirectory.path
 	a := &application{installation: install}
+	a.common = loadCommonSettings(install.data)
+	a.commonValue, a.commonError = a.common.value, a.common.err
+	a.startupEntry, a.startupError = currentStartupEntry(install)
+	if a.startupError == nil {
+		a.startupStatus, a.startupError = a.startupEntry.status()
+	}
 	defer a.watchWorkers.Wait()
 	activation, err := startActivation(dataDirectory.key, func() { mygo.App.WhenReady(a.lifecycle.show) })
 	if err != nil {
@@ -102,6 +115,7 @@ func run() (result error) {
 		window, err := createStartupWindow(func() *mygo.Window {
 			return mygo.NewWindow(mygo.WindowOptions{
 				Title:     "SyncMaid",
+				Hidden:    a.commonError == nil && a.commonValue.StartMinimized,
 				Width:     1000,
 				Height:    700,
 				MinWidth:  760,
@@ -115,13 +129,17 @@ func run() (result error) {
 			return
 		}
 		a.lifecycle.ready(window, mygo.App.Quit, tray.Destroy)
+		if a.commonError == nil && a.commonValue.StartMinimized {
+			a.lifecycle.closeRequested()
+		}
 		a.window = window
 		a.reloadTasks()
 		window.OnClose(func(e *mygo.CloseEvent) {
-			a.answerMirror(false)
-			if a.lifecycle.closeRequested() {
-				e.PreventDefault()
+			if a.lifecycle.phase == exiting || a.lifecycle.phase == stopped {
+				return
 			}
+			e.PreventDefault()
+			a.closeWindow()
 		})
 		tray.OnClick(a.lifecycle.show)
 		tray.OnRightClick(func() {

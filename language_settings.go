@@ -121,6 +121,7 @@ func (a *application) settingsView(c *ui.Context) {
 	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 		ui.Column(c).FillWidth().Gap(12).Padding(20).Children(func() {
 			ui.Text(c, a.tr("设置")).FontSize(22).Bold()
+			a.commonSettingsView(c)
 			ui.Text(c, a.tr("界面语言"))
 			for _, choice := range languageChoices {
 				tag := choice.tag

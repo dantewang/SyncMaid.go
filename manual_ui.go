@@ -173,7 +173,7 @@ func (a *application) manualView(c *ui.Context) {
 					p := s.progress
 					ui.Text(c, fmt.Sprintf(a.tr("当前/最后目标 %s · 已发布 %d / %d · 未变化 %d · 已传输 %d 字节"), a.tr(p.Stage), p.Copied, p.Total, p.Unchanged, p.Bytes))
 					ui.Text(c, p.Path).FontSize(12)
-					ui.Text(c, a.tr("关闭窗口隐藏到托盘，不停止任务。停止保留已发布文件。"))
+					ui.Text(c, a.tr("关闭行为可在设置中选择；停止保留已发布文件。"))
 					ui.Text(c, "Data: "+pathLabel(a.installation.data)).FontSize(12)
 				})
 			})
@@ -353,7 +353,7 @@ func (a *application) stopManual() {
 func (a *application) requestQuit() {
 	a.stopWatches(watchesStopped)
 	s := &a.manual
-	if a.languageBusy {
+	if a.languageBusy || a.commonBusy {
 		s.quitPending = true
 		return
 	}
@@ -372,7 +372,7 @@ func (a *application) requestQuit() {
 }
 func (a *application) beforeQuit(e *mygo.QuitEvent) {
 	a.stopWatches(watchesStopped)
-	if a.manual.busy() || a.languageBusy {
+	if a.manual.busy() || a.languageBusy || a.commonBusy {
 		e.PreventDefault()
 		a.manual.quitPending = true
 		a.stopManual()
