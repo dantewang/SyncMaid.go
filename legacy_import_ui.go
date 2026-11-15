@@ -46,10 +46,17 @@ func (a *application) cancelImport() {
 	if a.manual.phase != manualImporting {
 		return
 	}
+	a.discardImportPreview()
+	if a.manual.quitPending {
+		a.requestQuit()
+		return
+	}
+	a.drainWatches()
+}
+func (a *application) discardImportPreview() {
 	a.importPreview = nil
 	a.importError = nil
 	a.manual.phase = a.importPrevious
-	a.drainWatches()
 }
 func (a *application) confirmImport() {
 	if a.manual.phase != manualImporting || a.importPreview == nil || a.taskError != nil {

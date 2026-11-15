@@ -38,12 +38,12 @@ var (
 	ErrRegexBudget        = errors.New("regex resource budget exceeded")
 	ErrNeedsReview        = errors.New("regex requires explicit preview confirmation")
 	ErrStaleReview        = errors.New("regex confirmation no longer matches its source or proposal")
-	ErrProfilePersistence = errors.New("regex profile persistence is not designed or connected")
+	ErrProfilePersistence = errors.New("in-memory regex capabilities cannot be serialized; use versioned confirmation records")
 )
 
 // RegexSpec is an editable proposal, never execution permission. Only Proposals
 // supplies its opaque source binding; changing Pattern/Profile invalidates an
-// earlier confirmation. It deliberately has no persisted representation yet.
+// earlier confirmation. Persist RegexConfirmation instead of this capability.
 type RegexSpec struct {
 	Profile RegexProfile
 	Pattern string
@@ -71,7 +71,7 @@ func (p *RegexPreview) Warnings() []string     { return append([]string(nil), p.
 func (p *RegexPreview) Cost() RegexCost        { return p.program.cost }
 
 // ReviewedRegex is an in-memory confirmation receipt, NOT proof of a person's
-// identity or deletion permission. A future UI/coordinator must call Confirm
+// identity or deletion permission. The UI/coordinator must call Confirm
 // only on explicit user acceptance. JSON cannot restore its private capability.
 type ReviewedRegex struct {
 	Spec    RegexSpec

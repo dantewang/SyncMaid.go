@@ -16,9 +16,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sync"
 
+	"syncmaid/internal/filefilter"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -53,9 +55,10 @@ type version struct {
 }
 
 type Store struct {
-	path string
-	mu   sync.Mutex
-	io   operations
+	versioned bool
+	path      string
+	mu        sync.Mutex
+	io        operations
 }
 
 // New does not create directories or files. This adapter currently supports
@@ -74,6 +77,7 @@ func New(path string) (*Store, error) {
 // explicit Recover. Its zero value cannot save. One Store owns its snapshots.
 // Tasks returns an independent copy, preserving generated legacy IDs.
 type Snapshot struct {
+	reviews         []filefilter.RegexConfirmation
 	store           *Store
 	primary, backup version
 	canonical       []byte
@@ -117,9 +121,10 @@ func (s *Store) load() (*Snapshot, error) {
 	b := s.io.read(s.path + ".bak")
 	if (p.status.State == Valid && (b.status.State == Valid || b.status.State == Missing)) || (p.status.State == Missing && b.status.State == Missing) {
 		tasks := []taskconfig.Task{}
+		var reviews []filefilter.RegexConfirmation
 		if p.status.State == Valid {
 			var err error
-			tasks, err = taskconfig.Decode(p.data)
+			tasks, reviews, err = decodeDocument(p.data, s.versioned)
 			if err != nil {
 				return nil, err
 			}
@@ -128,12 +133,15 @@ func (s *Store) load() (*Snapshot, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &Snapshot{store: s, primary: p, backup: b, canonical: canonical}, nil
+		return &Snapshot{store: s, primary: p, backup: b, canonical: canonical, reviews: reviews}, nil
 	}
 	return nil, &LoadError{Primary: p.status, Backup: b.status, store: s, primary: p, backup: b}
 }
 
 func readVersion(path string) version {
+	return readVersionFormat(path, false)
+}
+func readVersionFormat(path string, versioned bool) version {
 	v := version{status: Status{Path: path, State: Unreadable}}
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -159,7 +167,11 @@ func readVersion(path string) version {
 		err = ErrChanged
 	}
 	if err == nil {
-		v.data, err = io.ReadAll(f)
+		if versioned {
+			v.data, err = io.ReadAll(io.LimitReader(f, (8<<20)+1))
+		} else {
+			v.data, err = io.ReadAll(f)
+		}
 	}
 	after, statErr := f.Stat()
 	closeErr := f.Close()
@@ -173,7 +185,7 @@ func readVersion(path string) version {
 		return v
 	}
 	v.info = after
-	_, err = taskconfig.Decode(v.data)
+	_, _, err = decodeDocument(v.data, versioned)
 	v.status.State = Valid
 	if err != nil {
 		v.status.State = Corrupt
@@ -207,6 +219,12 @@ func (s *Store) check(p, b version) error {
 // The backup may advance to the still-live primary if primary replacement fails;
 // primary is never moved away, and a complete usable backup remains available.
 func (snap *Snapshot) Save(tasks []taskconfig.Task) (next *Snapshot, err error) {
+	if snap == nil {
+		return nil, ErrBlocked
+	}
+	return snap.save(tasks, snap.reviews)
+}
+func (snap *Snapshot) save(tasks []taskconfig.Task, reviews []filefilter.RegexConfirmation) (next *Snapshot, err error) {
 	if snap == nil || snap.store == nil {
 		return nil, ErrBlocked
 	}
@@ -220,8 +238,14 @@ func (snap *Snapshot) Save(tasks []taskconfig.Task) (next *Snapshot, err error) 
 	if err = s.check(snap.primary, snap.backup); err != nil {
 		return nil, err
 	}
-	if snap.primary.status.State == Valid && bytes.Equal(encoded, snap.canonical) {
+	if snap.primary.status.State == Valid && bytes.Equal(encoded, snap.canonical) && reflect.DeepEqual(reviews, snap.reviews) {
 		return snap, nil
+	}
+	if s.versioned {
+		encoded, err = encodeDocument(encoded, reviews)
+		if err != nil {
+			return nil, err
+		}
 	}
 	temp, err := s.stage(encoded, ".tmp-")
 	if err != nil {
@@ -286,13 +310,33 @@ func (e *LoadError) Recover() (result Recovery, err error) {
 	if e == nil || e.store == nil || e.backup.status.State != Valid || !(e.primary.status.State == Missing || e.primary.info != nil) {
 		return result, ErrBlocked
 	}
+	// A bounded read of an oversized document is diagnostic only. Never archive
+	// that prefix and replace the full original as if all bytes were preserved.
+	if e.primary.info != nil && int64(len(e.primary.data)) != e.primary.info.Size() {
+		return result, ErrBlocked
+	}
 	s := e.store
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err = s.check(e.primary, e.backup); err != nil {
 		return result, err
 	}
-	temp, err := s.stage(e.backup.data, ".tmp-")
+	recovered := e.backup.data
+	if s.versioned {
+		tasks, _, decodeErr := decodeDocument(recovered, true)
+		if decodeErr != nil {
+			return result, decodeErr
+		}
+		body, encodeErr := taskconfig.Encode(tasks)
+		if encodeErr != nil {
+			return result, encodeErr
+		}
+		recovered, err = encodeDocument(body, nil)
+		if err != nil {
+			return result, err
+		}
+	}
+	temp, err := s.stage(recovered, ".tmp-")
 	if err != nil {
 		return result, err
 	}
@@ -310,7 +354,7 @@ func (e *LoadError) Recover() (result Recovery, err error) {
 		return result, fmt.Errorf("recover tasks: %w", err)
 	}
 	result.Snapshot, err = s.load()
-	if err == nil && (!bytes.Equal(result.Snapshot.primary.data, e.backup.data) || !same(e.backup, result.Snapshot.backup)) {
+	if err == nil && (!bytes.Equal(result.Snapshot.primary.data, recovered) || !same(e.backup, result.Snapshot.backup)) {
 		err = ErrChanged
 	}
 	if err != nil {

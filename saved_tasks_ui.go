@@ -54,7 +54,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 		s.cronText = *t.Trigger.CronExpression
 		s.refreshCron()
 	}
-	s.request, err = multipleRequestFromSaved(t)
+	s.request, err = a.tasks.request(t)
 	if err != nil {
 		s.message = messagef("此任务不可运行或编辑: %s", err.Error())
 	} else {

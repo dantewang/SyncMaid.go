@@ -6,19 +6,24 @@ import (
 	"fmt"
 	"time"
 
+	"syncmaid/internal/filefilter"
 	"syncmaid/internal/taskconfig"
 )
 
 type manualDestination struct {
-	ID         taskconfig.ID
-	Name, Path string
-	Filters    []taskconfig.Rule
-	Strategy   taskconfig.Strategy
-	DeleteMode taskconfig.DeleteMode
-	Flatten    bool
-	Collision  taskconfig.CollisionPolicy
+	matcher     *filefilter.Matcher
+	filterError error
+	ID          taskconfig.ID
+	Name, Path  string
+	Filters     []taskconfig.Rule
+	Strategy    taskconfig.Strategy
+	DeleteMode  taskconfig.DeleteMode
+	Flatten     bool
+	Collision   taskconfig.CollisionPolicy
 }
 type manualTaskRequest struct {
+	regexTask    *taskconfig.Task
+	regexReviews map[taskconfig.ID]reviewBundle
 	Trigger      taskconfig.Trigger
 	Kind         taskconfig.TaskKind
 	Source       string
@@ -63,6 +68,7 @@ func runMultiple(ctx context.Context, q manualTaskRequest, notify func(destinati
 }
 
 func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(destinationResult), confirm mirrorConfirmation) (results multipleResult, err error) {
+	q = prepareReviewedRequest(q)
 	if manualKind(q.Kind) == taskconfig.Moving {
 		return runMove(ctx, q, notify)
 	}
@@ -109,10 +115,13 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 			var p transferProgress
 			e := validateDestinationMode(d)
 			if e == nil {
+				e = d.filterError
+			}
+			if e == nil {
 				if destinationStrategy(d) == taskconfig.Mirror {
 					p, e = runMirror(ctx, plan.requests[d.ID], d, progress, confirm)
 				} else {
-					p, e = runManualFiltered(ctx, plan.requests[d.ID], d.Filters, progress)
+					p, e = runManualWithFilters(ctx, plan.requests[d.ID], progress, transferIO{copy: copyChecked, publish: publishTransfer}, d.Filters, d.matcher)
 				}
 			}
 			r.Progress = p

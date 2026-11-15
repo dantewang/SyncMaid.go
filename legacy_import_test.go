@@ -195,3 +195,13 @@ func TestLegacyImportCancelAndFailedSaveKeepLibrary(t *testing.T) {
 		}
 	}
 }
+
+func TestCancelImportHonorsPendingQuit(t *testing.T) {
+	a := &application{importPreview: &legacyImport{}, importPrevious: manualReady, manual: manualSession{phase: manualImporting, quitPending: true}}
+	quits := 0
+	a.lifecycle.ready(&recordedWindow{}, func() { quits++ }, nil)
+	a.cancelImport()
+	if quits != 1 || a.lifecycle.phase != exiting || a.importPreview != nil || a.manual.phase != manualReady {
+		t.Fatal("cancel lost pending quit")
+	}
+}

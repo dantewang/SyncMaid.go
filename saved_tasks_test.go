@@ -81,7 +81,11 @@ func TestSavedTaskUnknownFieldsAndStrategyAreNotDowngraded(t *testing.T) {
 				t.Fatal(err)
 			}
 			var raw []map[string]any
-			if err = json.Unmarshal(b, &raw); err != nil {
+			var document map[string]json.RawMessage
+			if err = json.Unmarshal(b, &document); err != nil {
+				t.Fatal(err)
+			}
+			if err = json.Unmarshal(document["Tasks"], &raw); err != nil {
 				t.Fatal(err)
 			}
 			d := raw[0]["Destinations"].([]any)[0].(map[string]any)
@@ -104,6 +108,11 @@ func TestSavedTaskUnknownFieldsAndStrategyAreNotDowngraded(t *testing.T) {
 				object["Future"] = json.RawMessage(`{"Counter":900719925474099312345}`)
 			}
 			b, err = json.Marshal(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			document["Tasks"] = b
+			b, err = json.Marshal(document)
 			if err != nil {
 				t.Fatal(err)
 			}

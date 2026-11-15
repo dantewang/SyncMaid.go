@@ -13,6 +13,7 @@ import (
 )
 
 type application struct {
+	regexSession    *regexSession
 	importPreview   *legacyImport
 	importPrevious  manualPhase
 	importError     error

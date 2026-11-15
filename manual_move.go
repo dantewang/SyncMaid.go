@@ -32,10 +32,17 @@ func validateMoveDestination(d manualDestination) error {
 func prepareMoveRoutes(ctx context.Context, files []fileinventory.File, destinations []manualDestination) ([][]fileinventory.File, int, error) {
 	matchers := make([]*filefilter.Matcher, len(destinations))
 	for i, d := range destinations {
+		if d.filterError != nil {
+			return nil, 0, d.filterError
+		}
 		if e := validateMoveDestination(d); e != nil {
 			return nil, 0, e
 		}
-		m, e := filefilter.Compile(d.Filters)
+		m := d.matcher
+		var e error
+		if m == nil {
+			m, e = filefilter.Compile(d.Filters)
+		}
 		if e != nil {
 			return nil, 0, fmt.Errorf("%s: %w", d.Name, e)
 		}

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"golang.org/x/sys/windows"
+	"syncmaid/internal/filefilter"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
 )
@@ -133,7 +134,7 @@ func runManualWith(ctx context.Context, q manualRequest, notify func(transferPro
 func runManualFiltered(ctx context.Context, q manualRequest, rules []taskconfig.Rule, notify func(transferProgress)) (transferProgress, error) {
 	return runManualWithFilters(ctx, q, notify, transferIO{copy: copyChecked, publish: publishTransfer}, rules)
 }
-func runManualWithFilters(ctx context.Context, q manualRequest, notify func(transferProgress), ops transferIO, rules []taskconfig.Rule) (p transferProgress, err error) {
+func runManualWithFilters(ctx context.Context, q manualRequest, notify func(transferProgress), ops transferIO, rules []taskconfig.Rule, prepared ...*filefilter.Matcher) (p transferProgress, err error) {
 	update := func() {
 		if notify != nil {
 			notify(p)
@@ -155,7 +156,13 @@ func runManualWithFilters(ctx context.Context, q manualRequest, notify func(tran
 	p.SourceEmpty = inventory.Empty()
 	p.Stage = "准备过滤"
 	update()
-	files, filterErr := selectFilteredFiles(ctx, raw, rules)
+	var files []fileinventory.File
+	var filterErr error
+	if len(prepared) > 0 && prepared[0] != nil {
+		files, filterErr = selectMatchedFiles(ctx, raw, prepared[0])
+	} else {
+		files, filterErr = selectFilteredFiles(ctx, raw, rules)
+	}
 	if filterErr != nil {
 		return p, filterErr
 	}

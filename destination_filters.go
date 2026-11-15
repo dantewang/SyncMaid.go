@@ -199,6 +199,10 @@ func selectFilteredFiles(ctx context.Context, raw []fileinventory.File, rules []
 	if err != nil {
 		return nil, err
 	}
+	return selectMatchedFiles(ctx, raw, matcher)
+}
+func selectMatchedFiles(ctx context.Context, raw []fileinventory.File, matcher *filefilter.Matcher) ([]fileinventory.File, error) {
+	var err error
 	selected := make([]fileinventory.File, 0, len(raw))
 	for _, f := range raw {
 		if err = ctx.Err(); err != nil {

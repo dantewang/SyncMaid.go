@@ -223,7 +223,7 @@ func (a *application) drainWatches() {
 		} else {
 			w.status = messagef("正在自动运行")
 		}
-		q, e := multipleRequestFromSaved(t)
+		q, e := a.tasks.request(t)
 		if e != nil {
 			w.status = messagef("触发失败: %s", e.Error())
 			continue
