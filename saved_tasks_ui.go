@@ -50,6 +50,10 @@ func (a *application) selectManual(id taskconfig.ID) {
 	if t.Trigger.SettleSeconds != nil {
 		s.quietText = fmt.Sprint(*t.Trigger.SettleSeconds)
 	}
+	if t.Trigger.Kind == "scheduled" && t.Trigger.CronExpression != nil {
+		s.cronText = *t.Trigger.CronExpression
+		s.refreshCron()
+	}
 	s.request, err = multipleRequestFromSaved(t)
 	if err != nil {
 		s.message = "此任务不可运行或编辑: " + err.Error()

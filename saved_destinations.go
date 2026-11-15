@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"syncmaid/internal/filefilter"
+	"time"
 
 	"syncmaid/internal/taskconfig"
 	"syncmaid/internal/taskstore"
@@ -15,8 +16,8 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 	if t.HasUnknownFields() || t.Trigger.HasUnknownFields() {
 		return manualTaskRequest{}, errors.New("任务含未支持字段")
 	}
-	if (t.Kind != taskconfig.Sync && t.Kind != taskconfig.Moving) || (t.Trigger.Kind != "manual" && t.Trigger.Kind != "watch") || len(t.Destinations) == 0 {
-		return manualTaskRequest{}, errors.New("仅支持有目标的Manual/Watch Sync/Move任务")
+	if (t.Kind != taskconfig.Sync && t.Kind != taskconfig.Moving) || (t.Trigger.Kind != "manual" && t.Trigger.Kind != "watch" && t.Trigger.Kind != "scheduled") || len(t.Destinations) == 0 {
+		return manualTaskRequest{}, errors.New("仅支持有目标的Manual/Watch/Scheduled Sync/Move任务")
 	}
 	if strings.TrimSpace(t.Name) == "" {
 		return manualTaskRequest{}, errors.New("任务名称为空")
@@ -145,11 +146,16 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 	if trigger.Kind == "" {
 		trigger = taskconfig.Trigger{Kind: "manual"}
 	}
-	if trigger.Kind != "manual" && trigger.Kind != "watch" {
+	if trigger.Kind != "manual" && trigger.Kind != "watch" && trigger.Kind != "scheduled" {
 		return nil, id, errors.New("不支持此触发方式")
 	}
 	if e := validateApplicationTrigger(trigger); e != nil {
 		return nil, id, e
+	}
+	if trigger.Kind == "scheduled" {
+		if _, _, e := parseScheduled(*trigger.CronExpression, time.Now()); e != nil {
+			return nil, id, e
+		}
 	}
 	task.Trigger = trigger
 	task.Name = name

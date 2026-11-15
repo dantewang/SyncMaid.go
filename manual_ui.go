@@ -29,6 +29,7 @@ const (
 // All session state belongs to the native main thread. Workers only receive
 // immutable requests and post value copies. Persistence also runs off-thread.
 type manualSession struct {
+	cronText, cronNext      string
 	trigger                 taskconfig.Trigger
 	quietText, triggerError string
 	onEdit                  func()
@@ -195,6 +196,9 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 			w.ticket.invalidate(watchArmed)
 			if w.timer != nil {
 				w.timer.Stop()
+			}
+			if w.schedule != nil {
+				a.armScheduled(w, time.Now())
 			}
 		}
 	}

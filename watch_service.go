@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/robfig/cron/v3"
 	"reflect"
 	"syncmaid/internal/taskconfig"
 	"time"
@@ -43,11 +44,13 @@ func (t *watchTicket) ready(revision uint64) bool {
 func (t *watchTicket) invalidate(phase watchPhase) { t.revision++; t.phase = phase }
 
 type watchedTask struct {
-	task   taskconfig.Task
-	ticket watchTicket
-	cancel context.CancelFunc
-	timer  *time.Timer
-	status string
+	schedule cron.Schedule
+	next     time.Time
+	task     taskconfig.Task
+	ticket   watchTicket
+	cancel   context.CancelFunc
+	timer    *time.Timer
+	status   string
 }
 
 func (a *application) liveWatch(w *watchedTask) bool {
@@ -102,7 +105,7 @@ func (a *application) syncWatches() {
 	}
 	keep := map[taskconfig.ID]bool{}
 	for _, t := range a.tasks.tasks {
-		if t.Trigger.Kind != "watch" {
+		if t.Trigger.Kind != "watch" && t.Trigger.Kind != "scheduled" {
 			continue
 		}
 		keep[t.ID] = true
@@ -118,6 +121,17 @@ func (a *application) syncWatches() {
 		if _, e := multipleRequestFromSaved(t); e != nil {
 			w.ticket.phase = watchFailed
 			w.status = e.Error()
+			continue
+		}
+		if t.Trigger.Kind == "scheduled" {
+			schedule, _, e := parseScheduled(*t.Trigger.CronExpression, time.Now())
+			if e != nil {
+				w.ticket.phase = watchFailed
+				w.status = e.Error()
+				continue
+			}
+			w.schedule = schedule
+			a.armScheduled(w, time.Now())
 			continue
 		}
 		if a.window != nil {
@@ -204,7 +218,11 @@ func (a *application) drainWatches() {
 			continue
 		}
 		w.ticket.invalidate(watchArmed)
-		w.status = "正在自动运行"
+		if w.schedule != nil {
+			a.armScheduled(w, time.Now())
+		} else {
+			w.status = "正在自动运行"
+		}
 		q, e := multipleRequestFromSaved(t)
 		if e != nil {
 			w.status = e.Error()
@@ -216,13 +234,16 @@ func (a *application) drainWatches() {
 }
 
 func validateApplicationTrigger(t taskconfig.Trigger) error {
-	if t.HasUnknownFields() || t.CronExpression != nil {
+	if t.HasUnknownFields() {
 		return fmt.Errorf("不支持此触发配置")
 	}
-	if t.Kind == "manual" && t.SettleSeconds == nil {
+	if t.Kind == "manual" && t.SettleSeconds == nil && t.CronExpression == nil {
 		return nil
 	}
-	if t.Kind == "watch" && t.SettleSeconds != nil {
+	if t.Kind == "watch" && t.SettleSeconds != nil && t.CronExpression == nil {
+		return nil
+	}
+	if t.Kind == "scheduled" && t.CronExpression != nil && t.SettleSeconds == nil {
 		return nil
 	}
 	return fmt.Errorf("不支持或不完整的触发配置")

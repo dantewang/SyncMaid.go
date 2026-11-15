@@ -16,6 +16,11 @@ func (a *application) setTrigger(kind string) {
 		n := int32(10)
 		s.trigger = taskconfig.Trigger{Kind: "watch", SettleSeconds: &n}
 		s.quietText = "10"
+	} else if kind == "scheduled" {
+		expr := "* * * * *"
+		s.trigger = taskconfig.Trigger{Kind: "scheduled", CronExpression: &expr}
+		s.cronText = expr
+		s.refreshCron()
 	} else {
 		s.trigger = taskconfig.Trigger{Kind: "manual"}
 	}
@@ -39,12 +44,24 @@ func (a *application) quietChanged() {
 func (a *application) triggerView(c *ui.Context, locked bool) {
 	s := &a.manual
 	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, "Manual手动").Selected(s.trigger.Kind != "watch").Disabled(locked).OnClick(func() { a.setTrigger("manual") })
+		ui.Button(c, "Manual手动").Selected(s.trigger.Kind != "watch" && s.trigger.Kind != "scheduled").Disabled(locked).OnClick(func() { a.setTrigger("manual") })
 		ui.Button(c, "Watch监视").Selected(s.trigger.Kind == "watch").Disabled(locked).OnClick(func() { a.setTrigger("watch") })
+		ui.Button(c, "Scheduled定时").Selected(s.trigger.Kind == "scheduled").Disabled(locked).OnClick(func() { a.setTrigger("scheduled") })
 	})
 	if s.trigger.Kind == "watch" {
 		ui.Text(c, "源变化后等待静默秒数（1–600，默认10）")
 		ui.TextInput(c, &s.quietText).Label("静默秒数").ReadOnly(locked).OnChange(a.quietChanged)
+	}
+	if s.trigger.Kind == "scheduled" {
+		ui.Text(c, "本地时间 · 分 时 日 月 星期(0–6，0周日) · 不补跑历史")
+		ui.TextInput(c, &s.cronText).Label("cron表达式").MaxLength(4096).ReadOnly(locked).OnChange(a.cronChanged)
+		if !s.dirty && a.watchPhase != watchesServing {
+			ui.Text(c, "自动触发已暂停，恢复后重新计算下一次")
+		} else if w := a.watches[s.id]; !s.dirty && w != nil && w.schedule != nil {
+			ui.Text(c, w.status)
+		} else {
+			ui.Text(c, s.cronNext)
+		}
 	}
 	if s.triggerError != "" {
 		ui.Text(c, s.triggerError)
@@ -53,10 +70,10 @@ func (a *application) triggerView(c *ui.Context, locked bool) {
 func (a *application) watchView(c *ui.Context) {
 	ui.Text(c, a.watchActivity).FontSize(12)
 	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, "暂停全部监视").Disabled(a.watchPhase != watchesServing).OnClick(func() { a.stopWatches(watchesPaused) })
-		ui.Button(c, "恢复监视").Disabled(a.watchPhase != watchesPaused).OnClick(a.resumeWatches)
+		ui.Button(c, "暂停自动触发").Disabled(a.watchPhase != watchesServing).OnClick(func() { a.stopWatches(watchesPaused) })
+		ui.Button(c, "恢复自动触发").Disabled(a.watchPhase != watchesPaused).OnClick(a.resumeWatches)
 	})
 	if a.watchPhase == watchesPaused {
-		ui.Text(c, "监视已暂停；停止不会被旧事件立即重启。恢复后重新等待静默期。")
+		ui.Text(c, "自动触发已暂停；恢复后Watch重等静默期，Scheduled重新计算下一次。")
 	}
 }
