@@ -25,10 +25,19 @@ func (a *application) setManualKind(kind taskconfig.TaskKind) {
 }
 func (a *application) manualKindView(c *ui.Context, locked bool) {
 	s := &a.manual
-	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, a.tr("Sync同步任务")).Selected(manualKind(s.kind) == taskconfig.Sync).Disabled(locked || s.id != "").OnClick(func() { a.setManualKind(taskconfig.Sync) })
-		ui.Button(c, a.tr("Move移动任务")).Selected(manualKind(s.kind) == taskconfig.Moving).Disabled(locked || s.id != "").OnClick(func() { a.setManualKind(taskconfig.Moving) })
-	})
+	ui.Text(c, a.tr("此任务做什么"))
+	for _, kind := range []taskconfig.TaskKind{taskconfig.Sync, taskconfig.Moving} {
+		key, description := "同步", "把源复制到各个目标，源保持原样。每个目标各自挑选文件。"
+		if kind == taskconfig.Moving {
+			key = "移动"
+			description = "把源里的文件分拣走：每个文件进入第一条匹配它的规则，并从源中移除。"
+		}
+		glyph := "sync"
+		if kind == taskconfig.Moving {
+			glyph = "move"
+		}
+		porcelainChoice(c, glyph, a.tr(key), a.tr(description), manualKind(s.kind) == kind, locked || s.id != "", func() { a.setManualKind(kind) }).MinHeight(94)
+	}
 	if manualKind(s.kind) == taskconfig.Moving {
 		ui.Text(c, a.tr("首个匹配目标拥有文件；不覆盖目标，失败不转投后续目标。已保存任务不能切换类型。"))
 	}

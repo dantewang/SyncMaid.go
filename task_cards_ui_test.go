@@ -72,7 +72,7 @@ func TestCardOverviewLanguagesAndIndependentResults(t *testing.T) {
 	for _, choice := range languageChoices {
 		a.locale = choice.tag
 		tt := ui.NewTester(a.view, 1400, 1600)
-		if !tt.HasText(a.tr("任务概览")) || !tt.HasText(a.tr("全部目标同步完成")) {
+		if !tt.HasText(a.tr("同步任务")) || !tt.HasText(a.tr("全部已同步")) {
 			t.Fatal(choice.tag, tt.Texts())
 		}
 		n := 0
@@ -103,5 +103,16 @@ func TestCardCollapseDoesNotMutateDraftOrResults(t *testing.T) {
 	a.toggleCard(id)
 	if a.manual.name != "draft" || !a.manual.dirty || len(a.results) != 1 {
 		t.Fatal("view navigation mutated business state")
+	}
+}
+
+func TestPorcelainOverlayCannotHideMirrorOrStop(t *testing.T) {
+	a := &application{locale: "zh-Hans", historyOpen: true, cards: taskCardLayout{editor: true}, manual: manualSession{phase: manualRunning, mirrorPreview: &mirrorPreview{Name: "Synthetic", Paths: []string{"synthetic.txt"}, Mode: taskconfig.Permanent}}}
+	tt := ui.NewTester(a.view, 940, 620)
+	if !tt.HasText(a.tr("确认本次移除")) || !tt.HasText(a.tr("停止")) {
+		t.Fatal("navigation hid safety actions", tt.Texts())
+	}
+	if tt.HasText(a.tr("任务名称")) {
+		t.Fatal("editor covered pending confirmation")
 	}
 }

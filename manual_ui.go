@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"syncmaid/internal/taskconfig"
 	"time"
@@ -86,13 +85,15 @@ func (a *application) taskEditorView(c *ui.Context) {
 	s := &a.manual
 	locked := s.busy() || a.tasks == nil || a.selectedTaskIssue() != nil
 	ui.Row(c).Gap(8).Children(func() {
-		ui.Text(c, a.tr("编辑任务")).Bold()
-		ui.Button(c, a.tr("关闭编辑")).OnClick(a.closeTaskEditor)
+		heading := "任务"
+		if a.cards.destinations {
+			heading = "目标"
+		}
+		ui.Text(c, a.tr(heading)).Bold().Grow(1)
+		porcelainIcon(c, "×", a.tr("关闭编辑")).Border(0, ui.Transparent).OnClick(a.closeTaskEditor)
 	})
-	a.manualActions(c, locked)
-	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().Gap(12).Padding(20).Children(func() {
-			ui.Text(c, a.tr("手动同步 · 任务保存在 tasks-go.json"))
+	ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
+		ui.Column(c).FillWidth().Gap(8).Padding(12, 16, 12, 0).Children(func() {
 			if a.taskError != nil {
 				ui.Text(c, a.tr("任务文件不可用，已阻止保存与运行: ")+a.taskError.Error())
 				ui.Text(c, a.tr("修复文件或备份问题后重新载入。不会以空列表覆盖。"))
@@ -100,24 +101,51 @@ func (a *application) taskEditorView(c *ui.Context) {
 			if issue := a.selectedTaskIssue(); issue != nil {
 				ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error())
 			}
-			ui.Text(c, a.tr("任务名称"))
-			ui.TextInput(c, &s.name).Label(a.tr("任务名称")).ReadOnly(locked).OnChange(s.edited)
-			ui.Text(c, a.tr("源文件夹"))
-			ui.Row(c).Gap(8).Children(func() {
-				ui.TextInput(c, &s.source).Label(a.tr("源文件夹路径")).Grow(1).Placeholder(a.tr("源文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
-				ui.Button(c, a.tr("选择源")).Disabled(locked).OnClick(func() { a.chooseFolder(true) })
+			if a.cards.destinations {
+				key := "每个目标各自同步源，因此同一个文件可以同时进入多个目标。"
+				if manualKind(s.kind) == taskconfig.Moving {
+					key = "按目标顺序首个匹配；失败不转投后续目标。"
+				}
+				ui.Text(c, a.tr(key)).TextColor(porcelain.TextMuted)
+				porcelainPath(c, s.source)
+				ui.Box(c).Height(12)
+				a.manualTargetsView(c, locked)
+				ui.Text(c, a.render(s.message)).FontSize(12)
+				return
+			}
+			ui.Column(c).FillWidth().Gap(6).Children(func() {
+				ui.Text(c, a.tr("名称"))
+				ui.TextInput(c, &s.name).Height(32).Label(a.tr("任务名称")).ReadOnly(locked).OnChange(s.edited)
 			})
-			a.triggerView(c, locked)
+			ui.Column(c).FillWidth().Gap(6).Children(func() {
+				ui.Text(c, a.tr("源文件夹"))
+				ui.Row(c).Gap(8).Children(func() {
+					ui.TextInput(c, &s.source).Height(32).Label(a.tr("源文件夹路径")).Grow(1).Placeholder(a.tr("源文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
+					porcelainButton(c, a.tr("浏览")).Label(a.tr("选择源")).Disabled(locked).OnClick(func() { a.chooseFolder(true) })
+				})
+			})
 			a.manualKindView(c, locked)
-			a.manualTargetsView(c, locked)
-			ui.Text(c, a.tr("新增/更新依大小和整秒修改时间判断；Mirror移除另行确认。"))
-			ui.Text(c, a.render(s.message))
-			p := s.progress
-			ui.Text(c, fmt.Sprintf(a.tr("当前/最后目标 %s · 已发布 %d / %d · 未变化 %d · 已传输 %d 字节"), a.tr(p.Stage), p.Copied, p.Total, p.Unchanged, p.Bytes))
-			ui.Text(c, p.Path).FontSize(12)
-			ui.Text(c, a.tr("关闭行为可在设置中选择；停止保留已发布文件。"))
-			ui.Text(c, "Data: "+pathLabel(a.installation.data)).FontSize(12)
+			if s.id != "" {
+				ui.Text(c, a.tr("已保存任务不能切换类型。")).FontSize(14).Padding(12).FillWidth().Border(1, porcelain.Border)
+			}
+			ui.Text(c, a.tr("触发器"))
+			a.triggerView(c, locked)
+			porcelainButton(c, a.tr("同步目标（按顺序执行）")).Background(ui.Transparent).Border(0, ui.Transparent).FontSize(12).TextColor(porcelain.TextMuted).Disabled(s.busy()).OnClick(func() { a.cards.destinations = true })
+			if s.dirty || s.phase == manualDraft || s.phase == manualSaving {
+				ui.Text(c, a.render(s.message))
+			}
 		})
+	})
+	ui.Row(c).FillWidth().Gap(8).Padding(12, 0, 0, 0).Children(func() {
+		ui.Box(c).Grow(1)
+		if a.cards.destinations {
+			porcelainButton(c, a.tr("编辑任务")).Disabled(s.busy()).OnClick(func() { a.cards.destinations = false })
+		}
+		if s.dirty {
+			porcelainButton(c, a.tr("放弃编辑")).Disabled(s.busy()).OnClick(a.discardManual)
+		}
+		porcelainButton(c, a.tr("关闭编辑")).OnClick(a.closeTaskEditor)
+		ui.PrimaryButton(c, a.tr("保存任务")).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
 	})
 }
 func (a *application) chooseFolder(source bool) {
@@ -332,18 +360,4 @@ func (a *application) beforeQuit(e *mygo.QuitEvent) {
 		return
 	}
 	a.lifecycle.beginQuit()
-}
-
-func (a *application) manualActions(c *ui.Context, locked bool) {
-	s := &a.manual
-	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, a.tr("保存任务")).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
-		ui.Button(c, a.tr("删除任务")).Disabled(locked || a.taskError != nil || s.id == "").OnClick(a.confirmDeleteManual)
-	})
-	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, a.tr("运行")).Disabled(a.taskError != nil || (s.phase != manualReady && s.phase != manualFinished)).OnClick(a.startManual)
-		ui.Button(c, a.tr("停止")).Disabled(s.phase != manualRunning && s.phase != manualChecking).OnClick(a.stopManual)
-		ui.Button(c, a.tr("Exit")).OnClick(a.requestQuit)
-	})
-
 }

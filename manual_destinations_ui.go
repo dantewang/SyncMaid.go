@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/egoist/mygo/ui"
 	"syncmaid/internal/taskconfig"
 )
@@ -117,45 +115,41 @@ func (a *application) discardManual() {
 
 func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 	s := &a.manual
-	ui.Text(c, a.tr("同步目标（按顺序执行）"))
-	ui.Scroll(c).Height(115).Children(func() {
-		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			for i, d := range s.targets {
-				id := d.ID
-				label := a.tr("目标 ") + d.Name
-				if id == s.targetID {
-					label = "● " + label
-				}
-				if r, ok := s.destinationResults[id]; ok {
-					label += " · " + a.tr(string(r.State))
-				}
-				ui.Row(c).FillWidth().Gap(6).Children(func() {
-					ui.Button(c, label).Grow(1).Disabled(s.busy()).OnClick(func() { s.selectTarget(id) })
-					ui.Button(c, a.tr("上移")).Label(a.tr("上移 ") + d.Name).Disabled(locked || i == 0).OnClick(func() { a.moveManualTarget(id, -1) })
-					ui.Button(c, a.tr("下移")).Label(a.tr("下移 ") + d.Name).Disabled(locked || i == len(s.targets)-1).OnClick(func() { a.moveManualTarget(id, 1) })
+	for i, d := range s.targets {
+		id := d.ID
+		ui.Column(c).FillWidth().Gap(8).Border(1, porcelain.Border).Padding(12).Children(func() {
+			ui.Row(c).MinHeight(60).Gap(8).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(4).Children(func() {
+					ui.Text(c, a.ruleSummary(d.Filters)+"  →  "+d.Name).SingleLine()
+					porcelainPath(c, d.Path)
 				})
-				if r, ok := s.destinationResults[id]; ok {
-					ui.Text(c, fmt.Sprintf(a.tr("%s: %s · 原始文件 %d · 匹配 %d · 已发布 %d · 未变化 %d · 已移除 %d · 移动 %d · 保留 %d · 失败 %d · 源未匹配 %d"), r.Name, a.tr(string(r.State)), r.Progress.SourceFiles, r.Progress.Total, r.Progress.Copied, r.Progress.Unchanged, r.Progress.Removed, r.Progress.Moved, r.Progress.Retained, r.Progress.Failed, r.Progress.Unmatched)).FontSize(12)
-					if !r.Ended.IsZero() {
-						ui.Text(c, a.tr("最近结束: ")+r.Ended.Local().Format("01-02 15:04:05")).FontSize(12)
-					}
-					if r.Error != "" {
-						ui.Text(c, historyText(r.Error, historyErrorBytes)).FontSize(12)
-					}
+				porcelainIcon(c, "♢", a.tr("编辑目标")+" "+d.Name).Border(0, ui.Transparent).Disabled(s.busy()).OnClick(func() { s.selectTarget(id) })
+				if manualKind(s.kind) == taskconfig.Moving {
+					porcelainButton(c, a.tr("上移")).Disabled(locked || i == 0).OnClick(func() { a.moveManualTarget(id, -1) })
+					porcelainButton(c, a.tr("下移")).Disabled(locked || i == len(s.targets)-1).OnClick(func() { a.moveManualTarget(id, 1) })
 				}
+				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")).Border(0, ui.Transparent).Disabled(locked || len(s.targets) <= 1 || s.filterEditor.RunError != "").OnClick(func() { s.selectTarget(id); a.removeManualTarget() })
+			})
+			if id != s.targetID {
+				return
 			}
+			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+			a.selectedTargetEditor(c, locked)
 		})
-	})
+	}
+	porcelainButton(c, a.tr("添加目标")).Disabled(locked).OnClick(a.addManualTarget)
+}
+
+func (a *application) selectedTargetEditor(c *ui.Context, locked bool) {
+	s := &a.manual
+	ui.Text(c, a.tr("名称"))
+	ui.TextInput(c, &s.targetName).Height(32).Label(a.tr("目标名称")).Placeholder(a.tr("目标名称")).ReadOnly(locked).OnChange(s.edited)
+	ui.Text(c, a.tr("目标文件夹"))
 	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, a.tr("添加目标")).Disabled(locked).OnClick(a.addManualTarget)
-		ui.Button(c, a.tr("移除目标（仅配置）")).Disabled(locked || len(s.targets) <= 1 || s.filterEditor.RunError != "").OnClick(a.removeManualTarget)
+		ui.TextInput(c, &s.target).Height(32).Label(a.tr("目标文件夹路径")).Grow(1).Placeholder(a.tr("现有目标文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
+		porcelainButton(c, a.tr("浏览")).Label(a.tr("选择目标")).Disabled(locked).OnClick(func() { a.chooseFolder(false) })
 	})
-	ui.Text(c, a.tr("移除只修改配置，不删除文件；保存后生效。")).FontSize(12)
-	ui.TextInput(c, &s.targetName).Label(a.tr("目标名称")).Placeholder(a.tr("目标名称")).ReadOnly(locked).OnChange(s.edited)
-	ui.Row(c).Gap(8).Children(func() {
-		ui.TextInput(c, &s.target).Label(a.tr("目标文件夹路径")).Grow(1).Placeholder(a.tr("现有目标文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
-		ui.Button(c, a.tr("选择目标")).Disabled(locked).OnClick(func() { a.chooseFolder(false) })
-	})
+	ui.Text(c, a.tr("请选择现有目标文件夹；本版本不会创建目标根目录。")).FontSize(14).Padding(12).FillWidth().Border(1, porcelain.Border)
 	if manualKind(s.kind) == taskconfig.Moving {
 		a.moveOptionsView(c, locked)
 	} else {

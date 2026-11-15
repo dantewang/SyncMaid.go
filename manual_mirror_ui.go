@@ -29,10 +29,9 @@ func (a *application) setDestinationMode(strategy taskconfig.Strategy, mode task
 func (a *application) destinationModeView(c *ui.Context, locked bool) {
 	for _, d := range a.manual.targets {
 		if d.ID == a.manual.targetID {
-			ui.Row(c).Gap(8).Children(func() {
-				ui.Button(c, a.tr("仅添加")).Selected(destinationStrategy(d) == taskconfig.AddOnly).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.AddOnly, destinationDeleteMode(d)) })
-				ui.Button(c, a.tr("Mirror镜像")).Selected(destinationStrategy(d) == taskconfig.Mirror).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, destinationDeleteMode(d)) })
-			})
+			ui.Text(c, a.tr("同步策略"))
+			porcelainChoice(c, "sync", a.tr("镜像"), a.tr("复制新增和更改的文件；多余文件须每次确认后移除。"), destinationStrategy(d) == taskconfig.Mirror, locked, func() { a.setDestinationMode(taskconfig.Mirror, destinationDeleteMode(d)) })
+			porcelainChoice(c, "＋", a.tr("仅添加"), a.tr("复制新增和更改的文件；从不删除目标中的文件。"), destinationStrategy(d) == taskconfig.AddOnly, locked, func() { a.setDestinationMode(taskconfig.AddOnly, destinationDeleteMode(d)) })
 			if destinationStrategy(d) == taskconfig.Mirror {
 				ui.Text(c, a.tr("Mirror同步全部文件；每次移除多余文件前须确认。空源禁止删除，不清理空目录。"))
 				ui.Row(c).Gap(8).Children(func() {

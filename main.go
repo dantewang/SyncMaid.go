@@ -119,13 +119,14 @@ func run() (result error) {
 		a.lifecycle.destroyTray = tray.Destroy
 		window, err := createStartupWindow(func() *mygo.Window {
 			return mygo.NewWindow(mygo.WindowOptions{
-				Title:     "SyncMaid",
-				Hidden:    a.commonError == nil && a.commonValue.StartMinimized,
-				Width:     1000,
-				Height:    700,
-				MinWidth:  760,
-				MinHeight: 560,
-				Content:   ui.View(a.view),
+				Title:          "SyncMaid",
+				Hidden:         a.commonError == nil && a.commonValue.StartMinimized,
+				Width:          940,
+				Height:         620,
+				UseContentSize: true,
+				MinWidth:       640,
+				MinHeight:      480,
+				Content:        ui.View(a.view),
 			})
 		})
 		if err != nil {
@@ -138,6 +139,9 @@ func run() (result error) {
 			a.lifecycle.closeRequested()
 		}
 		a.window = window
+		if err := window.SetIcon(porcelainAppIcon); err != nil {
+			slog.Warn("window-icon", "error", err)
+		}
 		a.reloadTasks()
 		window.OnClose(func(e *mygo.CloseEvent) {
 			if a.lifecycle.phase == exiting || a.lifecycle.phase == stopped {

@@ -100,8 +100,10 @@ func TestLanguageEditorAndHistoryRegions(t *testing.T) {
 			}}
 			a.cards.editor = true
 			view := ui.NewTester(a.view, 1000, 1400)
+			a.cards.destinations = true
+			destinationView := ui.NewTester(a.view, 1000, 1400)
 			for _, key := range []string{"任务名称", "包含路径前缀", "排除扩展名", "Skip保留源", "Suffix加编号", "cron表达式"} {
-				if !view.HasText(a.tr(key)) {
+				if !view.HasText(a.tr(key)) && !destinationView.HasText(a.tr(key)) {
 					t.Errorf("missing translated editor region %q", key)
 				}
 			}

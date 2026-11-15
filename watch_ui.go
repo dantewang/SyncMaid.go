@@ -44,9 +44,9 @@ func (a *application) quietChanged() {
 func (a *application) triggerView(c *ui.Context, locked bool) {
 	s := &a.manual
 	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, a.tr("Manual手动")).Selected(s.trigger.Kind != "watch" && s.trigger.Kind != "scheduled").Disabled(locked).OnClick(func() { a.setTrigger("manual") })
-		ui.Button(c, a.tr("Watch监视")).Selected(s.trigger.Kind == "watch").Disabled(locked).OnClick(func() { a.setTrigger("watch") })
-		ui.Button(c, a.tr("Scheduled定时")).Selected(s.trigger.Kind == "scheduled").Disabled(locked).OnClick(func() { a.setTrigger("scheduled") })
+		porcelainButton(c, a.tr("手动")).Selected(s.trigger.Kind != "watch" && s.trigger.Kind != "scheduled").Disabled(locked).OnClick(func() { a.setTrigger("manual") })
+		porcelainButton(c, a.tr("定时")).Selected(s.trigger.Kind == "scheduled").Disabled(locked).OnClick(func() { a.setTrigger("scheduled") })
+		porcelainButton(c, a.tr("监视")).Selected(s.trigger.Kind == "watch").Disabled(locked).OnClick(func() { a.setTrigger("watch") })
 	})
 	if s.trigger.Kind == "watch" {
 		ui.Text(c, a.tr("源变化后等待静默秒数（1–600，默认10）"))
