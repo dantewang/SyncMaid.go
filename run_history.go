@@ -137,9 +137,9 @@ func runOutcome(r runRecord) string {
 	}
 }
 func historyResult(r runRecord) savedTaskResult {
-	message := r.Started.Local().Format("2006-01-02 15:04:05") + " · " + runOutcome(r)
+	message := messagef("%s · %s", r.Started.Local().Format("2006-01-02 15:04:05"), messagef(runOutcome(r)))
 	if r.Error != "" {
-		message += " · " + r.Error
+		message = messagef("%s · %s", message, r.Error)
 	}
 	results := multipleResult{}
 	var progress transferProgress

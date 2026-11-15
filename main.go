@@ -21,7 +21,11 @@ type application struct {
 	watchWorkers    sync.WaitGroup
 	watches         map[taskconfig.ID]*watchedTask
 	watchPhase      watchServicePhase
-	watchActivity   string
+	watchActivity   localizedMessage
+	settingsOpen    bool
+	languageBusy    bool
+	languageError   error
+	locale          string // Native-thread snapshot of MyGo's language, not a second setting.
 	installation    installation
 	lifecycle       lifecycle
 	manual          manualSession
@@ -75,6 +79,9 @@ func run() (result error) {
 	mygo.App.OnQuit(func() { slog.Info("application-exited") })
 	var startupError error
 	mygo.App.WhenReady(func() {
+		a.locale = mygo.App.Locale()
+		offLocale := mygo.App.OnLocaleChanged(func(tag string) { a.locale = tag })
+		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { offLocale() })
 		icon, err := trayIcon()
 		if err != nil {
 			startupError = startupProblem(err, startupFramework, install.directory)
@@ -116,13 +123,12 @@ func run() (result error) {
 				e.PreventDefault()
 			}
 		})
-		menu := mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "Show main window", Click: func(*mygo.MenuItem, *mygo.Window) { a.lifecycle.show() }},
-			{Label: "Exit", Click: func(*mygo.MenuItem, *mygo.Window) { a.requestQuit() }},
-		})
 		tray.OnClick(a.lifecycle.show)
 		tray.OnRightClick(func() {
-			tray.SetMenu(menu)
+			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+				{Label: a.tr("Show main window"), Click: func(*mygo.MenuItem, *mygo.Window) { a.lifecycle.show() }},
+				{Label: a.tr("Exit"), Click: func(*mygo.MenuItem, *mygo.Window) { a.requestQuit() }},
+			}))
 			defer tray.SetMenu(nil)
 			tray.PopUpMenu()
 		})

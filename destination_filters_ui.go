@@ -78,7 +78,7 @@ func (a *application) taskDeletionIssue() error {
 
 func (a *application) filtersView(c *ui.Context, locked bool) {
 	e := &a.manual.filterEditor
-	ui.Text(c, "此目标的文件过滤").Bold()
+	ui.Text(c, a.tr("此目标的文件过滤")).Bold()
 	readOnly := e.Mode == filterReadOnly
 	ui.Row(c).Gap(6).Children(func() {
 		for _, item := range []struct {
@@ -86,22 +86,23 @@ func (a *application) filtersView(c *ui.Context, locked bool) {
 			mode  filterMode
 		}{{"全部文件", filterAll}, {"无匹配", filterNone}, {"包含/排除", filterCustom}} {
 			mode := item.mode
-			ui.Button(c, item.label).Selected(e.Mode == mode).Disabled(locked || readOnly).OnClick(func() { a.setFilterMode(mode) })
+			ui.Button(c, a.tr(item.label)).Selected(e.Mode == mode).Disabled(locked || readOnly).OnClick(func() { a.setFilterMode(mode) })
 		}
 	})
 	if readOnly {
-		ui.Text(c, e.Reason)
+		ui.Text(c, a.tr("复杂或不支持的规则已原样保留，只读。"))
+		ui.Text(c, a.tr("诊断: ")+e.Reason)
 		return
 	}
 	if e.Mode == filterAll {
-		ui.Text(c, "此目标接收所有源文件。").FontSize(12)
+		ui.Text(c, a.tr("此目标接收所有源文件。")).FontSize(12)
 	}
 	if e.Mode == filterNone {
-		ui.Text(c, "此目标不接收文件；不会删除任何已有文件。").FontSize(12)
+		ui.Text(c, a.tr("此目标不接收文件；不会删除任何已有文件。")).FontSize(12)
 	}
 	if e.Mode == filterCustom {
-		ui.Text(c, "每行一项，忽略空行和首尾空白。包含任一条件命中即可；包含全空表示全部，再排除任一命中项。").FontSize(12)
-		ui.Text(c, "路径相对源目录（含子目录）；扩展名如 txt；通配符支持 *、?、**。不支持正则输入。").FontSize(12)
+		ui.Text(c, a.tr("每行一项，忽略空行和首尾空白。包含任一条件命中即可；包含全空表示全部，再排除任一命中项。")).FontSize(12)
+		ui.Text(c, a.tr("路径相对源目录（含子目录）；扩展名如 txt；通配符支持 *、?、**。不支持正则输入。")).FontSize(12)
 		ui.Row(c).FillWidth().Gap(12).Children(func() {
 			for _, column := range []struct {
 				title                    string
@@ -112,14 +113,14 @@ func (a *application) filtersView(c *ui.Context, locked bool) {
 						label string
 						value *string
 					}{{column.title + "路径前缀", column.paths}, {column.title + "扩展名", column.extensions}, {column.title + "通配符", column.globs}} {
-						ui.Text(c, field.label).FontSize(12)
-						ui.TextArea(c, field.value).Label(field.label).MinHeight(45).Height(55).MaxLength(8192).ReadOnly(locked).OnChange(a.filterEdited)
+						ui.Text(c, a.tr(field.label)).FontSize(12)
+						ui.TextArea(c, field.value).Label(a.tr(field.label)).MinHeight(45).Height(55).MaxLength(8192).ReadOnly(locked).OnChange(a.filterEdited)
 					}
 				})
 			}
 		})
 	}
 	if e.Error != "" {
-		ui.Text(c, "过滤错误: "+e.Error)
+		ui.Text(c, a.tr("过滤错误: ")+e.Error)
 	}
 }

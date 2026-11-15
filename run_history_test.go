@@ -91,7 +91,7 @@ func TestRunHistoryInterruptedIsNotSuccessOrReplay(t *testing.T) {
 	a := application{tasks: &savedTaskLibrary{tasks: []taskconfig.Task{{ID: r.TaskID}}}, historyView: loaded.data}
 	a.restoreRunResults()
 	result := a.results[r.TaskID]
-	if !strings.Contains(result.message, "中断") || result.destinations[r.Goals[0].ID].State != destinationInterrupted || a.manual.cancel != nil || a.manual.phase != manualDraft {
+	if !strings.Contains(result.message.render("zh-Hans"), "中断") || result.destinations[r.Goals[0].ID].State != destinationInterrupted || a.manual.cancel != nil || a.manual.phase != manualDraft {
 		t.Fatal(result)
 	}
 	after, _ := os.ReadFile(filepath.Join(data, runHistoryFile))

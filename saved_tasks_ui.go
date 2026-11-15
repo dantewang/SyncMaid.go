@@ -24,8 +24,8 @@ func (a *application) newManual() {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
 		return
 	}
-	d := manualDestination{ID: taskconfig.NewID(), Name: "目标 1", Filters: allFileRules()}
-	a.manual = manualSession{onEdit: func() { a.pauseEditingWatch(a.manual.id) }, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, message: "请输入名称与路径，然后保存任务。"}
+	d := manualDestination{ID: taskconfig.NewID(), Name: a.tr("目标 %d", 1), Filters: allFileRules()}
+	a.manual = manualSession{onEdit: func() { a.pauseEditingWatch(a.manual.id) }, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, message: messagef("请输入名称与路径，然后保存任务。")}
 }
 func (a *application) selectManual(id taskconfig.ID) {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
@@ -33,7 +33,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 	}
 	t, err := a.tasks.find(id)
 	if err != nil {
-		a.manual.message = err.Error()
+		a.manual.message = messagef("错误: %s", err.Error())
 		return
 	}
 	s := manualSession{onEdit: func() { a.pauseEditingWatch(a.manual.id) }, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
@@ -56,10 +56,10 @@ func (a *application) selectManual(id taskconfig.ID) {
 	}
 	s.request, err = multipleRequestFromSaved(t)
 	if err != nil {
-		s.message = "此任务不可运行或编辑: " + err.Error()
+		s.message = messagef("此任务不可运行或编辑: %s", err.Error())
 	} else {
 		s.phase = manualReady
-		s.message = "已载入，可以运行或编辑。"
+		s.message = messagef("已载入，可以运行或编辑。")
 		if result, ok := a.results[id]; ok {
 			s.phase = manualFinished
 			s.message = result.message
@@ -78,12 +78,14 @@ func (a *application) reloadTasks() {
 	keepDraft := s.dirty
 	id := s.id
 	s.phase = manualLoading
-	s.message = "正在载入 Go 专用任务文件…"
+	s.message = messagef("正在载入 Go 专用任务文件…")
 	data := a.installation.data
 	go func() {
 		library, err := loadSavedTasks(data)
 		history := loadRunHistory(data)
+		_, languageError := checkLanguageFile(data)
 		a.window.Update(func() {
+			a.languageError = languageError
 			s.phase = manualDraft
 			a.taskError = err
 			a.history = history
@@ -92,7 +94,7 @@ func (a *application) reloadTasks() {
 				a.historyView = history.data
 			}
 			if err != nil {
-				s.message = "载入失败，已阻止写入: " + err.Error()
+				s.message = messagef("载入失败，已阻止写入: %s", err.Error())
 			} else {
 				a.tasks = library
 				a.restoreRunResults()
@@ -101,7 +103,7 @@ func (a *application) reloadTasks() {
 					if _, e := library.find(s.id); s.id != "" && e != nil {
 						s.id = ""
 					}
-					s.message = "已重新载入；未保存编辑仍在，请核对任务列表后再保存。"
+					s.message = messagef("已重新载入；未保存编辑仍在，请核对任务列表后再保存。")
 				case id != "":
 					if _, e := library.find(id); e == nil {
 						a.selectManual(id)
@@ -130,21 +132,21 @@ func (a *application) createManual() {
 		return
 	}
 	if strings.TrimSpace(s.name) == "" {
-		s.message = "请输入任务名称"
+		s.message = messagef("请输入任务名称")
 		return
 	}
 	if s.triggerError != "" {
-		s.message = s.triggerError
+		s.message = messagef("触发设置错误: %s", messagef(s.triggerError))
 		return
 	}
 	if err := s.filterDraftError(); err != nil {
-		s.message = "过滤尚未保存: " + err.Error()
+		s.message = messagef("过滤尚未保存: %s", err.Error())
 		return
 	}
 	id, name, q := s.id, s.name, s.draftRequest()
 	library := a.tasks
 	s.phase = manualSaving
-	s.message = "检查路径并保存任务…"
+	s.message = messagef("检查路径并保存任务…")
 	go func() {
 		validationErr := validateMultiple(context.Background(), q)
 		var writeErr error
@@ -161,18 +163,18 @@ func (a *application) finishTaskSave(next *savedTaskLibrary, id taskconfig.ID, v
 	s.phase = manualDraft
 	switch {
 	case validationErr != nil:
-		s.message = "未保存，编辑仍在: " + validationErr.Error()
+		s.message = messagef("未保存，编辑仍在: %s", validationErr.Error())
 	case writeErr != nil:
 		// Retain the proposed identity if Save's post-commit check failed,
 		// so explicit reload can find it instead of making a duplicate.
 		s.id = id
 		a.taskError = writeErr
-		s.message = "保存失败或结果待核对，编辑仍在。请重新载入: " + writeErr.Error()
+		s.message = messagef("保存失败或结果待核对，编辑仍在。请重新载入: %s", writeErr.Error())
 	default:
 		a.tasks = next
 		s.dirty = false
 		a.selectManual(id)
-		s.message = "任务已保存，可以运行。"
+		s.message = messagef("任务已保存，可以运行。")
 	}
 	if validationErr != nil || writeErr != nil {
 		a.pauseQuitAfterTaskError()
@@ -187,7 +189,7 @@ func (a *application) pauseQuitAfterTaskError() {
 	if a.manual.quitPending {
 		a.manual.quitPending = false
 		a.watchPhase = watchesPaused
-		a.manual.message += "；退出已暂停，请先核对未保存的编辑。"
+		a.manual.message = messagef("%s；退出已暂停，请先核对未保存的编辑。", a.manual.message)
 		a.lifecycle.show()
 	}
 }
@@ -198,14 +200,15 @@ func (a *application) confirmDeleteManual() {
 		return
 	}
 	if err := a.taskDeletionIssue(); err != nil {
-		s.message = err.Error()
+		s.message = messagef("错误: %s", err.Error())
 		return
 	}
 	id, name, previous := s.id, s.name, s.phase
 	a.pauseEditingWatch(id)
 	s.phase = manualChoosing
+	options := mygo.MessageOptions{Parent: a.window, Type: mygo.MessageWarning, Title: a.tr("删除任务"), Message: a.tr("确认删除任务「%s」？", name), Detail: a.tr("只删除任务记录，不删除源或目标文件。未保存编辑也会放弃。"), Buttons: []string{a.tr("取消"), a.tr("删除")}, DefaultButton: 0, CancelButton: 0, DestructiveButtons: []int{1}}
 	go func() {
-		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: a.window, Type: mygo.MessageWarning, Title: "删除任务", Message: "确认删除任务「" + name + "」？", Detail: "只删除任务记录，不删除源或目标文件。未保存编辑也会放弃。", Buttons: []string{"取消", "删除"}, DefaultButton: 0, CancelButton: 0, DestructiveButtons: []int{1}})
+		result, err := mygo.Dialog.Message(options)
 		a.window.Update(func() {
 			s.phase = previous
 			if s.quitPending {
@@ -213,14 +216,14 @@ func (a *application) confirmDeleteManual() {
 				return
 			}
 			if err != nil {
-				s.message = "删除确认失败: " + err.Error()
+				s.message = messagef("删除确认失败: %s", err.Error())
 				a.syncWatches()
 				return
 			}
 			if result.Button == 1 {
 				a.deleteManual(id)
 			} else {
-				s.message = "已取消删除"
+				s.message = messagef("已取消删除")
 				a.syncWatches()
 			}
 		})
@@ -232,19 +235,19 @@ func (a *application) deleteManual(id taskconfig.ID) {
 		return
 	}
 	if err := a.taskDeletionIssue(); err != nil {
-		s.message = err.Error()
+		s.message = messagef("错误: %s", err.Error())
 		return
 	}
 	library := a.tasks
 	s.phase = manualSaving
-	s.message = "正在删除任务记录…"
+	s.message = messagef("正在删除任务记录…")
 	go func() {
 		next, err := library.remove(id)
 		a.window.Update(func() {
 			s.phase = manualDraft
 			if err != nil {
 				a.taskError = err
-				s.message = "删除未能确认，请重新载入核对: " + err.Error()
+				s.message = messagef("删除未能确认，请重新载入核对: %s", err.Error())
 				a.pauseQuitAfterTaskError()
 			} else {
 				a.tasks = next
@@ -255,7 +258,7 @@ func (a *application) deleteManual(id taskconfig.ID) {
 				} else {
 					a.newManual()
 				}
-				s.message = "任务已删除，源与目标文件保留。"
+				s.message = messagef("任务已删除，源与目标文件保留。")
 			}
 			a.syncWatches()
 			if s.quitPending {

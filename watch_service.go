@@ -50,7 +50,7 @@ type watchedTask struct {
 	ticket   watchTicket
 	cancel   context.CancelFunc
 	timer    *time.Timer
-	status   string
+	status   localizedMessage
 }
 
 func (a *application) liveWatch(w *watchedTask) bool {
@@ -69,7 +69,7 @@ func (a *application) cancelWatch(w *watchedTask) {
 func (a *application) pauseEditingWatch(id taskconfig.ID) {
 	if w := a.watches[id]; w != nil {
 		a.cancelWatch(w)
-		w.status = "编辑中，保存或放弃后重新订阅"
+		w.status = messagef("编辑中，保存或放弃后重新订阅")
 	}
 }
 func (a *application) stopWatches(phase watchServicePhase) {
@@ -116,18 +116,18 @@ func (a *application) syncWatches() {
 		if old != nil {
 			a.cancelWatch(old)
 		}
-		w := &watchedTask{task: t, status: "正在建立源监视"}
+		w := &watchedTask{task: t, status: messagef("正在建立源监视")}
 		a.watches[t.ID] = w
 		if _, e := multipleRequestFromSaved(t); e != nil {
 			w.ticket.phase = watchFailed
-			w.status = e.Error()
+			w.status = messagef("触发失败: %s", e.Error())
 			continue
 		}
 		if t.Trigger.Kind == "scheduled" {
 			schedule, _, e := parseScheduled(*t.Trigger.CronExpression, time.Now())
 			if e != nil {
 				w.ticket.phase = watchFailed
-				w.status = e.Error()
+				w.status = messagef("触发失败: %s", e.Error())
 				continue
 			}
 			w.schedule = schedule
@@ -158,9 +158,9 @@ func (a *application) syncWatches() {
 							if w.timer != nil {
 								w.timer.Stop()
 							}
-							w.status = "监视失败，30秒后重试: " + e.Error()
+							w.status = messagef("监视失败，30秒后重试: %s", e.Error())
 						} else {
-							w.status = "监视已建立"
+							w.status = messagef("监视已建立")
 							a.watchChanged(w)
 						}
 					})
@@ -194,7 +194,7 @@ func (a *application) watchChanged(w *watchedTask) {
 		w.timer.Stop()
 	}
 	quiet, _ := w.task.Trigger.SettleWindow()
-	w.status = fmt.Sprintf("等待静默 %.0f 秒", quiet.Seconds())
+	w.status = messagef("等待静默 %.0f 秒", quiet.Seconds())
 	w.timer = time.AfterFunc(quiet, func() {
 		if a.window != nil {
 			a.window.Update(func() { a.watchReady(w, revision) })
@@ -205,7 +205,7 @@ func (a *application) watchReady(w *watchedTask, revision uint64) {
 	if !a.liveWatch(w) || !w.ticket.ready(revision) {
 		return
 	}
-	w.status = "等待执行（同任务请求已合并）"
+	w.status = messagef("等待执行（同任务请求已合并）")
 	a.drainWatches()
 }
 func (a *application) drainWatches() {
@@ -221,11 +221,11 @@ func (a *application) drainWatches() {
 		if w.schedule != nil {
 			a.armScheduled(w, time.Now())
 		} else {
-			w.status = "正在自动运行"
+			w.status = messagef("正在自动运行")
 		}
 		q, e := multipleRequestFromSaved(t)
 		if e != nil {
-			w.status = e.Error()
+			w.status = messagef("触发失败: %s", e.Error())
 			continue
 		}
 		a.startTaskRun(t.ID, t.Name, q, true)

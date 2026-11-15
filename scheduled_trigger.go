@@ -49,14 +49,14 @@ func (a *application) armScheduled(w *watchedTask, now time.Time) {
 	next := w.schedule.Next(now)
 	if next.IsZero() {
 		w.ticket.invalidate(watchFailed)
-		w.status = errNoScheduledFuture.Error()
+		w.status = messagef(errNoScheduledFuture.Error())
 		w.next = time.Time{}
 		w.timer = nil
 		return
 	}
 	w.next = next
 	revision := w.ticket.change()
-	w.status = "下次运行: " + next.Format("2006-01-02 15:04:05 MST")
+	w.status = messagef("下次运行: %s", next.Format("2006-01-02 15:04:05 MST"))
 	w.timer = time.AfterFunc(next.Sub(now), func() {
 		if a.window != nil {
 			a.window.Update(func() { a.scheduledReady(w, revision, time.Now()) })
@@ -74,7 +74,7 @@ func (a *application) scheduledReady(w *watchedTask, revision uint64, now time.T
 	if !w.ticket.ready(revision) {
 		return
 	}
-	w.status = "定时到期，等待执行（已合并）"
+	w.status = messagef("定时到期，等待执行（已合并）")
 	a.drainWatches()
 }
 
@@ -86,7 +86,7 @@ func (s *manualSession) refreshCron() {
 		s.triggerError = e.Error()
 		return
 	}
-	s.cronNext = "下次运行: " + next.Format("2006-01-02 15:04:05 MST")
+	s.cronNext = next.Format("2006-01-02 15:04:05 MST")
 }
 func (a *application) cronChanged() {
 	if !a.targetEditAllowed() {

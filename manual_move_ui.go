@@ -26,11 +26,11 @@ func (a *application) setManualKind(kind taskconfig.TaskKind) {
 func (a *application) manualKindView(c *ui.Context, locked bool) {
 	s := &a.manual
 	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, "Sync同步任务").Selected(manualKind(s.kind) == taskconfig.Sync).Disabled(locked || s.id != "").OnClick(func() { a.setManualKind(taskconfig.Sync) })
-		ui.Button(c, "Move移动任务").Selected(manualKind(s.kind) == taskconfig.Moving).Disabled(locked || s.id != "").OnClick(func() { a.setManualKind(taskconfig.Moving) })
+		ui.Button(c, a.tr("Sync同步任务")).Selected(manualKind(s.kind) == taskconfig.Sync).Disabled(locked || s.id != "").OnClick(func() { a.setManualKind(taskconfig.Sync) })
+		ui.Button(c, a.tr("Move移动任务")).Selected(manualKind(s.kind) == taskconfig.Moving).Disabled(locked || s.id != "").OnClick(func() { a.setManualKind(taskconfig.Moving) })
 	})
 	if manualKind(s.kind) == taskconfig.Moving {
-		ui.Text(c, "首个匹配目标拥有文件；不覆盖目标，失败不转投后续目标。已保存任务不能切换类型。")
+		ui.Text(c, a.tr("首个匹配目标拥有文件；不覆盖目标，失败不转投后续目标。已保存任务不能切换类型。"))
 	}
 }
 func (a *application) setMoveFlatten(flatten bool) {
@@ -48,14 +48,14 @@ func (a *application) setMoveFlatten(flatten bool) {
 func (a *application) moveOptionsView(c *ui.Context, locked bool) {
 	for _, d := range a.manual.targets {
 		if d.ID == a.manual.targetID {
-			ui.Text(c, "Move冲突处理：保留源，或在扩展名前加编号；都不覆盖已有文件。")
+			ui.Text(c, a.tr("Move冲突处理：保留源，或在扩展名前加编号；都不覆盖已有文件。"))
 			ui.Row(c).Gap(8).Children(func() {
-				ui.Button(c, "Skip保留源").Selected(d.Collision == "" || d.Collision == taskconfig.Skip).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Skip) })
-				ui.Button(c, "Suffix加编号").Selected(d.Collision == taskconfig.Suffix).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Suffix) })
+				ui.Button(c, a.tr("Skip保留源")).Selected(d.Collision == "" || d.Collision == taskconfig.Skip).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Skip) })
+				ui.Button(c, a.tr("Suffix加编号")).Selected(d.Collision == taskconfig.Suffix).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Suffix) })
 			})
 			ui.Row(c).Gap(8).Children(func() {
-				ui.Button(c, "保留目录结构").Selected(!d.Flatten).Disabled(locked).OnClick(func() { a.setMoveFlatten(false) })
-				ui.Button(c, "平铺到目标根目录").Selected(d.Flatten).Disabled(locked).OnClick(func() { a.setMoveFlatten(true) })
+				ui.Button(c, a.tr("保留目录结构")).Selected(!d.Flatten).Disabled(locked).OnClick(func() { a.setMoveFlatten(false) })
+				ui.Button(c, a.tr("平铺到目标根目录")).Selected(d.Flatten).Disabled(locked).OnClick(func() { a.setMoveFlatten(true) })
 			})
 		}
 	}
