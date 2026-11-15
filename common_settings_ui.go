@@ -3,11 +3,11 @@ package main
 import "github.com/egoist/mygo/ui"
 
 func (a *application) closeWindow() {
+	a.answerMirror(false)
 	if a.commonValue.CloseToTray {
 		a.lifecycle.closeRequested()
 		return
 	}
-	a.answerMirror(false)
 	a.requestQuit()
 }
 func (a *application) changeCommon(value commonSettings) {

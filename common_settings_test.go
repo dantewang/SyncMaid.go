@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,9 +45,21 @@ func TestCommonCloseAndBusyQuit(t *testing.T) {
 		w := &recordedWindow{}
 		quits := 0
 		canceled := false
-		a := &application{commonValue: commonSettings{CloseToTray: hide}, manual: manualSession{phase: manualRunning, cancel: func() { canceled = true }}}
+		reply := make(chan error, 1)
+		a := &application{commonValue: commonSettings{CloseToTray: hide}, manual: manualSession{phase: manualRunning, cancel: func() { canceled = true }, mirrorReply: reply, mirrorPreview: &mirrorPreview{}}}
 		a.lifecycle.ready(w, func() { quits++ }, nil)
 		a.closeWindow()
+		select {
+		case err := <-reply:
+			if !errors.Is(err, errMirrorDeclined) {
+				t.Fatalf("close did not reject Mirror: %v", err)
+			}
+		default:
+			t.Fatal("close left Mirror confirmation pending")
+		}
+		if a.manual.mirrorReply != nil || a.manual.mirrorPreview != nil {
+			t.Fatal("closed confirmation still visible/owned")
+		}
 		if hide {
 			if canceled || a.lifecycle.phase != hidden {
 				t.Fatal("hiding canceled run")
