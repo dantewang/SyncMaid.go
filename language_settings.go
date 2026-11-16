@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 )
 
 var languageChoices = []struct{ tag, name string }{
@@ -115,27 +114,4 @@ func (a *application) finishLanguageChange(err error) {
 	if a.manual.quitPending {
 		a.requestQuit()
 	}
-}
-
-func (a *application) settingsView(c *ui.Context) {
-	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().Gap(12).Padding(20).Children(func() {
-			ui.Text(c, a.tr("设置")).FontSize(22).Bold()
-			a.commonSettingsView(c)
-			ui.Text(c, a.tr("界面语言"))
-			for _, choice := range languageChoices {
-				tag := choice.tag
-				ui.Button(c, choice.name).Selected(a.locale == tag).Disabled(a.languageBusy || a.manual.phase == manualLoading).OnClick(func() { a.changeLanguage(tag) })
-			}
-			ui.Text(c, a.tr("语言立即生效，自动保存在 Data/locale；任务名称、路径和表达式保持原样。"))
-			if a.languageBusy {
-				ui.Text(c, a.tr("正在保存语言…"))
-			}
-			if a.languageError != nil {
-				ui.Text(c, a.tr("语言设置未能保存或读取；请保留并检查 Data/locale 后重试。当前界面可能只在本次生效。"))
-				ui.Text(c, a.languageError.Error()).FontSize(12)
-			}
-			ui.Text(c, a.tr("取得 Data 所有权前的启动错误仍使用简体中文。"))
-		})
-	})
 }

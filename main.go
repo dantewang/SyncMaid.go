@@ -13,6 +13,11 @@ import (
 )
 
 type application struct {
+	batch           manualBatch
+	destinationLog  *mygo.Window
+	logTask         taskconfig.ID
+	logDestination  taskconfig.ID
+	logReading      bool
 	cards           taskCardLayout
 	regexSession    *regexSession
 	importPreview   *legacyImport
@@ -98,7 +103,12 @@ func run() (result error) {
 	var startupError error
 	mygo.App.WhenReady(func() {
 		a.locale = mygo.App.Locale()
-		offLocale := mygo.App.OnLocaleChanged(func(tag string) { a.locale = tag })
+		offLocale := mygo.App.OnLocaleChanged(func(tag string) {
+			a.locale = tag
+			if a.destinationLog != nil {
+				a.destinationLog.Update(func() {})
+			}
+		})
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { offLocale() })
 		icon, err := trayIcon()
 		if err != nil {

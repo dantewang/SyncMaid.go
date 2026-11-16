@@ -7,8 +7,9 @@ import (
 
 // Layout state is owned by the UI thread, keyed by configuration identity.
 type taskCardLayout struct {
+	navigation   taskconfig.ID
+	targetHidden taskconfig.ID
 	destinations bool
-	details      taskconfig.ID
 	collapsed    map[taskconfig.ID]bool
 	editor       bool
 	running      taskconfig.ID
@@ -16,7 +17,7 @@ type taskCardLayout struct {
 }
 
 func (a *application) cardActionAllowed() bool {
-	return !a.manual.busy() && !a.manual.dirty && a.tasks != nil && a.taskError == nil
+	return a.batch.phase == batchIdle && !a.manual.busy() && !a.manual.dirty && a.tasks != nil && a.taskError == nil
 }
 
 func (a *application) editCard(id, destination taskconfig.ID) {
@@ -29,6 +30,7 @@ func (a *application) editCard(id, destination taskconfig.ID) {
 	}
 	if destination != "" {
 		a.manual.selectTarget(destination)
+		a.cards.targetHidden = ""
 	}
 	a.cards.destinations = destination != ""
 	a.cards.editor = true
@@ -62,8 +64,12 @@ func (a *application) toggleCard(id taskconfig.ID) {
 func (a *application) ruleSummary(rules []taskconfig.Rule) string {
 	parts := make([]string, 0, len(rules))
 	for _, r := range rules {
+		label := map[string]string{"path": "路径前缀", "extension": "扩展名", "wildcard": "通配符", "regex": "正则表达式", "allOf": "全部满足", "anyOf": "任一满足", "not": "排除"}[r.Kind]
+		if label == "" {
+			label = r.Kind
+		}
 		if r.Kind == "all" {
-			parts = append(parts, a.tr("全部文件"))
+			parts = append(parts, a.tr("所有文件"))
 			continue
 		}
 		if r.Kind == "none" {
@@ -71,11 +77,11 @@ func (a *application) ruleSummary(rules []taskconfig.Rule) string {
 			continue
 		}
 		if r.Rules != nil {
-			parts = append(parts, a.tr(r.Kind)+" ("+a.ruleSummary(*r.Rules)+")")
+			parts = append(parts, a.tr(label)+" ("+a.ruleSummary(*r.Rules)+")")
 			continue
 		}
 		if r.Rule != nil {
-			parts = append(parts, a.tr(r.Kind)+" ("+a.ruleSummary([]taskconfig.Rule{*r.Rule})+")")
+			parts = append(parts, a.tr(label)+" ("+a.ruleSummary([]taskconfig.Rule{*r.Rule})+")")
 			continue
 		}
 		value := ""
@@ -87,7 +93,7 @@ func (a *application) ruleSummary(rules []taskconfig.Rule) string {
 		case r.Pattern != nil:
 			value = *r.Pattern
 		}
-		parts = append(parts, a.tr(r.Kind)+" "+value)
+		parts = append(parts, a.tr(label)+" "+value)
 	}
 	return strings.Join(parts, " · ")
 }

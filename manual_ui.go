@@ -187,7 +187,7 @@ func (a *application) startManual() {
 }
 func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRequest, automatic bool) {
 	s := &a.manual
-	if s.busy() {
+	if s.busy() || (automatic && a.batch.phase == batchServing) {
 		return
 	}
 	a.cards.running = id
@@ -235,7 +235,7 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 			lastState = r.State
 			lastStage = r.Progress.Stage
 			a.window.Update(func() {
-				if !showResult {
+				if !showResult || a.cards.running != id || s.id != id {
 					return
 				}
 				s.destinationResults[r.ID] = r
@@ -256,6 +256,9 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 		})
 		a.window.Update(func() {
 			cancel()
+			if errors.Is(err, context.Canceled) {
+				a.batch.clear()
+			}
 			s.cancel = nil
 			a.historyError = historyErr
 			if historyView.Version == 1 {
@@ -310,6 +313,7 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 	}()
 }
 func (a *application) stopManual() {
+	a.batch.clear()
 	a.stopWatches(watchesPaused)
 	s := &a.manual
 	if s.phase != manualRunning && s.phase != manualChecking {
@@ -320,6 +324,7 @@ func (a *application) stopManual() {
 	s.cancel()
 }
 func (a *application) requestQuit() {
+	a.batch.clear()
 	a.stopWatches(watchesStopped)
 	if a.manual.phase == manualReviewing {
 		a.discardRegexMigration()
@@ -346,6 +351,7 @@ func (a *application) requestQuit() {
 	a.lifecycle.exit()
 }
 func (a *application) beforeQuit(e *mygo.QuitEvent) {
+	a.batch.clear()
 	a.stopWatches(watchesStopped)
 	if a.manual.phase == manualReviewing {
 		a.discardRegexMigration()

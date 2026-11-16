@@ -78,15 +78,19 @@ func (a *application) taskDeletionIssue() error {
 
 func (a *application) filtersView(c *ui.Context, locked bool) {
 	e := &a.manual.filterEditor
-	ui.Text(c, a.tr("此目标的文件过滤")).Bold()
+	ui.Text(c, a.tr("此目标的文件过滤")).FontSize(16).FontWeight(500)
 	readOnly := e.Mode == filterReadOnly
-	ui.Row(c).Gap(6).Children(func() {
+	ui.Row(c).Gap(0).Children(func() {
 		for _, item := range []struct {
 			label string
 			mode  filterMode
-		}{{"全部文件", filterAll}, {"无匹配", filterNone}, {"包含/排除", filterCustom}} {
+		}{{"所有文件", filterAll}, {"无匹配", filterNone}, {"包含/排除", filterCustom}} {
 			mode := item.mode
-			ui.Button(c, a.tr(item.label)).Selected(e.Mode == mode).Disabled(locked || readOnly).OnClick(func() { a.setFilterMode(mode) })
+			glyph := ""
+			if mode == filterCustom {
+				glyph = "filter"
+			}
+			porcelainSegment(c, a.tr(item.label), e.Mode == mode, glyph).Disabled(locked || readOnly).OnClick(func() { a.setFilterMode(mode) })
 		}
 	})
 	if readOnly {
@@ -117,13 +121,14 @@ func (a *application) filtersView(c *ui.Context, locked bool) {
 				title                    string
 				paths, extensions, globs *string
 			}{{"包含", &e.IncludePaths, &e.IncludeExtensions, &e.IncludeGlobs}, {"排除", &e.ExcludePaths, &e.ExcludeExtensions, &e.ExcludeGlobs}} {
-				ui.Column(c).Grow(1).Gap(6).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(6).Padding(12).Border(1, porcelain.Border).Children(func() {
+					ui.Text(c, a.tr(column.title)).FontWeight(500)
 					for _, field := range []struct {
 						label string
 						value *string
 					}{{column.title + "路径前缀", column.paths}, {column.title + "扩展名", column.extensions}, {column.title + "通配符", column.globs}} {
-						ui.Text(c, a.tr(field.label)).FontSize(12)
-						ui.TextArea(c, field.value).Label(a.tr(field.label)).MinHeight(45).Height(55).MaxLength(8192).ReadOnly(locked).OnChange(a.filterEdited)
+						ui.Text(c, a.tr(field.label)).FontSize(14)
+						ui.TextArea(c, field.value).Label(a.tr(field.label)).Font("Consolas").FontSize(14).MinHeight(45).Height(55).MaxLength(8192).ReadOnly(locked).OnChange(a.filterEdited)
 					}
 				})
 			}

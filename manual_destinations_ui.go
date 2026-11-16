@@ -34,7 +34,7 @@ func (s *manualSession) selectTarget(id taskconfig.ID) {
 	}
 }
 func (a *application) targetEditAllowed() bool {
-	return !a.manual.busy() && a.tasks != nil && a.taskError == nil && a.selectedTaskIssue() == nil
+	return a.batch.phase == batchIdle && !a.manual.busy() && a.tasks != nil && a.taskError == nil && a.selectedTaskIssue() == nil
 }
 func (a *application) addManualTarget() {
 	if !a.targetEditAllowed() {
@@ -123,14 +123,19 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 					ui.Text(c, a.ruleSummary(d.Filters)+"  →  "+d.Name).SingleLine()
 					porcelainPath(c, d.Path)
 				})
-				porcelainIcon(c, "♢", a.tr("编辑目标")+" "+d.Name).Border(0, ui.Transparent).Disabled(s.busy()).OnClick(func() { s.selectTarget(id) })
+				porcelainIcon(c, "copy", a.tr("复制目标（仅配置）")+" "+d.Name).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { a.copyManualTarget(id) })
+				glyph := "♢"
+				if id == s.targetID && a.cards.targetHidden != id {
+					glyph = "check"
+				}
+				porcelainIcon(c, glyph, a.tr("编辑或收起目标")+" "+d.Name).Border(0, ui.Transparent).Disabled(s.busy()).OnClick(func() { a.toggleDestinationEditor(id) })
 				if manualKind(s.kind) == taskconfig.Moving {
 					porcelainButton(c, a.tr("上移")).Disabled(locked || i == 0).OnClick(func() { a.moveManualTarget(id, -1) })
 					porcelainButton(c, a.tr("下移")).Disabled(locked || i == len(s.targets)-1).OnClick(func() { a.moveManualTarget(id, 1) })
 				}
 				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")).Border(0, ui.Transparent).Disabled(locked || len(s.targets) <= 1 || s.filterEditor.RunError != "").OnClick(func() { s.selectTarget(id); a.removeManualTarget() })
 			})
-			if id != s.targetID {
+			if id != s.targetID || a.cards.targetHidden == id {
 				return
 			}
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
@@ -138,6 +143,41 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 		})
 	}
 	porcelainButton(c, a.tr("添加目标")).Disabled(locked).OnClick(a.addManualTarget)
+}
+
+func (a *application) toggleDestinationEditor(id taskconfig.ID) {
+	if a.manual.busy() {
+		return
+	}
+	if a.manual.targetID == id && a.cards.targetHidden != id {
+		a.manual.flushTarget()
+		a.manual.keepFilterDraft()
+		a.cards.targetHidden = id
+		return
+	}
+	a.manual.selectTarget(id)
+	a.cards.targetHidden = ""
+}
+func (a *application) copyManualTarget(id taskconfig.ID) {
+	if !a.targetEditAllowed() {
+		return
+	}
+	s := &a.manual
+	s.flushTarget()
+	s.keepFilterDraft()
+	for _, d := range s.targets {
+		if d.ID == id {
+			d.ID = taskconfig.NewID()
+			d.Name = a.tr("%s（副本）", d.Name)
+			d.matcher = nil
+			d.filterError = nil
+			s.targets = append(s.targets, d)
+			s.selectTarget(d.ID)
+			a.cards.targetHidden = ""
+			s.edited()
+			return
+		}
+	}
 }
 
 func (a *application) selectedTargetEditor(c *ui.Context, locked bool) {

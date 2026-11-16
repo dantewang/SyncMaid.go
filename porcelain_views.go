@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
 	"syncmaid/internal/taskconfig"
+	"time"
 )
 
 func (a *application) manualView(c *ui.Context) {
@@ -12,16 +13,34 @@ func (a *application) manualView(c *ui.Context) {
 	s := &a.manual
 	ui.Row(c).Fill().Gap(0).Children(func() {
 		ui.Column(c).Width(210).FillHeight().Background(rgb(0xD9DFE3)).Border(1, porcelain.Border).Children(func() {
-			ui.Text(c, a.tr("任务列表")).FontSize(10).TextColor(porcelain.TextMuted).Padding(14, 14, 10, 14)
+			ui.Text(c, a.tr("任务")).FontSize(10).TextColor(porcelain.TextMuted).Padding(14, 14, 6, 14)
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-				ui.Column(c).FillWidth().Gap(2).Children(func() {
+				ui.Column(c).FillWidth().Gap(0).Children(func() {
 					if a.tasks == nil {
 						return
 					}
 					for _, t := range a.tasks.tasks {
 						id := t.ID
-						ui.ButtonBase(c).Label(t.Name).Justify(ui.Start).FillWidth().Gap(10).Padding(8, 14).Children(func() { ui.Icon(c, porcelainGlyphs["□"]).Size(16, 16); ui.Text(c, t.Name).FontSize(14).SingleLine() }).Disabled(!a.cardActionAllowed()).OnClick(func() {
+						active := a.cards.navigation == id
+						nav := ui.ButtonBase(c).Label(t.Name).Tooltip(t.Name).Justify(ui.Start).FillWidth().Height(37).Gap(10).Padding(0, 14)
+						if active {
+							nav = nav.Background(porcelain.Background)
+						} else if nav.Hovered() {
+							nav = nav.Background(ui.Color{R: 248, G: 250, B: 251, A: 204})
+						}
+						nav.Children(func() {
+							if active {
+								ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(3).Background(porcelain.Text)
+							}
+							ui.Icon(c, porcelainGlyphs["□"]).Size(16, 16)
+							name := ui.Text(c, t.Name).FontSize(14).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+							if active {
+								name.FontWeight(600)
+							}
+							ui.Box(c).Size(7, 7).Background(a.taskHealthColor(id))
+						}).Disabled(!a.cardActionAllowed()).OnClick(func() {
 							a.selectManual(id)
+							a.cards.navigation = id
 							a.cards.focus = id
 							if a.cards.collapsed != nil {
 								delete(a.cards.collapsed, id)
@@ -31,10 +50,20 @@ func (a *application) manualView(c *ui.Context) {
 				})
 			})
 			ui.Row(c).FillWidth().Padding(6, 10).Gap(6).Border(1, porcelain.Border).Children(func() {
-				ui.Text(c, "SYNC").Bold().Background(porcelain.Accent).TextColor(porcelain.AccentText).Padding(5, 6)
-				ui.Text(c, "MAID").Bold().Grow(1)
-				porcelainIcon(c, "⚙", a.tr("设置")).Disabled(a.importPreview != nil || a.regexSession != nil || a.manual.busy()).OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false })
+				ui.Text(c, "SYNC").FontSize(13).LineHeight(1.5).Bold().Background(porcelain.Accent).TextColor(porcelain.AccentText).Padding(4, 6)
+				ui.Text(c, "MAID").FontSize(13).Bold().Grow(1)
+				gear := porcelainIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
+				if a.settingsOpen {
+					gear = gear.Background(porcelain.Accent).TextColor(porcelain.AccentText)
+				}
+				gear.Disabled(a.importPreview != nil || a.regexSession != nil || a.manual.busy()).OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false })
 				ui.MenuButton(c, "⋯", func(m *ui.Menu) {
+					if m.Item(a.tr("运行全部")).Disabled(!a.cardActionAllowed()).Chosen() {
+						a.startBatch()
+					}
+					if m.Item(a.tr("重新载入设置")).Disabled(a.commonBusy).Chosen() {
+						a.reloadCommon()
+					}
 					if m.Item(a.tr("查看运行记录")).Disabled(a.importPreview != nil || a.regexSession != nil).Chosen() {
 						a.toggleHistory()
 					}
@@ -60,10 +89,21 @@ func (a *application) manualView(c *ui.Context) {
 				}).Label(a.tr("更多操作")).Tooltip(a.tr("更多操作")).Padding(3).Width(24)
 			})
 		})
-		ui.Column(c).Grow(1).FillHeight().Padding(12, 16).Gap(0).Children(func() {
+		pane := ui.Column(c).Grow(1).FillHeight().Gap(0)
+		if !a.settingsOpen {
+			pane = pane.Padding(12, 16)
+		}
+		pane.Children(func() {
 			if s.phase == manualRunning || s.phase == manualChecking || s.phase == manualStopping {
 				ui.Row(c).FillWidth().Gap(8).Children(func() {
-					ui.Text(c, a.render(a.watchActivity)).FontSize(12).Grow(1)
+					activity := a.render(a.watchActivity)
+					if s.phase == manualStopping {
+						activity = a.render(s.message)
+					}
+					ui.Text(c, activity).FontSize(12).Grow(1)
+					if a.batch.phase == batchServing {
+						ui.Text(c, a.tr("批次余下 %d 项", len(a.batch.pending))).FontSize(12).TextColor(porcelain.TextMuted)
+					}
 					porcelainButton(c, a.tr("停止")).Disabled(s.phase == manualStopping).OnClick(a.stopManual)
 				})
 			}
@@ -79,7 +119,7 @@ func (a *application) manualView(c *ui.Context) {
 				return
 			}
 			if a.settingsOpen {
-				ui.Column(c).MaxWidth(760).Fill().Children(func() { a.settingsView(c) })
+				ui.Column(c).Fill().Children(func() { a.settingsView(c) })
 				return
 			}
 			if a.historyOpen {
@@ -150,8 +190,8 @@ func (a *application) porcelainHeader(c *ui.Context, width float32) {
 			}(), "运行中"}} {
 				ui.Box(c).Width(1).Height(42).Background(porcelain.Border)
 				ui.Column(c).Padding(0, 4).Children(func() {
-					ui.Text(c, fmt.Sprint(v.n)).Bold()
-					ui.Text(c, a.tr(v.key)).FontSize(10).TextColor(porcelain.TextMuted)
+					ui.Text(c, fmt.Sprint(v.n)).FontSize(17).FontWeight(600)
+					ui.Text(c, a.tr(v.key)).FontSize(9).TextColor(porcelain.TextMuted)
 				})
 			}
 		}
@@ -174,7 +214,7 @@ func (a *application) porcelainHeader(c *ui.Context, width float32) {
 			}
 		})
 		if width >= 900 {
-			porcelainButton(c, "▷ "+a.tr("运行全部")).Disabled(true).Tooltip(a.tr("当前版本一次运行一个任务；请使用任务上的运行按钮。"))
+			porcelainButton(c, "▷ "+a.tr("运行全部")).Disabled(!a.cardActionAllowed()).Tooltip(a.tr("按已保存顺序串行运行；停止会丢弃余下任务。")).OnClick(a.startBatch)
 		}
 		ui.PrimaryButton(c, "＋ "+a.tr("新建任务")).Padding(5, 10).Disabled(!a.cardActionAllowed()).OnClick(func() { a.newManual(); a.cards.editor = true; a.cards.destinations = false })
 	})
@@ -212,8 +252,15 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 			status = a.tr("%d个中有%d个失败", len(t.Destinations), failed)
 		}
 	}
+	if id == a.manual.id && a.manual.phase == manualDraft && !a.manual.dirty && a.manual.message.key != "" {
+		status = a.render(a.manual.message)
+		color = porcelain.Danger
+	}
 	if running {
 		status = a.tr("正在运行…")
+		if a.manual.phase == manualStopping {
+			status = a.render(a.manual.message)
+		}
 		color = porcelain.Accent
 	}
 	card := ui.Column(c).FillWidth().Gap(0).Border(1, color)
@@ -237,7 +284,14 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 					}
 					porcelainTag(c, a.tr(kind), true)
 					trigger := map[string]string{"manual": "手动", "watch": "监视", "scheduled": "定时"}[t.Trigger.Kind]
-					porcelainTag(c, a.tr(trigger), false)
+					triggerText := a.tr(trigger)
+					if t.Trigger.Kind == "scheduled" && t.Trigger.CronExpression != nil {
+						triggerText = a.tr("定时（%s）", *t.Trigger.CronExpression)
+					}
+					porcelainTag(c, triggerText, false)
+					if w := a.watches[id]; w != nil && w.ticket.phase == watchFailed {
+						ui.Text(c, a.tr("触发器异常")).FontSize(12).LineHeight(1).Padding(4, 10).Background(porcelain.Warning).TextColor(porcelain.AccentText).Tooltip(a.render(w.status))
+					}
 				})
 				porcelainPath(c, t.SourcePath)
 			})
@@ -252,7 +306,13 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 			} else {
 				porcelainIcon(c, "▷", a.tr("运行")).Background(porcelain.Accent).TextColor(porcelain.AccentText).Disabled(!a.cardActionAllowed()).OnClick(func() { a.runCard(id) })
 			}
-			porcelainIcon(c, "＋", a.tr("添加目标")).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, ""); a.cards.destinations = true; a.addManualTarget() })
+			porcelainIcon(c, "＋", a.tr("添加目标")).Disabled(!a.cardActionAllowed()).OnClick(func() {
+				a.editCard(id, "")
+				if a.manual.id == id && a.cards.editor {
+					a.cards.destinations = true
+					a.addManualTarget()
+				}
+			})
 			porcelainIcon(c, "♢", a.tr("编辑任务")).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, "") })
 			porcelainIcon(c, "⌫", a.tr("删除任务")).Disabled(!a.cardActionAllowed()).OnClick(func() {
 				a.selectManual(id)
@@ -298,38 +358,12 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 					})
 					porcelainPath(c, d.Target.Path)
 				})
-				summary := a.tr("未开始")
-				if ok {
-					summary = a.tr(string(r.State))
-					n := r.Progress.Copied + r.Progress.Moved
-					if n > 0 {
-						summary += fmt.Sprintf(" · %d", n)
-					}
-					if r.Error != "" {
-						summary += " · " + historyText(r.Error, 80)
-					}
-				}
-				ui.Button(c, summary).MaxWidth(resultWidth).SingleLine().Ellipsis("…").FontSize(16).Background(ui.Transparent).Border(0, ui.Transparent).TextColor(mark).Tooltip(summary).OnClick(func() {
-					if a.cards.details == did {
-						a.cards.details = ""
-					} else {
-						a.cards.details = did
-					}
-				})
+				summary := a.destinationStatus(r, ok, time.Now())
+				ui.ButtonBase(c).Role(ui.RoleLink).Label(summary).MaxWidth(resultWidth).Background(ui.Transparent).Tooltip(summary).Children(func() { ui.Text(c, summary).SingleLine().Ellipsis("…").Underline().FontSize(16).TextColor(mark) }).OnClick(func() { a.openDestinationLog(id, did) })
 				porcelainIcon(c, "♢", a.tr("编辑目标")+" "+d.Name).Border(0, ui.Transparent).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did) })
 				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")+" "+d.Name).Border(0, ui.Transparent).Disabled(!a.cardActionAllowed() || len(t.Destinations) <= 1).OnClick(func() { a.editCard(id, did); a.removeManualTarget() })
 			})
-			if a.cards.details == did {
-				ui.Column(c).FillWidth().Padding(12, 32).Gap(4).Children(func() {
-					ui.Text(c, d.Target.Path).FontSize(13)
-					if ok {
-						ui.Text(c, fmt.Sprintf(a.tr("%s: %s · 原始文件 %d · 匹配 %d · 已发布 %d · 未变化 %d · 已移除 %d · 移动 %d · 保留 %d · 失败 %d · 源未匹配 %d"), d.Name, a.tr(string(r.State)), r.Progress.SourceFiles, r.Progress.Total, r.Progress.Copied, r.Progress.Unchanged, r.Progress.Removed, r.Progress.Moved, r.Progress.Retained, r.Progress.Failed, r.Progress.Unmatched)).FontSize(13)
-						if r.Error != "" {
-							ui.Text(c, r.Error).TextColor(porcelain.Danger)
-						}
-					}
-				})
-			}
+
 		}
 	})
 }

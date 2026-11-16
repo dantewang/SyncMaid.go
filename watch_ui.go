@@ -43,10 +43,10 @@ func (a *application) quietChanged() {
 }
 func (a *application) triggerView(c *ui.Context, locked bool) {
 	s := &a.manual
-	ui.Row(c).Gap(8).Children(func() {
-		porcelainButton(c, a.tr("手动")).Selected(s.trigger.Kind != "watch" && s.trigger.Kind != "scheduled").Disabled(locked).OnClick(func() { a.setTrigger("manual") })
-		porcelainButton(c, a.tr("定时")).Selected(s.trigger.Kind == "scheduled").Disabled(locked).OnClick(func() { a.setTrigger("scheduled") })
-		porcelainButton(c, a.tr("监视")).Selected(s.trigger.Kind == "watch").Disabled(locked).OnClick(func() { a.setTrigger("watch") })
+	ui.Row(c).Gap(0).Children(func() {
+		porcelainSegment(c, a.tr("手动"), s.trigger.Kind != "watch" && s.trigger.Kind != "scheduled", "manual").Disabled(locked).OnClick(func() { a.setTrigger("manual") })
+		porcelainSegment(c, a.tr("定时"), s.trigger.Kind == "scheduled", "clock").Disabled(locked).OnClick(func() { a.setTrigger("scheduled") })
+		porcelainSegment(c, a.tr("监视"), s.trigger.Kind == "watch", "eye").Disabled(locked).OnClick(func() { a.setTrigger("watch") })
 	})
 	if s.trigger.Kind == "watch" {
 		ui.Text(c, a.tr("源变化后等待静默秒数（1–600，默认10）"))

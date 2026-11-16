@@ -209,6 +209,10 @@ func (a *application) watchReady(w *watchedTask, revision uint64) {
 	a.drainWatches()
 }
 func (a *application) drainWatches() {
+	if a.batch.phase == batchServing {
+		a.advanceBatch()
+		return
+	}
 	if a.watchPhase != watchesServing || a.manual.quitPending || a.manual.busy() || a.tasks == nil || a.taskError != nil || a.window == nil {
 		return
 	}

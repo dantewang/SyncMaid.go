@@ -32,7 +32,7 @@ func (a *application) selectedHistory() (runRecord, bool) {
 }
 func (a *application) historyViewContent(c *ui.Context) {
 	ui.Column(c).Grow(1).FillWidth().Gap(8).Padding(16).Children(func() {
-		ui.Text(c, a.tr("近期运行记录")).FontSize(21).Bold()
+		ui.Text(c, a.tr("近期运行记录")).FontSize(18).FontWeight(500)
 		ui.Text(c, a.tr("最多100次近期记录 / 总计4 MiB；最近任务结果优先保留。错误摘要最多1 KiB；只供诊断，不授权执行或删除。")).FontSize(12)
 		ui.Text(c, pathLabel(filepath.Join(a.installation.data, runHistoryFile))).FontSize(12)
 		if a.historyError != nil {
@@ -55,7 +55,7 @@ func (a *application) historyViewContent(c *ui.Context) {
 			return
 		}
 		ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-			ui.Column(c).FillWidth().Gap(6).Children(func() {
+			ui.Column(c).FillWidth().Gap(10).Children(func() {
 				ui.Text(c, r.Name+a.tr(" · ")+a.tr(runOutcome(r))).Bold()
 				ui.Text(c, fmt.Sprintf(a.tr("任务 %s · 运行 %s · %s / %s"), r.TaskID, r.ID, r.Kind, a.tr(r.Origin))).FontSize(12)
 				ui.Text(c, a.tr("开始: ")+r.Started.Local().Format("2006-01-02 15:04:05 MST"))
