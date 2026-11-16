@@ -77,6 +77,10 @@ func (a *application) ruleSummary(rules []taskconfig.Rule) string {
 			continue
 		}
 		if r.Rules != nil {
+			if len(*r.Rules) == 0 {
+				parts = append(parts, a.tr("无匹配"))
+				continue
+			}
 			parts = append(parts, a.tr(label)+" ("+a.ruleSummary(*r.Rules)+")")
 			continue
 		}

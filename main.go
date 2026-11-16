@@ -134,7 +134,7 @@ func run() (result error) {
 				Width:          940,
 				Height:         620,
 				UseContentSize: true,
-				MinWidth:       640,
+				MinWidth:       760,
 				MinHeight:      480,
 				Content:        ui.View(a.view),
 			})

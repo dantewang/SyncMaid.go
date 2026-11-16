@@ -139,3 +139,41 @@ type Rule struct {
 	// canonical value so editing a public field cannot resurrect stale spelling.
 	extensionWire string
 }
+
+// Clone returns an independent rule, including unrecognized JSON members.
+func (r Rule) Clone() Rule {
+	if r.Prefix != nil {
+		v := *r.Prefix
+		r.Prefix = &v
+	}
+	if r.Extension != nil {
+		v := *r.Extension
+		r.Extension = &v
+	}
+	if r.Pattern != nil {
+		v := *r.Pattern
+		r.Pattern = &v
+	}
+	if r.Rule != nil {
+		v := r.Rule.Clone()
+		r.Rule = &v
+	}
+	if r.Rules != nil {
+		var children []Rule
+		if *r.Rules != nil {
+			children = make([]Rule, len(*r.Rules))
+			for i, v := range *r.Rules {
+				children[i] = v.Clone()
+			}
+		}
+		r.Rules = &children
+	}
+	if r.extra != nil {
+		e := make(extras, len(r.extra))
+		for k, v := range r.extra {
+			e[k] = append(json.RawMessage(nil), v...)
+		}
+		r.extra = e
+	}
+	return r
+}

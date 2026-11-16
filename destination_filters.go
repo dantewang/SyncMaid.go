@@ -20,9 +20,12 @@ const (
 	filterNone
 	filterCustom
 	filterReadOnly
+	filterGrouped
 )
 
 type filterEditor struct {
+	Groups                                        []filterDraftGroup
+	MatchAll                                      bool
 	Mode                                          filterMode
 	IncludePaths, IncludeExtensions, IncludeGlobs string
 	ExcludePaths, ExcludeExtensions, ExcludeGlobs string
@@ -39,6 +42,8 @@ func allFileRules() []taskconfig.Rule { return []taskconfig.Rule{{Kind: "all"}} 
 
 func (e filterEditor) rules() ([]taskconfig.Rule, error) {
 	switch e.Mode {
+	case filterGrouped:
+		return e.groupRules()
 	case filterAll:
 		return allFileRules(), nil
 	case filterNone:

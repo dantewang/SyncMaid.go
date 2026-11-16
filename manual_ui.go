@@ -136,7 +136,7 @@ func (a *application) taskEditorView(c *ui.Context) {
 			}
 		})
 	})
-	ui.Row(c).FillWidth().Gap(8).Padding(12, 0, 0, 0).Children(func() {
+	ui.Row(c).FillWidth().Wrap().Gap(8).Padding(12, 0, 0, 0).Children(func() {
 		ui.Box(c).Grow(1)
 		if a.cards.destinations {
 			porcelainButton(c, a.tr("编辑任务")).Disabled(s.busy()).OnClick(func() { a.cards.destinations = false })

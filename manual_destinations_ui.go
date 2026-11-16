@@ -168,6 +168,11 @@ func (a *application) copyManualTarget(id taskconfig.ID) {
 	for _, d := range s.targets {
 		if d.ID == id {
 			d.ID = taskconfig.NewID()
+			rules := make([]taskconfig.Rule, len(d.Filters))
+			for i, rule := range d.Filters {
+				rules[i] = rule.Clone()
+			}
+			d.Filters = rules
 			d.Name = a.tr("%s（副本）", d.Name)
 			d.matcher = nil
 			d.filterError = nil

@@ -95,14 +95,14 @@ func TestLanguageEditorAndHistoryRegions(t *testing.T) {
 			d := manualDestination{ID: taskconfig.NewID(), Name: "完成", Path: `C:\目標`, Filters: allFileRules(), Collision: taskconfig.Suffix}
 			a := &application{locale: choice.tag, manual: manualSession{
 				name: "Settings", source: `C:\源`, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, target: d.Path,
-				kind: taskconfig.Moving, filterEditor: filterEditor{Mode: filterCustom},
+				kind: taskconfig.Moving, filterEditor: filterEditor{Mode: filterGrouped, Groups: []filterDraftGroup{{}}},
 				trigger: taskconfig.Trigger{Kind: "scheduled"}, cronText: "*/5 * * * *", cronNext: "2026-11-15 10:00:00 CST",
 			}}
 			a.cards.editor = true
 			view := ui.NewTester(a.view, 1000, 1400)
 			a.cards.destinations = true
 			destinationView := ui.NewTester(a.view, 1000, 1400)
-			for _, key := range []string{"任务名称", "包含路径前缀", "排除扩展名", "Skip保留源", "Suffix加编号", "cron表达式"} {
+			for _, key := range []string{"任务名称", "路径前缀", "任一规则", "Skip保留源", "Suffix加编号", "cron表达式"} {
 				if !view.HasText(a.tr(key)) && !destinationView.HasText(a.tr(key)) {
 					t.Errorf("missing translated editor region %q", key)
 				}

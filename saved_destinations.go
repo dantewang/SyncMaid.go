@@ -128,10 +128,10 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 			}
 		}
 		if !sameFilterRules(d.Filters, edit.Filters) {
-			if ok && projectFilterEditor(d.Filters).Mode == filterReadOnly {
+			if ok && projectNativeFilter(d.Filters).Mode == filterReadOnly {
 				return nil, id, errors.New("只读过滤规则不能改写")
 			}
-			if form := projectFilterEditor(edit.Filters); form.Mode == filterReadOnly {
+			if form := projectNativeFilter(edit.Filters); form.Mode == filterReadOnly {
 				return nil, id, errors.New("编辑器不能保存此复杂或不支持的过滤规则")
 			}
 			d.Filters = edit.Filters

@@ -24,7 +24,7 @@ func (s *manualSession) loadFilterDraft(id taskconfig.ID) {
 	}
 	for _, d := range s.targets {
 		if d.ID == id {
-			s.filterEditor = projectFilterEditor(d.Filters)
+			s.filterEditor = projectNativeFilter(d.Filters)
 			s.keepFilterDraft()
 			return
 		}
@@ -63,6 +63,9 @@ func (a *application) setFilterMode(mode filterMode) {
 		return
 	}
 	a.manual.filterEditor.Mode = mode
+	if mode == filterGrouped && len(a.manual.filterEditor.Groups) == 0 {
+		a.manual.filterEditor.Groups = []filterDraftGroup{{}}
+	}
 	a.filterEdited()
 }
 func (a *application) taskDeletionIssue() error {
@@ -84,17 +87,21 @@ func (a *application) filtersView(c *ui.Context, locked bool) {
 		for _, item := range []struct {
 			label string
 			mode  filterMode
-		}{{"所有文件", filterAll}, {"无匹配", filterNone}, {"包含/排除", filterCustom}} {
+		}{{"所有文件", filterAll}, {"无匹配", filterNone}, {"仅匹配", filterGrouped}} {
 			mode := item.mode
 			glyph := ""
-			if mode == filterCustom {
+			if mode == filterGrouped {
 				glyph = "filter"
 			}
 			porcelainSegment(c, a.tr(item.label), e.Mode == mode, glyph).Disabled(locked || readOnly).OnClick(func() { a.setFilterMode(mode) })
 		}
 	})
+	if e.Mode == filterGrouped {
+		a.filterGroupsView(c, locked)
+	}
 	if readOnly {
 		ui.Text(c, a.tr("复杂或不支持的规则已原样保留，只读。"))
+		ui.Text(c, a.tr("旧正则迁移")).Tooltip(a.tr("更多操作"))
 		if a.tasks != nil {
 			if bundle, ok := a.tasks.restored[a.manual.id][a.manual.targetID]; ok {
 				ui.Text(c, a.tr("已有正则确认记录；执行仍会检查全部规则、绑定及版本。"))
@@ -113,28 +120,8 @@ func (a *application) filtersView(c *ui.Context, locked bool) {
 	if e.Mode == filterNone {
 		ui.Text(c, a.tr("此目标不接收文件；不会删除任何已有文件。")).FontSize(12)
 	}
-	if e.Mode == filterCustom {
-		ui.Text(c, a.tr("每行一项，忽略空行和首尾空白。包含任一条件命中即可；包含全空表示全部，再排除任一命中项。")).FontSize(12)
-		ui.Text(c, a.tr("路径相对源目录（含子目录）；扩展名如 txt；通配符支持 *、?、**。不支持正则输入。")).FontSize(12)
-		ui.Row(c).FillWidth().Gap(12).Children(func() {
-			for _, column := range []struct {
-				title                    string
-				paths, extensions, globs *string
-			}{{"包含", &e.IncludePaths, &e.IncludeExtensions, &e.IncludeGlobs}, {"排除", &e.ExcludePaths, &e.ExcludeExtensions, &e.ExcludeGlobs}} {
-				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(6).Padding(12).Border(1, porcelain.Border).Children(func() {
-					ui.Text(c, a.tr(column.title)).FontWeight(500)
-					for _, field := range []struct {
-						label string
-						value *string
-					}{{column.title + "路径前缀", column.paths}, {column.title + "扩展名", column.extensions}, {column.title + "通配符", column.globs}} {
-						ui.Text(c, a.tr(field.label)).FontSize(14)
-						ui.TextArea(c, field.value).Label(a.tr(field.label)).Font("Consolas").FontSize(14).MinHeight(45).Height(55).MaxLength(8192).ReadOnly(locked).OnChange(a.filterEdited)
-					}
-				})
-			}
-		})
-	}
+
 	if e.Error != "" {
-		ui.Text(c, a.tr("过滤错误: ")+e.Error)
+		ui.Text(c, a.tr("过滤错误: ")+a.tr(e.Error))
 	}
 }

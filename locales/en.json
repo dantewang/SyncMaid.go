@@ -329,5 +329,16 @@
   "通配符": "Wildcard",
   "正则表达式": "Regular expression",
   "全部满足": "All conditions",
-  "任一满足": "Any condition"
+  "任一满足": "Any condition",
+  "仅匹配": "Only matching",
+  "任一组": "Any group",
+  "全部组": "All groups",
+  "任一规则": "Any rule",
+  "全部规则": "All rules",
+  "删除组": "Remove group",
+  "删除规则": "Remove rule",
+  "新规则": "New rule",
+  "添加": "Add",
+  "添加组": "Add group",
+  "过滤规则不能为空": "Filter rules must not be empty"
 }
