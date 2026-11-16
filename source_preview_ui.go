@@ -14,7 +14,7 @@ func (a *application) sourcePreviewView(c *ui.Context) {
 			if p.phase != previewIdle {
 				label = "刷新预览"
 			}
-			porcelainButton(c, a.tr(label)).Gap(8).Children(func() { ui.Icon(c, porcelainGlyphs["eye"]).Size(16, 16); ui.Text(c, a.tr(label)).FontSize(16) }).Disabled(a.manual.busy() || a.manual.quitPending || p.job != nil || a.taskError != nil).OnClick(a.startSourcePreview)
+			ui.ButtonBase(c).Label(a.tr(label)).Radius(0).Padding(5, 10).Gap(8).Border(1, porcelain.Border).Background(porcelain.Background).TextColor(porcelain.Text).Children(func() { ui.Icon(c, porcelainGlyphs["eye"]).Size(16, 16); ui.Text(c, a.tr(label)).FontSize(16) }).Disabled(a.manual.busy() || a.manual.quitPending || p.job != nil || a.taskError != nil).OnClick(a.startSourcePreview)
 			if p.job != nil {
 				porcelainButton(c, a.tr("取消预览")).Disabled(p.phase == previewStopping).OnClick(p.invalidate)
 			}
