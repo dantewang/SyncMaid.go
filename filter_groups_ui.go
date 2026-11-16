@@ -10,7 +10,7 @@ func filterSegment(c *ui.Context, text string, selected bool) ui.Element {
 	if selected {
 		bg = rgb(0xD9DFE3)
 	}
-	return ui.ButtonBase(c).Label(text).Selected(selected).Padding(3, 6).Border(1, porcelain.Border).Background(bg).Children(func() { ui.Text(c, text).FontSize(12) })
+	return ui.ButtonBase(c).Label(text).Selected(selected).Padding(3, 6).Border(1, porcelain.Border).Background(bg).TextColor(porcelain.Text).Children(func() { ui.Text(c, text).FontSize(12).TextColor(porcelain.Text) })
 }
 
 func (a *application) filterGroupsView(c *ui.Context, locked bool) {
