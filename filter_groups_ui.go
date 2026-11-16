@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/egoist/mygo/ui"
 	"syncmaid/internal/taskconfig"
 )
@@ -63,6 +64,14 @@ func (a *application) filterGroupsView(c *ui.Context, locked bool) {
 					ui.TextInput(c, &g.Input).Label(a.tr("新规则")).Grow(1).Shrink(1).MinWidth(100).Height(32).MaxLength(8192).ReadOnly(locked)
 					porcelainButton(c, a.tr("添加")).Background(porcelain.Accent).TextColor(porcelain.AccentText).Disabled(locked || len(g.Rows) >= 128).OnClick(func() { a.addFilterRule(i) })
 				})
+				if a.sourcePreview.phase == previewReady && a.sourcePreview.result != nil {
+					ui.Text(c, a.tr("源扩展名：点击添加到此组")).FontSize(12).TextColor(porcelain.TextMuted)
+					ui.Row(c).Wrap().Gap(6).Children(func() {
+						for _, ext := range a.sourcePreview.result.Extensions {
+							filterSegment(c, fmt.Sprintf("%s (%d)", ext.Text, ext.Count), false).Disabled(locked).OnClick(func() { a.addPreviewExtension(i, ext.Text) })
+						}
+					})
+				}
 			})
 		}
 		ui.Row(c).Children(func() {

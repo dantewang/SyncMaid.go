@@ -135,6 +135,7 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 				}
 				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")).Border(0, ui.Transparent).Disabled(locked || len(s.targets) <= 1 || s.filterEditor.RunError != "").OnClick(func() { s.selectTarget(id); a.removeManualTarget() })
 			})
+			a.sourcePreviewTargetView(c, id)
 			if id != s.targetID || a.cards.targetHidden == id {
 				return
 			}

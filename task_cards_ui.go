@@ -17,7 +17,7 @@ type taskCardLayout struct {
 }
 
 func (a *application) cardActionAllowed() bool {
-	return a.batch.phase == batchIdle && !a.manual.busy() && !a.manual.dirty && a.tasks != nil && a.taskError == nil
+	return a.batch.phase == batchIdle && a.sourcePreview.job == nil && !a.manual.busy() && !a.manual.dirty && a.tasks != nil && a.taskError == nil
 }
 
 func (a *application) editCard(id, destination taskconfig.ID) {
@@ -47,6 +47,7 @@ func (a *application) runCard(id taskconfig.ID) {
 }
 
 func (a *application) closeTaskEditor() {
+	a.sourcePreview.invalidate()
 	if a.manual.dirty {
 		a.manual.message = messagef("编辑尚未保存；请保存或明确放弃编辑后再切换任务。")
 		return

@@ -30,6 +30,9 @@ func (b *manualBatch) next() (taskconfig.ID, bool) {
 }
 
 func (a *application) startBatch() {
+	if a.sourcePreview.job != nil {
+		return
+	}
 	if !a.cardActionAllowed() || a.importPreview != nil || a.regexSession != nil || a.manual.mirrorPreview != nil || a.manual.mirrorReply != nil || a.manual.quitPending {
 		return
 	}

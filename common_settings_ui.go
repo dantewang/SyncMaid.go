@@ -1,6 +1,7 @@
 package main
 
 func (a *application) closeWindow() {
+	a.sourcePreview.invalidate()
 	a.answerMirror(false)
 	if a.commonValue.CloseToTray {
 		a.lifecycle.closeRequested()

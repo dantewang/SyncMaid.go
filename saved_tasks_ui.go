@@ -24,8 +24,9 @@ func (a *application) newManual() {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
 		return
 	}
+	a.sourcePreview.invalidate()
 	d := manualDestination{ID: taskconfig.NewID(), Name: a.tr("目标 %d", 1), Filters: allFileRules()}
-	a.manual = manualSession{onEdit: func() { a.pauseEditingWatch(a.manual.id) }, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, message: messagef("请输入名称与路径，然后保存任务。")}
+	a.manual = manualSession{onEdit: a.manualEdited, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, message: messagef("请输入名称与路径，然后保存任务。")}
 }
 func (a *application) selectManual(id taskconfig.ID) {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
@@ -36,7 +37,8 @@ func (a *application) selectManual(id taskconfig.ID) {
 		a.manual.message = messagef("错误: %s", err.Error())
 		return
 	}
-	s := manualSession{onEdit: func() { a.pauseEditingWatch(a.manual.id) }, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
+	a.sourcePreview.invalidate()
+	s := manualSession{onEdit: a.manualEdited, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
 	for _, d := range t.Destinations {
 		s.targets = append(s.targets, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy})
 	}
@@ -75,6 +77,7 @@ func (a *application) reloadTasks() {
 	if s.busy() {
 		return
 	}
+	a.sourcePreview.invalidate()
 	keepDraft := s.dirty
 	id := s.id
 	s.phase = manualLoading

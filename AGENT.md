@@ -26,3 +26,5 @@ SyncMaid.go 是 Windows 优先的单向文件同步项目。当前原生窗口�
 正则确认使用独立RegexConfirmation模型，不序列化ReviewedRegex程序；来源任务/规则与新pattern/profile的既有产品摘要绑定必须复核，加载重新编译。taskstore.NewVersioned持久化Tasks+RegexConfirmations，旧New/codec数组契约不变。未知元数据版本/字段阻止保存；未确认/陈旧/未知profile阻断相关Sync目标或整个Move准备，所有入口共用门禁。Recover一律清确认，主坏不自动fallback。
 
 运行全部是 UI 主线程持有的会话串行批次，固定已保存任务 ID 顺序，通过唯一执行入口逐个运行；批次优先于自动 pending，Stop/Exit 清除余下队列。诊断窗口只读运行记录，不授予执行或删除许可。
+
+源预览只读克隆后的当前草稿，UI线程持有请求身份与取消；编辑、关闭、切任务及退出使旧结果失效。扫描和所有规则准备成功才显示整份归属，预览不续签正则确认或授予文件操作许可。目标扩展名快捷项明确落在所在组，只改草稿。

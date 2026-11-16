@@ -110,6 +110,7 @@ func (a *application) taskEditorView(c *ui.Context) {
 				porcelainPath(c, s.source)
 				ui.Box(c).Height(12)
 				a.manualTargetsView(c, locked)
+				a.sourcePreviewView(c)
 				ui.Text(c, a.render(s.message)).FontSize(12)
 				return
 			}
@@ -187,10 +188,11 @@ func (a *application) startManual() {
 }
 func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRequest, automatic bool) {
 	s := &a.manual
-	if s.busy() || (automatic && a.batch.phase == batchServing) {
+	if s.busy() || a.sourcePreview.job != nil || (automatic && a.batch.phase == batchServing) {
 		return
 	}
 	a.cards.running = id
+	a.sourcePreview.invalidate()
 	if !automatic {
 		if w := a.watches[id]; w != nil {
 			w.ticket.invalidate(watchArmed)
@@ -326,6 +328,11 @@ func (a *application) stopManual() {
 func (a *application) requestQuit() {
 	a.batch.clear()
 	a.stopWatches(watchesStopped)
+	a.sourcePreview.invalidate()
+	if a.sourcePreview.job != nil {
+		a.manual.quitPending = true
+		return
+	}
 	if a.manual.phase == manualReviewing {
 		a.discardRegexMigration()
 	}
@@ -353,6 +360,12 @@ func (a *application) requestQuit() {
 func (a *application) beforeQuit(e *mygo.QuitEvent) {
 	a.batch.clear()
 	a.stopWatches(watchesStopped)
+	a.sourcePreview.invalidate()
+	if a.sourcePreview.job != nil {
+		e.PreventDefault()
+		a.manual.quitPending = true
+		return
+	}
 	if a.manual.phase == manualReviewing {
 		a.discardRegexMigration()
 	}

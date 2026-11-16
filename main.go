@@ -13,6 +13,7 @@ import (
 )
 
 type application struct {
+	sourcePreview   sourcePreviewSession
 	batch           manualBatch
 	destinationLog  *mygo.Window
 	logTask         taskconfig.ID

@@ -340,5 +340,20 @@
   "新规则": "New rule",
   "添加": "Add",
   "添加组": "Add group",
-  "过滤规则不能为空": "Filter rules must not be empty"
+  "过滤规则不能为空": "Filter rules must not be empty",
+  "源预览": "Source preview",
+  "刷新预览": "Refresh preview",
+  "取消预览": "Cancel preview",
+  "只读预览当前草稿的规则归属，不预测覆盖或删除；目录变化后需刷新。": "Read-only rule assignment for this draft; no overwrite or deletion prediction. Refresh after directory changes.",
+  "正在读取源文件…": "Reading source files…",
+  "正在取消预览…": "Cancelling preview…",
+  "预览已失效，请刷新。": "Preview is out of date. Refresh it.",
+  "预览失败: %s": "Preview failed: %s",
+  "源目录为空。": "The source directory is empty.",
+  "源目录存在，但没有普通文件。": "The source exists but contains no regular files.",
+  "源文件: %d": "Source files: %d",
+  "未匹配: %d · %s": "Unmatched: %d · %s",
+  "多规则匹配: %s → %s": "Multiple matches (first wins): %s → %s",
+  "预览匹配: %d · %s": "Preview matches: %d · %s",
+  "源扩展名：点击添加到此组": "Source extensions: add to this group"
 }
