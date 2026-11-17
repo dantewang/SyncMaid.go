@@ -2,5 +2,6 @@
   "name": "SyncMaid",
   "identifier": "com.example.syncmaid",
   "version": "0.1.0",
+  "icon": "assets/syncmaid.png",
   "out": "build"
 }
