@@ -56,8 +56,11 @@ func targetObjectsOverlap(a, b *transferRoots) bool {
 }
 
 func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multiplePlan, err error) {
-	if len(q.Destinations) == 0 || !filepath.IsAbs(q.Source) {
-		return nil, errors.New("需要绝对源路径及至少一个目标")
+	if !filepath.IsAbs(q.Source) {
+		return nil, errors.New("源文件夹：请选择现有文件夹的绝对路径")
+	}
+	if len(q.Destinations) == 0 {
+		return nil, errors.New("请添加至少一个目标文件夹")
 	}
 	p := &multiplePlan{requests: map[taskconfig.ID]manualRequest{}, failures: map[taskconfig.ID]error{}}
 	defer func() {
@@ -66,7 +69,7 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 		}
 	}()
 	if p.source, err = openDirectory(q.Source); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("源文件夹: %w", err)
 	}
 	if err = ordinaryDirectory(p.source.handle); err != nil {
 		return nil, err

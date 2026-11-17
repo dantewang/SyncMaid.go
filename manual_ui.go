@@ -131,7 +131,9 @@ func (a *application) taskEditorView(c *ui.Context) {
 			}
 			ui.Text(c, a.tr("触发器"))
 			a.triggerView(c, locked)
-			porcelainButton(c, a.tr("同步目标（按顺序执行）")).Background(ui.Transparent).Border(0, ui.Transparent).FontSize(12).TextColor(porcelain.TextMuted).Disabled(s.busy()).OnClick(func() { a.cards.destinations = true })
+			if s.id != "" {
+				porcelainButton(c, a.tr("同步目标（按顺序执行）")).FillWidth().Disabled(locked).OnClick(a.openDraftDestinations)
+			}
 			if s.dirty || s.phase == manualDraft || s.phase == manualSaving {
 				ui.Text(c, a.render(s.message))
 			}
@@ -145,8 +147,20 @@ func (a *application) taskEditorView(c *ui.Context) {
 			porcelainButton(c, a.tr("放弃编辑")).Disabled(s.busy()).OnClick(a.discardManual)
 		}
 		porcelainButton(c, a.tr("关闭编辑")).OnClick(a.closeTaskEditor)
-		ui.PrimaryButton(c, a.tr("保存任务")).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
+		if s.id == "" && !a.cards.destinations {
+			ui.PrimaryButton(c, a.tr("下一步：配置目标")).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.openDraftDestinations)
+		} else {
+			ui.PrimaryButton(c, a.tr("保存任务")).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
+		}
 	})
+}
+
+func (a *application) openDraftDestinations() {
+	if a.manual.busy() || a.tasks == nil || a.taskError != nil || a.selectedTaskIssue() != nil {
+		return
+	}
+	a.cards.destinations = true
+	a.cards.targetHidden = ""
 }
 func (a *application) chooseFolder(source bool) {
 	s := &a.manual

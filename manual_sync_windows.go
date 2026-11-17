@@ -54,8 +54,14 @@ func openTransferRoots(ctx context.Context, q manualRequest) (roots *transferRoo
 var errTransferOverlap = errors.New("源与同步目标不可重叠")
 
 func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess uint32) (roots *transferRoots, err error) {
-	if !filepath.IsAbs(q.Source) || !filepath.IsAbs(q.Target) {
-		return nil, errors.New("源与目标必须是现有文件夹的绝对路径")
+	if !filepath.IsAbs(q.Source) {
+		return nil, errors.New("源文件夹：请选择现有文件夹的绝对路径")
+	}
+	if strings.TrimSpace(q.Target) == "" {
+		return nil, errors.New("目标文件夹未填写，请在目标编辑中浏览选择现有文件夹")
+	}
+	if !filepath.IsAbs(q.Target) {
+		return nil, errors.New("目标文件夹：请选择现有文件夹的绝对路径")
 	}
 	r := &transferRoots{}
 	defer func() {
