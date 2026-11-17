@@ -57,7 +57,7 @@ func (a *application) manualView(c *ui.Context) {
 					gear = gear.Background(porcelain.Accent).TextColor(porcelain.AccentText)
 				}
 				gear.Disabled(a.importPreview != nil || a.regexSession != nil || a.manual.busy()).OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false })
-				ui.MenuButton(c, "⋯", func(m *ui.Menu) {
+				ui.MenuButton(c, "", func(m *ui.Menu) {
 					if m.Item(a.tr("运行全部")).Disabled(!a.cardActionAllowed()).Chosen() {
 						a.startBatch()
 					}
@@ -86,7 +86,7 @@ func (a *application) manualView(c *ui.Context) {
 					if m.Item(a.tr("Exit")).Chosen() {
 						a.requestQuit()
 					}
-				}).Label(a.tr("更多操作")).Tooltip(a.tr("更多操作")).Padding(3).Width(24)
+				}).Label(a.tr("更多操作")).Tooltip(a.tr("更多操作")).Padding(0).Shrink(0).Size(24, 24)
 			})
 		})
 		pane := ui.Column(c).Grow(1).FillHeight().Gap(0)
