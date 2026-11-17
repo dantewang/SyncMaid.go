@@ -105,7 +105,7 @@ func (a *application) syncWatches() {
 	}
 	keep := map[taskconfig.ID]bool{}
 	for _, t := range a.tasks.tasks {
-		if t.Trigger.Kind != "watch" && t.Trigger.Kind != "scheduled" {
+		if len(t.Destinations) == 0 || (t.Trigger.Kind != "watch" && t.Trigger.Kind != "scheduled") {
 			continue
 		}
 		keep[t.ID] = true

@@ -30,6 +30,11 @@ func (a *application) editCard(id, destination taskconfig.ID) {
 	}
 	if destination != "" {
 		a.manual.selectTarget(destination)
+		for _, d := range a.manual.targets {
+			if d.ID == destination {
+				a.manual.beginDestinationEdit(destination, &d)
+			}
+		}
 		a.cards.targetHidden = ""
 	}
 	a.cards.destinations = destination != ""
@@ -47,10 +52,14 @@ func (a *application) runCard(id taskconfig.ID) {
 }
 
 func (a *application) closeTaskEditor() {
-	a.sourcePreview.invalidate()
-	if a.manual.dirty {
-		a.manual.message = messagef("编辑尚未保存；请保存或明确放弃编辑后再切换任务。")
+	if a.manual.busy() {
 		return
+	}
+	a.sourcePreview.invalidate()
+	if a.taskError != nil {
+		a.manual = manualSession{onEdit: a.manualEdited, phase: manualDraft, quitPending: a.manual.quitPending}
+	} else {
+		a.discardManual()
 	}
 	a.cards.editor = false
 }

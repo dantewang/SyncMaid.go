@@ -103,7 +103,7 @@ func (l *savedTaskLibrary) remove(id taskconfig.ID) (*savedTaskLibrary, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = filterDeletionIssue(task); err != nil {
+	if err = taskConfigurationDeletionIssue(task); err != nil {
 		return nil, err
 	}
 	tasks, err := l.snapshot.Tasks()

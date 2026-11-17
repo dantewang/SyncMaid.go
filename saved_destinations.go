@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"syncmaid/internal/filefilter"
 	"time"
 
 	"syncmaid/internal/taskconfig"
@@ -16,8 +15,8 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 	if t.HasUnknownFields() || t.Trigger.HasUnknownFields() {
 		return manualTaskRequest{}, errors.New("任务含未支持字段")
 	}
-	if (t.Kind != taskconfig.Sync && t.Kind != taskconfig.Moving) || (t.Trigger.Kind != "manual" && t.Trigger.Kind != "watch" && t.Trigger.Kind != "scheduled") || len(t.Destinations) == 0 {
-		return manualTaskRequest{}, errors.New("仅支持有目标的Manual/Watch/Scheduled Sync/Move任务")
+	if (t.Kind != taskconfig.Sync && t.Kind != taskconfig.Moving) || (t.Trigger.Kind != "manual" && t.Trigger.Kind != "watch" && t.Trigger.Kind != "scheduled") {
+		return manualTaskRequest{}, errors.New("仅支持Manual/Watch/Scheduled Sync/Move任务")
 	}
 	if strings.TrimSpace(t.Name) == "" {
 		return manualTaskRequest{}, errors.New("任务名称为空")
@@ -49,12 +48,15 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 	return q, nil
 }
 
-func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualTaskRequest) (*savedTaskLibrary, taskconfig.ID, error) {
+func (l *savedTaskLibrary) prepareMultiple(id taskconfig.ID, name string, q manualTaskRequest) ([]taskconfig.Task, taskconfig.ID, error) {
 	if l == nil || l.snapshot == nil {
 		return nil, id, taskstore.ErrBlocked
 	}
-	if strings.TrimSpace(name) == "" || len(q.Destinations) == 0 {
-		return nil, id, errors.New("需要任务名称及至少一个目标")
+	if strings.TrimSpace(name) == "" {
+		return nil, id, errors.New("需要任务名称")
+	}
+	if err := validateTaskDraft(q); err != nil {
+		return nil, id, err
 	}
 	tasks, err := l.snapshot.Tasks()
 	if err != nil {
@@ -83,9 +85,10 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		id = taskconfig.NewID()
 		task.ID = id
 	}
-	if task.Kind != manualKind(q.Kind) {
+	if task.Kind != manualKind(q.Kind) && len(task.Destinations) != 0 {
 		return nil, id, errors.New("已保存任务不能改变Sync/Move类型")
 	}
+	task.Kind = manualKind(q.Kind)
 	old := map[taskconfig.ID]taskconfig.Destination{}
 	for _, d := range task.Destinations {
 		old[d.ID] = d
@@ -138,14 +141,12 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		}
 		destinations = append(destinations, d)
 	}
+	trigger := q.Trigger
 	for oldID, d := range old {
-		if !seen[oldID] {
-			if _, err := filefilter.Compile(d.Filters); err != nil {
-				return nil, id, errors.New("不能移除含不支持过滤的目标")
-			}
+		if !seen[oldID] && rulesHaveUnknownFields(d.Filters) {
+			return nil, id, errors.New("不能移除含未支持字段的目标")
 		}
 	}
-	trigger := q.Trigger
 	if trigger.Kind == "" {
 		trigger = taskconfig.Trigger{Kind: "manual"}
 	}
@@ -156,7 +157,7 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		return nil, id, e
 	}
 	if trigger.Kind == "scheduled" {
-		if _, _, e := parseScheduled(*trigger.CronExpression, time.Now()); e != nil {
+		if _, _, e := parseScheduled(*trigger.CronExpression, time.Now()); e != nil && !errors.Is(e, errNoScheduledFuture) {
 			return nil, id, e
 		}
 	}
@@ -168,6 +169,17 @@ func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualT
 		tasks = append(tasks, task)
 	} else {
 		tasks[index] = task
+	}
+	if err := validateEditedTaskLayout(task, tasks); err != nil {
+		return nil, id, err
+	}
+	return tasks, id, nil
+}
+
+func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualTaskRequest) (*savedTaskLibrary, taskconfig.ID, error) {
+	tasks, id, err := l.prepareMultiple(id, name, q)
+	if err != nil {
+		return nil, id, err
 	}
 	next, err := l.snapshot.Save(tasks)
 	if err != nil {

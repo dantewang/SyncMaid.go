@@ -52,6 +52,7 @@ type manualSession struct {
 	destinationResults      multipleResult
 	filterEditor            filterEditor
 	filterDrafts            map[taskconfig.ID]filterEditor
+	destinationEdits        map[taskconfig.ID]*manualDestination
 	mirrorPreview           *mirrorPreview
 	mirrorReply             chan error
 }
@@ -126,41 +127,20 @@ func (a *application) taskEditorView(c *ui.Context) {
 				})
 			})
 			a.manualKindView(c, locked)
-			if s.id != "" {
+			if len(s.targets) > 0 {
 				ui.Text(c, a.tr("已保存任务不能切换类型。")).FontSize(14).Padding(12).FillWidth().Border(1, porcelain.Border)
 			}
 			ui.Text(c, a.tr("触发器"))
 			a.triggerView(c, locked)
-			if s.id != "" {
-				porcelainButton(c, a.tr("同步目标（按顺序执行）")).FillWidth().Disabled(locked).OnClick(a.openDraftDestinations)
-			}
 			if s.dirty || s.phase == manualDraft || s.phase == manualSaving {
 				ui.Text(c, a.render(s.message))
 			}
 		})
 	})
 	ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Padding(12, 0, 0, 0).Children(func() {
-		if a.cards.destinations {
-			porcelainButton(c, a.tr("编辑任务")).Disabled(s.busy()).OnClick(func() { a.cards.destinations = false })
-		}
-		if s.dirty {
-			porcelainButton(c, a.tr("放弃编辑")).Disabled(s.busy()).OnClick(a.discardManual)
-		}
-		porcelainButton(c, a.tr("关闭编辑")).OnClick(a.closeTaskEditor)
-		if s.id == "" && !a.cards.destinations {
-			ui.PrimaryButton(c, a.tr("下一步：配置目标")).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.openDraftDestinations)
-		} else {
-			ui.PrimaryButton(c, a.tr("保存任务")).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
-		}
+		porcelainButton(c, a.tr("取消")).Disabled(s.busy()).OnClick(a.closeTaskEditor)
+		ui.PrimaryButton(c, a.tr("保存任务")).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
 	})
-}
-
-func (a *application) openDraftDestinations() {
-	if a.manual.busy() || a.tasks == nil || a.taskError != nil || a.selectedTaskIssue() != nil {
-		return
-	}
-	a.cards.destinations = true
-	a.cards.targetHidden = ""
 }
 func (a *application) chooseFolder(source bool) {
 	s := &a.manual
@@ -202,6 +182,18 @@ func (a *application) startManual() {
 func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRequest, automatic bool) {
 	s := &a.manual
 	if s.busy() || a.sourcePreview.job != nil || (automatic && a.batch.phase == batchServing) {
+		return
+	}
+	if len(q.Destinations) == 0 {
+		if a.results == nil {
+			a.results = map[taskconfig.ID]savedTaskResult{}
+		}
+		msg := messagef("无目标，未执行文件操作。")
+		a.results[id] = savedTaskResult{message: msg}
+		if s.id == id && !s.dirty {
+			s.phase = manualFinished
+			s.message = msg
+		}
 		return
 	}
 	a.cards.running = id

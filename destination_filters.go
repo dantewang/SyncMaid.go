@@ -13,6 +13,27 @@ import (
 	"syncmaid/internal/taskconfig"
 )
 
+func rulesHaveUnknownFields(rules []taskconfig.Rule) bool {
+	for _, r := range rules {
+		if r.HasUnknownFields() || (r.Rules != nil && rulesHaveUnknownFields(*r.Rules)) || (r.Rule != nil && rulesHaveUnknownFields([]taskconfig.Rule{*r.Rule})) {
+			return true
+		}
+	}
+	return false
+}
+
+func taskConfigurationDeletionIssue(t taskconfig.Task) error {
+	if _, err := multipleRequestFromSaved(t); err != nil {
+		return err
+	}
+	for _, d := range t.Destinations {
+		if rulesHaveUnknownFields(d.Filters) {
+			return fmt.Errorf("%s 含未支持字段，不能删除其配置", d.Name)
+		}
+	}
+	return nil
+}
+
 type filterMode uint8
 
 const (
@@ -225,16 +246,4 @@ func selectMatchedFiles(ctx context.Context, raw []fileinventory.File, matcher *
 		return nil, err
 	}
 	return selected, nil
-}
-
-func filterDeletionIssue(t taskconfig.Task) error {
-	if _, err := multipleRequestFromSaved(t); err != nil {
-		return err
-	}
-	for _, d := range t.Destinations {
-		if _, err := filefilter.Compile(d.Filters); err != nil {
-			return fmt.Errorf("%s 含不支持过滤，不能删除其配置: %w", d.Name, err)
-		}
-	}
-	return nil
 }

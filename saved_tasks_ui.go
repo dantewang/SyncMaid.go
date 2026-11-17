@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -25,8 +24,7 @@ func (a *application) newManual() {
 		return
 	}
 	a.sourcePreview.invalidate()
-	d := manualDestination{ID: taskconfig.NewID(), Name: a.tr("目标 %d", 1), Filters: allFileRules()}
-	a.manual = manualSession{onEdit: a.manualEdited, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, message: messagef("请输入名称与路径，然后保存任务。")}
+	a.manual = manualSession{onEdit: a.manualEdited, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending, message: messagef("请输入名称与路径，然后保存任务。")}
 }
 func (a *application) selectManual(id taskconfig.ID) {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
@@ -40,7 +38,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 	a.sourcePreview.invalidate()
 	s := manualSession{onEdit: a.manualEdited, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
 	for _, d := range t.Destinations {
-		s.targets = append(s.targets, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy})
+		s.targets = append(s.targets, cloneManualDestination(manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy}))
 	}
 	if len(s.targets) > 0 {
 		d := s.targets[0]
@@ -146,16 +144,24 @@ func (a *application) createManual() {
 		s.message = messagef("过滤尚未保存: %s", err.Error())
 		return
 	}
+	if a.cards.destinations && !a.acceptOpenDestinations() {
+		return
+	}
 	id, name, q := s.id, s.name, s.draftRequest()
 	library := a.tasks
 	s.phase = manualSaving
 	s.message = messagef("检查路径并保存任务…")
 	go func() {
-		validationErr := validateMultiple(context.Background(), q)
+		tasks, nextID, validationErr := library.prepareMultiple(id, name, q)
 		var writeErr error
 		var next *savedTaskLibrary
 		if validationErr == nil {
-			next, id, writeErr = library.saveMultiple(id, name, q)
+			id = nextID
+			snapshot, err := library.snapshot.Save(tasks)
+			writeErr = err
+			if err == nil {
+				next, writeErr = savedLibrary(snapshot)
+			}
 		}
 		a.window.Update(func() { a.finishTaskSave(next, id, validationErr, writeErr) })
 	}()
@@ -178,6 +184,7 @@ func (a *application) finishTaskSave(next *savedTaskLibrary, id taskconfig.ID, v
 		s.dirty = false
 		a.selectManual(id)
 		s.message = messagef("任务已保存，可以运行。")
+		a.cards.editor = false
 	}
 	if validationErr != nil || writeErr != nil {
 		a.pauseQuitAfterTaskError()

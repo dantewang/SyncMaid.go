@@ -38,9 +38,8 @@ func TestCardLayoutIdentityAndEditorGuards(t *testing.T) {
 	}
 	a.manual.dirty = true
 	a.closeTaskEditor()
-	a.editCard(first, "")
-	if !a.cards.editor || a.manual.id != second {
-		t.Fatal("dirty editor bypassed")
+	if a.cards.editor || a.manual.dirty || a.manual.id != second {
+		t.Fatal("cancel did not discard and close")
 	}
 	a.manual.dirty = false
 	for _, phase := range []manualPhase{manualRunning, manualSaving, manualReviewing, manualChoosing} {

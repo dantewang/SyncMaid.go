@@ -82,6 +82,10 @@ func (s *manualSession) refreshCron() {
 	s.cronNext = ""
 	s.triggerError = ""
 	_, next, e := parseScheduled(s.cronText, time.Now())
+	if errors.Is(e, errNoScheduledFuture) {
+		s.cronNext = errNoScheduledFuture.Error()
+		return
+	}
 	if e != nil {
 		s.triggerError = e.Error()
 		return

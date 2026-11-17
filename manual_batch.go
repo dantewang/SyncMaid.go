@@ -61,6 +61,10 @@ func (a *application) advanceBatchUsing(start func(taskconfig.ID, string, manual
 			err = e
 			if err == nil {
 				a.selectManual(id)
+				if len(q.Destinations) == 0 {
+					a.startTaskRun(id, t.Name, q, false)
+					continue
+				}
 				start(id, t.Name, q, false)
 				return
 			}

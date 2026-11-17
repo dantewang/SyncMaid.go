@@ -76,7 +76,7 @@ func (a *application) taskDeletionIssue() error {
 	if err != nil {
 		return err
 	}
-	return filterDeletionIssue(t)
+	return taskConfigurationDeletionIssue(t)
 }
 
 func (a *application) filtersView(c *ui.Context, locked bool) {

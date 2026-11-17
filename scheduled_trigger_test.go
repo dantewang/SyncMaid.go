@@ -138,8 +138,8 @@ func TestScheduledSaveRestoreAndInput(t *testing.T) {
 	a.selectManual(id)
 	a.manual.cronText = "0 0 30 2 *"
 	a.cronChanged()
-	if a.manual.triggerError == "" || a.liveWatch(w) {
-		t.Fatal("invalid edited schedule active")
+	if a.manual.triggerError != "" || a.manual.cronNext != errNoScheduledFuture.Error() || a.liveWatch(w) {
+		t.Fatal("never-occurring schedule not described or old timer active")
 	}
 	a.manual.cronText = "*/5 * * * *"
 	a.cronChanged()
@@ -164,7 +164,14 @@ func TestScheduledSaveRestoreAndInput(t *testing.T) {
 	}
 	bad := "0 0 30 2 *"
 	q.Trigger = taskconfig.Trigger{Kind: "scheduled", CronExpression: &bad}
-	if _, _, e = l.saveMultiple(id, "invalid", q); !errors.Is(e, errNoScheduledFuture) {
+	l, _, e = l.saveMultiple(id, "never occurs", q)
+	if e != nil {
 		t.Fatal(e)
+	}
+	a.tasks = l
+	a.manual.dirty = false
+	a.syncWatches()
+	if w := a.watches[id]; w == nil || w.timer != nil || w.ticket.phase != watchFailed {
+		t.Fatal("never-occurring schedule armed a timer")
 	}
 }

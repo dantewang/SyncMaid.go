@@ -93,6 +93,8 @@ func TestNativeGroupCopyAndSaveRestart(t *testing.T) {
 	a.addFilterRule(0)
 	original := a.manual.targetID
 	a.copyManualTarget(original)
+	a.manual.target = t.TempDir()
+	a.manual.edited()
 	*a.manual.targets[1].Filters[0].Rules = []taskconfig.Rule{taskconfig.ExtensionFilter("bin")}
 	if *(*a.manual.targets[0].Filters[0].Rules)[0].Extension != "txt" {
 		t.Fatal("copy changed original group")

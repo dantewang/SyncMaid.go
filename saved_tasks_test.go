@@ -35,7 +35,7 @@ func TestSavedTasksCRUDAndReloadKeepLegacyFiles(t *testing.T) {
 	}
 	first, _ := l.find(id1)
 	destID := first.Destinations[0].ID
-	q1.Source = q2.Source
+	q1.Source = manualFixture(t).Source
 	l, editedID, err := l.save(id1, "Edited", q1)
 	if err != nil || editedID != id1 {
 		t.Fatal(editedID, err)
@@ -45,7 +45,7 @@ func TestSavedTasksCRUDAndReloadKeepLegacyFiles(t *testing.T) {
 		t.Fatal(l, err)
 	}
 	first, err = l.find(id1)
-	if err != nil || first.Name != "Edited" || first.SourcePath != q2.Source || first.Destinations[0].ID != destID {
+	if err != nil || first.Name != "Edited" || first.SourcePath != q1.Source || first.Destinations[0].ID != destID {
 		t.Fatal(first, err)
 	}
 	if _, err = l.find(id2); err != nil {

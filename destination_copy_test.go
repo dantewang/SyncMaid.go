@@ -27,8 +27,14 @@ func TestDestinationCopyIsIndependentUnsavedConfiguration(t *testing.T) {
 		t.Fatal("editing copy changed original")
 	}
 	a.toggleDestinationEditor(copy.ID)
-	if a.cards.targetHidden != copy.ID || a.manual.targetID != copy.ID {
-		t.Fatal("collapse lost editor identity")
+	if a.cards.targetHidden == copy.ID {
+		t.Fatal("accepted overlapping copy")
+	}
+	a.manual.target = t.TempDir()
+	a.manual.edited()
+	a.toggleDestinationEditor(copy.ID)
+	if a.cards.targetHidden != copy.ID {
+		t.Fatal("valid copy did not accept")
 	}
 	a.toggleDestinationEditor(copy.ID)
 	if a.cards.targetHidden != "" {

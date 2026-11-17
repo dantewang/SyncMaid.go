@@ -48,7 +48,9 @@ func (a *application) addManualTarget() {
 		d.Collision = taskconfig.Skip
 	}
 	s.targets = append(s.targets, d)
+	s.beginDestinationEdit(d.ID, nil)
 	s.selectTarget(d.ID)
+	a.cards.targetHidden = ""
 	s.edited()
 }
 func (a *application) removeManualTarget() {
@@ -56,23 +58,22 @@ func (a *application) removeManualTarget() {
 		return
 	}
 	s := &a.manual
-	if s.filterEditor.RunError != "" {
-		s.message = messagef("此目标含不支持过滤，不能移除其配置。")
-		return
-	}
-	if len(s.targets) <= 1 {
-		s.message = messagef("至少保留一个目标。移除目标不会删除文件。")
-		return
+	for _, d := range s.targets {
+		if d.ID == s.targetID && rulesHaveUnknownFields(d.Filters) {
+			s.message = messagef("此目标含不支持过滤，不能移除其配置。")
+			return
+		}
 	}
 	for i, d := range s.targets {
 		if d.ID == s.targetID {
 			delete(s.filterDrafts, d.ID)
+			delete(s.destinationEdits, d.ID)
 			s.targets = append(s.targets[:i], s.targets[i+1:]...)
-			first := s.targets[0]
-			s.targetID = first.ID
-			s.targetName = first.Name
-			s.target = first.Path
-			s.loadFilterDraft(first.ID)
+			s.targetID, s.targetName, s.target = "", "", ""
+			if len(s.targets) > 0 {
+				s.selectTarget(s.targets[0].ID)
+			}
+			a.cards.targetHidden = s.targetID
 			s.edited()
 			return
 		}
@@ -88,6 +89,9 @@ func (a *application) moveManualTarget(id taskconfig.ID, delta int) {
 		if d.ID == id {
 			j := i + delta
 			if j < 0 || j >= len(s.targets) {
+				return
+			}
+			if manualKind(s.kind) == taskconfig.Moving && (isAllFileRules(d.Filters) || isAllFileRules(s.targets[j].Filters)) {
 				return
 			}
 			s.targets[i], s.targets[j] = s.targets[j], s.targets[i]
@@ -125,15 +129,18 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 				})
 				porcelainIcon(c, "copy", a.tr("复制目标（仅配置）")+" "+d.Name).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { a.copyManualTarget(id) })
 				glyph := "♢"
+				label := a.tr("编辑或收起目标") + " " + d.Name
 				if id == s.targetID && a.cards.targetHidden != id {
 					glyph = "check"
+					label = a.tr("接受目标") + " " + d.Name
 				}
-				porcelainIcon(c, glyph, a.tr("编辑或收起目标")+" "+d.Name).Border(0, ui.Transparent).Disabled(s.busy()).OnClick(func() { a.toggleDestinationEditor(id) })
-				if manualKind(s.kind) == taskconfig.Moving {
-					porcelainButton(c, a.tr("上移")).Disabled(locked || i == 0).OnClick(func() { a.moveManualTarget(id, -1) })
-					porcelainButton(c, a.tr("下移")).Disabled(locked || i == len(s.targets)-1).OnClick(func() { a.moveManualTarget(id, 1) })
+				porcelainIcon(c, glyph, label).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { a.toggleDestinationEditor(id) })
+				if id == s.targetID && a.cards.targetHidden != id {
+					porcelainIcon(c, "×", a.tr("取消目标编辑")+" "+d.Name).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { a.cancelDestination(id) })
 				}
-				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")).Border(0, ui.Transparent).Disabled(locked || len(s.targets) <= 1 || s.filterEditor.RunError != "").OnClick(func() { s.selectTarget(id); a.removeManualTarget() })
+				porcelainButton(c, a.tr("上移")).Disabled(locked || !s.canMoveTarget(i, -1)).OnClick(func() { a.moveManualTarget(id, -1) })
+				porcelainButton(c, a.tr("下移")).Disabled(locked || !s.canMoveTarget(i, 1)).OnClick(func() { a.moveManualTarget(id, 1) })
+				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { s.selectTarget(id); a.confirmRemoveManualTarget() })
 			})
 			a.sourcePreviewTargetView(c, id)
 			if id != s.targetID || a.cards.targetHidden == id {
@@ -151,12 +158,15 @@ func (a *application) toggleDestinationEditor(id taskconfig.ID) {
 		return
 	}
 	if a.manual.targetID == id && a.cards.targetHidden != id {
-		a.manual.flushTarget()
-		a.manual.keepFilterDraft()
-		a.cards.targetHidden = id
+		a.acceptDestination(id)
 		return
 	}
 	a.manual.selectTarget(id)
+	for _, d := range a.manual.targets {
+		if d.ID == id {
+			a.manual.beginDestinationEdit(id, &d)
+		}
+	}
 	a.cards.targetHidden = ""
 }
 func (a *application) copyManualTarget(id taskconfig.ID) {
@@ -178,6 +188,7 @@ func (a *application) copyManualTarget(id taskconfig.ID) {
 			d.matcher = nil
 			d.filterError = nil
 			s.targets = append(s.targets, d)
+			s.beginDestinationEdit(d.ID, nil)
 			s.selectTarget(d.ID)
 			a.cards.targetHidden = ""
 			s.edited()

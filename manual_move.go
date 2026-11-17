@@ -74,6 +74,9 @@ func prepareMoveRoutes(ctx context.Context, files []fileinventory.File, destinat
 }
 
 func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationResult)) (results multipleResult, err error) {
+	if len(q.Destinations) == 0 {
+		return multipleResult{}, nil
+	}
 	results = initialDestinationResults(q)
 	failAll := func(e error) (multipleResult, error) {
 		for id, r := range results {

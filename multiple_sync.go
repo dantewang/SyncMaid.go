@@ -68,6 +68,9 @@ func runMultiple(ctx context.Context, q manualTaskRequest, notify func(destinati
 }
 
 func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(destinationResult), confirm mirrorConfirmation) (results multipleResult, err error) {
+	if len(q.Destinations) == 0 {
+		return multipleResult{}, nil
+	}
 	q = prepareReviewedRequest(q)
 	if manualKind(q.Kind) == taskconfig.Moving {
 		return runMove(ctx, q, notify)

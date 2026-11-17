@@ -60,7 +60,7 @@ func (a *application) triggerView(c *ui.Context, locked bool) {
 		} else if w := a.watches[s.id]; !s.dirty && w != nil && w.schedule != nil {
 			ui.Text(c, a.render(w.status))
 		} else {
-			ui.Text(c, a.tr("下次运行: ")+s.cronNext)
+			ui.Text(c, a.tr("下次运行: ")+a.tr(s.cronNext))
 		}
 	}
 	if s.triggerError != "" {

@@ -7,20 +7,10 @@ import (
 
 func (a *application) setManualKind(kind taskconfig.TaskKind) {
 	s := &a.manual
-	if !a.targetEditAllowed() || s.id != "" || manualKind(s.kind) == kind {
+	if !a.targetEditAllowed() || len(s.targets) != 0 || manualKind(s.kind) == kind {
 		return
 	}
 	s.kind = kind
-	for i := range s.targets {
-		if kind == taskconfig.Moving {
-			s.targets[i].Strategy = taskconfig.Move
-			s.targets[i].Collision = taskconfig.Skip
-		} else {
-			s.targets[i].Strategy = taskconfig.AddOnly
-			s.targets[i].Flatten = false
-			s.targets[i].Collision = taskconfig.Skip
-		}
-	}
 	s.edited()
 }
 func (a *application) manualKindView(c *ui.Context, locked bool) {
@@ -36,7 +26,7 @@ func (a *application) manualKindView(c *ui.Context, locked bool) {
 		if kind == taskconfig.Moving {
 			glyph = "move"
 		}
-		porcelainChoice(c, glyph, a.tr(key), a.tr(description), manualKind(s.kind) == kind, locked || s.id != "", func() { a.setManualKind(kind) }).MinHeight(94)
+		porcelainChoice(c, glyph, a.tr(key), a.tr(description), manualKind(s.kind) == kind, locked || len(s.targets) != 0, func() { a.setManualKind(kind) }).MinHeight(94)
 	}
 	if manualKind(s.kind) == taskconfig.Moving {
 		ui.Text(c, a.tr("首个匹配目标拥有文件；不覆盖目标，失败不转投后续目标。已保存任务不能切换类型。"))
