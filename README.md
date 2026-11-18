@@ -1,77 +1,75 @@
-# SyncMaid.go
+<div align="center">
 
-新建任务只需名称、源文件夹、类型和触发方式，即可保存；可以暂时没有目标。保存后从任务卡片添加目标。任务编辑的取消、X、Escape 或点击背景都会放弃本次修改并关闭；目标工作区可逐行接受或取消，再整体保存或取消。新目标取消不会留下空记录，复制只复制配置，删除会确认且不会删除文件。配置保存不要求目录当前可用；实际运行仍会重新核实目录、身份、重叠和全部执行安全条件。零目标任务不订阅自动触发，也不执行文件操作。
+<img src="assets/syncmaid.png" alt="SyncMaid" width="128" />
 
-SyncMaid 是面向 Windows 的单向文件同步工具。主窗采用 Rust Porcelain 浅色布局、可折叠任务卡片与任务导航：每张卡显示一个源和多个目标的策略、筛选及独立结果，支持全部展开/折叠；点击任务或目标编辑才打开编辑区，任务和目标分别在右侧抽屉及目标工作区编辑。编辑使用独立草稿，保存后生效；取消直接放弃并关闭。当前支持创建、编辑名称与源路径，添加、编辑、移除和重排多个仅添加或Mirror目标；选择任务运行并查看逐目标进度、结果或停止。已保存任务及目标顺序重启后恢复；最近已记录的任务及目标结果、开始结束时间和失败原因重启后可恢复。移除目标只改配置，不删除文件。各目标可独立编辑并保存路径前缀、扩展名和通配符过滤。Mirror目标支持每次预览并明确确认多余文件后移除；也支持独立Move移动任务；支持Watch源监视，支持Scheduled定时触发。
+# SyncMaid
 
-点击“导入旧任务”手动选择旧版 tasks JSON 或明确选择 `.bak`，预览后确认追加到 `tasks-go.json`；不会修改、重命名旧文件或自动导入备份。最大 4 MiB、合计最多 256 个任务，每任务最多 256 个目标。所有导入任务显式转为 Manual，不自动运行；其余已可解码字段、规则和原路径保留。未知枚举或 variant 整份拒绝，自动触发器含未知成员也会拒绝以避免转换丢失。可保留的未知成员或旧非空正则会提示运行限制，不会近似执行。重复任务/目标 ID 或相同任务内容整份拒绝；没有旧 ID 的重复选择也检查内容，不自动编号或覆盖。确认使用本次预览快照，保存失败保留预览并阻止重复提交，需取消后重新载入核对。运行导入任务前必须退出 Rust 旧版；同一 Data 路径的会话内互斥可防止常见双开，不能协调旧版的其它路径、其它会话或同步端点。
+**One-way file sync for Windows, done for you.**
 
-旧正则需在任务的“旧正则迁移”入口逐条选择规则，查看旧表达式、新 profile 和差异提示，输入新表达式及最多16条示例路径；预览仅展示 Go 新语义，不提供 Rust 实测对照或等价保证。点击“确认新语义并保存”后才可使用，修改表达式要重新预览，编辑任务会使原确认失效；未确认/失效的 Sync 目标不能执行，Move 必须全部准备通过才写入，自动触发不会代为确认。保存确认本身不运行任务。
+English | [简体中文](README.zh-CN.md)
 
-Go 任务文件现在使用单文件版本化文档，任务和确认记录原子保存（上限8 MiB），旧数组可读为零确认。早期 Go 开发版会拒读新格式；降级前必须停止程序和自动触发，保留原文件，再人工选择已知旧数组备份，不能假定任意 `.bak` 都可降级。主文件损坏或缺失且有可读备份时，可在主窗选择“恢复任务备份”。确认后保留原文件（若存在），从备份恢复并清除正则确认。请核对任务并重新审阅规则，再恢复本次会话的自动触发。Rust 旧主备始终不写。
+SyncMaid watches a source folder and keeps one or more destinations in sync with it — each
+destination with its own filters and strategy (Mirror, Add-only, or Move), triggered manually,
+on a cron schedule, or by watching for source changes. It lives in the system tray and keeps
+working while you don't.
 
-在设置的“打开旧版设置或记录”可选择旧 settings.json，预览并确认导入窗口偏好，也可打开旧 status.json 或 syncmaid.log 查阅。旧记录不纳入新版运行结果；不会写入旧文件、导入登录自启或改变语言。
+</div>
 
-点击“设置”可即时切换 English、日本語、简体中文或繁體中文，自动保存并在重启后恢复；语言文件仅使用 `Data/locale`，不读取旧版设置。切换保留未保存编辑，任务名、路径和 cron 不翻译。损坏或不支持的语言文件会保留并阻止覆盖，保存失败会提示。取得 Data 所有权前的启动错误仍使用简体中文。设置还可选择关闭到托盘、启动隐藏到托盘及本副本的登录自启。新安装默认关闭窗口会取消任务、等待清理并退出，启动时显示窗口；此前 Go 版本固定关窗隐藏的行为不再作为缺省。关闭到托盘开启后服务继续运行，显式“退出”始终真正退出。两项窗口偏好保存到 `Data/settings-go.json`，损坏或写失败会提示并保留原文。自启直接显示 Windows 实际登记/系统禁用状态，不复制到配置；每安装目录使用独立启动项，按当前程序路径登记。系统禁用由任务管理器管理，应用不会清除；移动程序后需重新登记，旧路径项不会自动清理。
+SyncMaid is written in Go using [MyGo](https://github.com/egoist/mygo) native Windows UI, and it
+is **portable only**: everything it saves lives in a `Data` folder beside the executable, so the
+whole app is a folder you can move without leaving anything behind on the host machine.
 
-仅添加目标可选全部文件、无匹配或包含/排除。条件每行一项，路径相对源目录；包含任一条件即可，包含全空表示全部，排除任一命中项优先。非正则匹配忽略大小写，通配符支持 `*`、`?` 和 `**`。完整源扫描后，先准备该目标全部过滤结果再写入；零匹配单独报告，不代表源为空，也不会删除已有文件。复杂规则原样保留且只读；未知规则或未确认的非空旧正则会令该目标失败，健康目标继续。
+## Documentation
 
-点击原生界面的“查看运行记录”，可浏览近期运行并查看目标ID、时间、计数和错误；“返回任务编辑”回到任务。记录同时作为诊断日志，保存在 `Data/run-history-go.json`，不读取旧版status或log文件。单文件滚动保留最多100次近期运行，优先保留现存任务的最近结果，总计上限4 MiB；错误摘要最多1 KiB，名称最多256字节，每次最多256个目标，超限会明确提示而不会影响文件执行。只写每次开始/结束摘要，不记录文件内容。开始后未记录结束会显示中断/结果未知，不视为成功、未执行或重试授权。损坏、外部编辑或写失败时保留原文并提示记录不可用，实际同步结果仍照常显示；修复文件后可点“重新载入”。已发布结果不明时可能保留本次临时记录文件供核对。
+- **User Guide (English)** — [`docs/`](docs/README.md)
+- **使用指南（简体中文）** — [`docs/zh-CN/`](docs/zh-CN/README.md)
+- **Contributing / working with agents** — [AGENT.md](AGENT.md)
 
-Scheduled定时采用本地时间五字段 cron：分、时、日、月、星期（0–6，0为周日），例如 `0 2 * * *` 每天02:00。支持列表、范围、步长及 `5/15` 写法；日和星期同时限定时按任一匹配。不支持秒、年份、`@every`、`?` 或时区前缀。输入会显示错误及下一次运行时间；搜索范围五年内无未来匹配会明确显示并保留配置，但不登记自动执行。重启和恢复自动触发时重新计算下一次，不补跑历史；到期回调迟到超过5秒（例如休眠后）会跳过并重算。忙时只合并一个待运行请求，不积压多次执行。仍共用单执行入口、停止暂停和Mirror本次确认。
+## Requirements
 
-Manual手动或Watch监视可保存并在重启后恢复。Watch在源变化静默1–600秒后运行，默认10秒；建立或恢复监视后也会等待静默期检查一次。所有已保存Watch任务共享单一执行入口，同任务事件合并；其他任务运行时保留至多一个待运行请求。Move自身删除可能带来一次无操作复查，外部变化仍保留。编辑任务会暂停其旧订阅，保存或放弃后重新建立；其他Watch任务可运行，未保存草稿不会被切换或覆盖。任务列表显示监视状态和上次会话结果。UNC 与映射共享源每 5 秒轮询文件和目录，应用同一静默期。轮询可能漏掉采样之间的短暂变化。监视失败每30秒重试，执行仍需原有完整扫描、安全检查；自动Mirror也必须显示本次预览并确认，隐藏窗口会恢复显示。停止当前任务会同时暂停全部自动触发，需点“恢复自动触发”才能继续；退出关闭订阅；仅启用“关闭到托盘”时关窗隐藏并继续监视，默认关窗会取消任务、等待清理并退出。
+- Windows 10 or later (the app is Windows-only)
+- Go 1.27.3 or later (`go.mod` also declares `tool github.com/egoist/mygo/cmd/mygo` v0.8.3)
+- `CGO_ENABLED=0` (pure-Go native Win32/MyGo build; no C compiler required)
 
-Move按目标顺序首匹配路由，每个文件只归一个目标；每个目标可选Skip冲突保留源或Suffix加编号，支持保留目录和平铺。Suffix从 `报告 (2).txt` 起寻找空闲名称，已有编号会继续后移；最多尝试4096个名称，无法完成会报错并保留源。遇到竞争同名也不替换，只在确认名称冲突且临时文件仍未发布时重试，整个过程只复制一次。失败或Skip保留源，不再转投后续目标。平铺同名文件也不会相互覆盖。先完整扫描并准备全部目标规则，未知或旧非空正则令整个Move停止准备，尚未匹配的文件留在源。移动始终复制、校验并发布后，才核对原源对象并永久移除，不按大小/时间相同跳过校验。发布未知、失败或取消不会授权删除源；目标成功但源移除失败会报错，可能保留两份。停止保留已完成移动，目录清理暂不支持。任务有目标时类型固定，移除全部目标后可改类型；不能混用Sync和Move策略。
+## Build & Run
 
-Mirror仅支持全部文件，源没有普通文件、任何一侧扫描不完整或复制失败时禁止删除。先完成新增/更新，再显示本次目标、数量及文件路径；取消确认不移除多余文件，但已复制内容不回滚。确认后发现变化会拒绝旧计划，需重新运行。默认移至系统回收站，无法回收则报错，绝不转为永久删除；永久删除必须在目标中明确选择并再次确认。成功结束前创建缺失的源子目录并尽量保留目录修改时间（受卷精度限制）；只移除计划内普通文件，不清理多余目录，回收站不支持长路径、共享或可移动盘目标（不会删掉对应文件）；停止不回滚已完成操作。回收使用系统路径接口，操作前检查并固定父目录，但无法完全阻止其他程序在最后时刻替换文件，请勿同时编辑同步目录。
-
-各目标按顺序独立执行。启动前统一检查源和可用目标的真实目录重叠及别名；危险重叠阻止整次运行。路径失效或无法访问的目标记失败，不执行该目标，健康目标继续；混合结果不会显示为全部成功。停止会跳过后续目标，已经完成的不回滚。
-
-任务单独保存在可执行文件旁的 `Data/tasks-go.json`，使用原子保存和 `.bak` 备份；不自动读取、转换或覆盖 Rust 旧版的 `tasks.json` 及其备份。损坏、备份异常或外部编辑冲突会显示原因并阻止写入，保存失败保留窗口中的编辑，修复后可重新载入核对。含未支持策略或任务字段的记录只能查看，不能编辑、删除或运行；复杂过滤规则保持只读原样保留，不支持的过滤仅阻止对应目标，也不能通过删除配置清除。此专用文件不代表已解决与旧版同时操作同步目录的问题。
-
-仅添加会复制缺失文件，并更新大小或整秒修改时间不同的文件，不删除目标额外文件；大小和整秒修改时间相同则跳过，不逐个比较内容。新内容先写目标旁临时文件并校验，再原子发布；失败或停止保留已发布文件，不回滚整个任务，可能留下本次新建的空父目录。发布调用报错而结果无法确认时会保留文件对象并提示检查，不自动删除或认定成功。源、目标必须已存在且不重叠。可在本地固定或可移动 NTFS/ReFS/FAT/exFAT 卷上使用，并尝试支持提供稳定文件对象身份、目录属性及句柄相对操作的 UNC 和映射共享；服务端不具备能力就报错。子级链接、硬链接文件及区分大小写的目录暂不支持。请避免同时用其他程序编辑同步目录；这不是文件系统快照或外部编辑的事务。
-
-仅启用“关闭到托盘”时，关闭窗口会隐藏并保持普通任务运行；默认关闭会取消任务、等待清理并退出。关闭窗口总是拒绝当前 Mirror 移除确认，不会留下隐藏的待确认删除。托盘图标点击及菜单 Show main window 的恢复操作尚待人工验收。Exit 会先停止任务、清理临时文件再退出；异常存储驱动仍可能延迟系统 I/O 完成。同一目录再次启动会恢复已有窗口；不同目录的副本可独立运行。数据目录固定为可执行文件所在真实目录旁的 `Data`，旧版任务仅通过显式导入加载，不加载旧版设置。
-
-安装目录与 Data 必须可写，程序会在其中建立并保留 `.syncmaid-owner.lock`，不要在运行时修改。当前支持本地固定或可移动 NTFS/ReFS/FAT/exFAT 卷，要求可取得目录对象身份并持有系统独占文件句柄；网络共享不可作安装位置或 Data。窗口激活失败不会允许第二个写入实例。程序还持有 Rust 同会话、同 Data 路径的兼容互斥，仍应先退出旧版（旧版可因权限或路径别名绕过）。
-
-启动失败时会显示原生提示，说明相关位置和可采取的下一步。正常再次启动只恢复已有窗口；若未能确认恢复，会提示查看已有窗口、稍后重试或从托盘恢复，不会接管 Data。
-
-## 编译与运行
-
-需要 Go **1.27.3**（当前过滤 profile 固定此版本）。项目固定使用 MyGo **v0.8.3**，无需 Bun、WebView2 或 cgo 工具链。
-
-在项目根目录使用 PowerShell，自行准备依赖并编译：
+Run in development:
 
 ```powershell
-$env:GOTOOLCHAIN = 'local'
-$env:CGO_ENABLED = '0'
-go mod tidy
-New-Item -ItemType Directory -Force build | Out-Null
-go build -ldflags=-H=windowsgui -o build/SyncMaid.exe .
-.\build\SyncMaid.exe
+$env:CGO_ENABLED = "0"
+go run .
 ```
 
-首次执行 `go mod tidy` 需要访问 Go 模块源，下载依赖并生成 `go.sum`。构建成功后运行程序，应显示 SyncMaid 启动窗口。
-
-## 测试
+Build the standalone executable (`build/windows-amd64/SyncMaid.exe`):
 
 ```powershell
-go test ./...
+$env:CGO_ENABLED = "0"
+go tool mygo build -skip-installer
+```
+
+## Tests
+
+Run `go vet` and the full test suite:
+
+```powershell
 go vet ./...
+go test -count=1 ./...
 ```
 
-现有测试覆盖传输失败与取消、已有文件保护、路径边界、无头视图、目录身份、生命周期和文件过滤。只读扫描完整成功后才开始同步。旧正则现需通过显式新语义迁移后运行；中文输入法组合过程也未验收。
+Run just the transfer and filter engine tests (`internal/syncengine`):
 
-当前窗口骨架已验证无 cgo 构建、设置控制的关闭隐藏或退出、重复启动恢复、跨目录独立运行与退出。`go tool mygo build -skip-installer` 可生成不含安装器的 Windows 发布目录，当前骨架的单个 EXE 复制后可运行。新增外部资源时仍需明确嵌入方式；托盘鼠标操作、不同 DPI 和干净 Windows 环境兼容尚待验证。
+```powershell
+go test ./internal/syncengine
+```
 
-界面图标沿用 Rust 项目的 Lucide 资源，许可见 [图标许可](assets/porcelain-icons/LICENSE)。“运行全部”按点击时已保存的任务顺序串行执行；停止或退出会丢弃余下任务，已完成的不回滚，每次 Mirror 移除仍须明确确认。批次不保存、重启不补跑；批次结束前自动触发请求合并等待。设置、任务卡与日志使用 Porcelain 样式；点击目标结果打开独立的只读日志窗，可刷新或打开 Go 诊断文件。目标可复制配置为未保存副本，不复制文件；副本需核对路径后保存。过滤可编辑两层条件组（组间和组内任一/全部、单条排除），支持路径、扩展名和通配符；更深或未知规则保持只读，正则仍从明确迁移入口预览确认。Go 专有导入/正则迁移与窗口装饰等仍有界面差异。
+Tests verify atomic temporary-file staging and publication, directory handle pinning, overlap
+and symlink/junction rejection, cancellation cleanup, Mirror confirmation guards, Move
+first-match routing and numbered suffix handling, bounded run history persistence, and native
+UI session state transitions.
 
-在目标编辑工作区可点击“源预览”，查看当前草稿的各目标匹配数量、少量路径样例、未匹配文件及 Move 首匹配竞争提示；刷新重新读取源，取消或编辑会使旧预览失效。扩展名快捷项只添加到所在条件组，保留草稿，仍需手动保存。预览只读源，不比较目标内容，也不授权执行或删除；源变化后须刷新。每次扫描最多20万目录条目、深度128，超限报错而不显示部分成功。
+## Packaging & Release
 
-## 本地便携试用包
-
-已有固定版本 Go 与模块缓存时，在 PowerShell 执行 `./scripts/portable-trial.ps1`。脚本离线调用 MyGo 的 Windows amd64 构建（`-skip-installer`），在 `.local/portable/` 生成独立目录和 ZIP，包含 EXE、使用说明和第三方许可，不带开发 Data 或日志。版本仍为 0.1.0，这是本地试用包，不是正式发布。
-
-解压到可写的本地固定 NTFS 目录后打开 `SyncMaid.exe`，在设置中选择中文。应用图标、四语资源和界面 SVG 已嵌入 EXE，运行不需要旁置资源文件；程序会在旁边创建 Data。请先使用新建测试目录试用；共享端点、USB/exFAT、ReFS 的实机测试及干净 Windows、托盘人工、IME 和其它 DPI 验收仍未完成，多语言完整视觉验收已延期。其余使用限制见包内说明。
+The compiled executable (`build/windows-amd64/SyncMaid.exe`, produced by
+`go tool mygo build -skip-installer`) embeds the application icon, icons/SVGs, translations, and
+metadata from [`mygo.json`](mygo.json). Copy `SyncMaid.exe` into any writable local folder; it
+creates its `Data` directory right beside itself on first run.
