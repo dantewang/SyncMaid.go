@@ -28,10 +28,10 @@ type mirrorListing struct {
 // Parents remain pinned until the returned closer runs. Neither an intermediate
 // reparse point nor a replaced final reparse file is followed.
 func openMirrorFile(root windows.Handle, rel string, access uint32) (f *os.File, closeAll func() error, err error) {
-	if rel == "" || filepath.IsAbs(rel) || strings.Contains(rel, "\\") {
-		return nil, nil, errors.New("非法相对文件路径")
+	parts, err := splitRelativePath(rel)
+	if err != nil {
+		return nil, nil, err
 	}
-	parts := strings.Split(rel, "/")
 	var parents []*os.File
 	closeAll = func() (e error) {
 		if f != nil && f.Fd() != ^uintptr(0) {
@@ -49,9 +49,6 @@ func openMirrorFile(root windows.Handle, rel string, access uint32) (f *os.File,
 	}()
 	h := root
 	for i, part := range parts {
-		if part == "" || part == "." || part == ".." || strings.Contains(part, ":") {
-			return nil, closeAll, errors.New("非法相对路径组件")
-		}
 		if i == len(parts)-1 {
 			f, err = openTransferChild(h, part, false, windows.FILE_OPEN, access, windows.FILE_SHARE_READ)
 			return
@@ -122,18 +119,19 @@ func restoreMirrorDirectories(ctx context.Context, root *directoryObject, dirs [
 }
 
 func restoreMirrorDirectory(ctx context.Context, root windows.Handle, d fileinventory.Directory) (err error) {
+	parts, err := splitRelativePath(d.Path)
+	if err != nil {
+		return errors.New("非法相对目录路径")
+	}
 	var parents []*os.File
 	defer func() {
 		for i := len(parents) - 1; i >= 0; i-- {
 			err = errors.Join(err, parents[i].Close())
 		}
 	}()
-	for _, name := range strings.Split(d.Path, "/") {
+	for _, name := range parts {
 		if err := ctx.Err(); err != nil {
 			return err
-		}
-		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "\\:") {
-			return errors.New("非法相对目录路径")
 		}
 		dir, err := openTransferChild(root, name, true, windows.FILE_OPEN_IF,
 			windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)

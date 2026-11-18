@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"syncmaid/internal/atomicfile"
 )
 
 // Only genuine I/O boundaries are injectable, privately for fault tests.
@@ -26,7 +28,7 @@ func realOperations() operations {
 	return operations{
 		read:    readVersion,
 		create:  func(dir, pattern string) (tempFile, error) { return os.CreateTemp(dir, pattern) },
-		replace: nativeReplace, remove: os.Remove,
+		replace: atomicfile.Replace, remove: os.Remove,
 	}
 }
 func (s *Store) stage(data []byte, suffix string) (name string, err error) {

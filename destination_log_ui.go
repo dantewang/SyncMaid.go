@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/atomicfile"
 )
 
 func (a *application) openDestinationLog(task, destination taskconfig.ID) {
@@ -28,7 +29,7 @@ func (a *application) openDestinationLog(task, destination taskconfig.ID) {
 		a.destinationLog.SetTitle(title)
 		a.destinationLog.Show()
 		a.destinationLog.Focus()
-		a.destinationLog.Update(func() {})
+		redrawWindow(a.destinationLog)
 		a.checkDestinationLogFile(a.destinationLog)
 		return
 	}
@@ -54,7 +55,7 @@ func inspectDestinationLogFile(path string) error {
 	if err != nil {
 		return err
 	}
-	if !historyRegularFile(info) {
+	if !atomicfile.IsRegularFile(info) {
 		return errors.ErrUnsupported
 	}
 	return nil

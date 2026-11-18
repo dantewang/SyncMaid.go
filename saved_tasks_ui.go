@@ -84,9 +84,7 @@ func (a *application) reloadTasks() {
 	go func() {
 		library, err := loadSavedTasks(data)
 		history := loadRunHistory(data)
-		_, languageError := checkLanguageFile(data)
 		a.window.Update(func() {
-			a.languageError = languageError
 			s.phase = manualDraft
 			a.taskError = err
 			a.history = history

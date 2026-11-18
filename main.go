@@ -115,9 +115,7 @@ func run() (result error) {
 		a.languagePreference, a.languageError = checkLanguageFile(install.data)
 		offLocale := mygo.App.OnLocaleChanged(func(tag string) {
 			a.locale = tag
-			if a.destinationLog != nil {
-				a.destinationLog.Update(func() {})
-			}
+			redrawWindow(a.destinationLog)
 		})
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { offLocale() })
 		tray, err := mygo.NewTray(mygo.TrayOptions{

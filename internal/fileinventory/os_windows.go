@@ -9,7 +9,6 @@ import (
 	"os"
 	"syncmaid/internal/windowsfs"
 	"syscall"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -57,37 +56,15 @@ func (d *osDirectory) OpenChild(name string) (directory, error) {
 }
 
 func openChildDirectory(parent windows.Handle, name string) (windows.Handle, error) {
-	objectName, err := windows.NewNTUnicodeString(name)
-	if err != nil {
-		return 0, err
-	}
-	attrs := windows.OBJECT_ATTRIBUTES{RootDirectory: parent, ObjectName: objectName}
-	attrs.Length = uint32(unsafe.Sizeof(attrs))
-	var h windows.Handle
-	err = windows.NtCreateFile(&h,
-		windows.FILE_LIST_DIRECTORY|windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE,
-		&attrs, &windows.IO_STATUS_BLOCK{}, nil, 0,
+	h, _, err := windowsfs.OpenChildNoReparse(parent, name,
+		windows.FILE_LIST_DIRECTORY|windows.FILE_READ_ATTRIBUTES,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
 		windows.FILE_OPEN,
-		windows.FILE_DIRECTORY_FILE|windows.FILE_SYNCHRONOUS_IO_NONALERT|
-			windows.FILE_OPEN_FOR_BACKUP_INTENT|windows.FILE_OPEN_REPARSE_POINT,
-		0, 0)
-	if err != nil {
-		if s, ok := err.(windows.NTStatus); ok {
-			return 0, s.Errno() // keeps errors.Is(fs.ErrNotExist/ErrPermission)
-		}
-		return 0, err
-	}
-	var info windows.ByHandleFileInformation
-	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
-		windows.CloseHandle(h)
-		return 0, err
-	}
-	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-		windows.CloseHandle(h)
+		windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_FOR_BACKUP_INTENT)
+	if errors.Is(err, windowsfs.ErrReparsePoint) {
 		return 0, errBecameReparse
 	}
-	return h, nil
+	return h, err
 }
 
 func (d *osDirectory) CaseSensitive() (bool, error) {

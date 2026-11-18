@@ -28,7 +28,9 @@ func (p *multiplePlan) Close() (err error) {
 	return
 }
 
-// This lexical test only rejects obvious overlaps; it NEVER authorizes I/O.
+func (p *multiplePlan) close(ctx context.Context) error {
+	return closeProtected(ctx, p)
+}
 // Usable targets additionally require pinned object/ancestor identity checks.
 func obviousPathOverlap(a, b string) bool {
 	if !filepath.IsAbs(a) || !filepath.IsAbs(b) {
@@ -65,7 +67,7 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 	p := &multiplePlan{requests: map[taskconfig.ID]manualRequest{}, failures: map[taskconfig.ID]error{}}
 	defer func() {
 		if err != nil {
-			err = errors.Join(err, protectedTransferIO(ctx, p.Close))
+			err = errors.Join(err, p.close(ctx))
 		}
 	}()
 	if p.source, err = openDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {

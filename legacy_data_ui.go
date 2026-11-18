@@ -1,42 +1,34 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"io"
 	"path/filepath"
 	"strings"
 
 	"github.com/egoist/mygo"
+	"syncmaid/internal/atomicfile"
 )
 
 func decodeLegacyWindowSettings(raw []byte) (commonSettings, error) {
-	var v *struct {
+	v, err := atomicfile.DecodeStrictJSONObject[struct {
 		commonSettings
 		Language *string
-	}
-	d := json.NewDecoder(bytes.NewReader(raw))
-	d.DisallowUnknownFields()
-	if err := d.Decode(&v); err != nil {
+	}](raw)
+	if err != nil {
 		return commonSettings{}, err
-	}
-	var tail any
-	if v == nil || d.Decode(&tail) != io.EOF {
-		return commonSettings{}, errors.New("expected one legacy settings object")
 	}
 	return v.commonSettings, nil
 }
 
 func readLegacyWindowSettings(path string) (commonSettings, error) {
-	v, err := readHistoryVersion(path)
+	v, err := atomicfile.ReadRegular(path, 4096)
 	if err != nil {
 		return commonSettings{}, err
 	}
-	if v.info == nil || len(v.data) > 4096 {
+	if v.Info == nil {
 		return commonSettings{}, errors.New("legacy settings file missing or above 4 KiB")
 	}
-	return decodeLegacyWindowSettings(v.data)
+	return decodeLegacyWindowSettings(v.Data)
 }
 
 // Old diagnostics stay separate; they do not certify any Go task as complete.
@@ -103,7 +95,7 @@ func (a *application) openLegacyData() {
 				a.changeCommon(*settings)
 			}
 			if diagnostic != "" {
-				a.legacyDataError = mygo.Shell.OpenPath(pathLabel(diagnostic))
+				a.legacyDataError = openShellPath(diagnostic)
 			}
 		})
 	}()

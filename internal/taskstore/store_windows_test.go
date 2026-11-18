@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"syncmaid/internal/atomicfile"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -300,7 +301,7 @@ func TestExternalChangesAndStaleSnapshots(t *testing.T) {
 			if where == "primary identity" {
 				other := path + ".other"
 				write(t, other, original)
-				if e := nativeReplace(other, path, true); e != nil {
+				if e := atomicfile.Replace(other, path, true); e != nil {
 					t.Fatal(e)
 				}
 			} else {

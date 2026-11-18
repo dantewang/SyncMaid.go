@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"syncmaid/internal/windowsfs"
 	"time"
 	"unsafe"
@@ -51,30 +54,45 @@ func ordinaryDirectory(h windows.Handle) error {
 	return nil
 }
 
+func splitRelativePath(rel string) ([]string, error) {
+	if rel == "" || filepath.IsAbs(rel) || strings.Contains(rel, `\`) {
+		return nil, errors.New("非法相对文件路径")
+	}
+	parts := strings.Split(rel, "/")
+	for _, s := range parts {
+		if s == "" || s == "." || s == ".." || strings.Contains(s, ":") {
+			return nil, errors.New("非法相对路径组件")
+		}
+	}
+	return parts, nil
+}
+
+func closeProtected(ctx context.Context, closer io.Closer) error {
+	return protectedTransferIO(ctx, closer.Close)
+}
+
+func closeFilesProtected(ctx context.Context, files []*os.File) error {
+	return protectedTransferIO(ctx, func() (e error) {
+		for i := len(files) - 1; i >= 0; i-- {
+			e = errors.Join(e, files[i].Close())
+		}
+		return e
+	})
+}
+
 func openTransferChild(parent windows.Handle, name string, dir bool, disposition, access, share uint32) (*os.File, error) {
-	object, e := windows.NewNTUnicodeString(name)
-	if e != nil {
-		return nil, e
-	}
-	attrs := windows.OBJECT_ATTRIBUTES{RootDirectory: parent, ObjectName: object, Attributes: windows.OBJ_CASE_INSENSITIVE}
-	attrs.Length = uint32(unsafe.Sizeof(attrs))
-	options := uint32(windows.FILE_SYNCHRONOUS_IO_NONALERT | windows.FILE_OPEN_REPARSE_POINT)
+	options := uint32(windows.FILE_NON_DIRECTORY_FILE)
 	if dir {
-		options |= windows.FILE_DIRECTORY_FILE
-	} else {
-		options |= windows.FILE_NON_DIRECTORY_FILE
+		options = windows.FILE_DIRECTORY_FILE
 	}
-	var h windows.Handle
-	e = windows.NtCreateFile(&h, access|windows.SYNCHRONIZE, &attrs, &windows.IO_STATUS_BLOCK{}, nil, windows.FILE_ATTRIBUTE_NORMAL, share, disposition, options, 0, 0)
+	h, info, e := windowsfs.OpenChildNoReparse(parent, name, access, share, disposition, options)
+	if errors.Is(e, windowsfs.ErrReparsePoint) {
+		return nil, errors.New("不支持链接或重解析点: " + name)
+	}
 	if e != nil {
-		return nil, fmt.Errorf("打开 %q: %w", name, ntError(e))
+		return nil, fmt.Errorf("打开 %q: %w", name, e)
 	}
-	var info windows.ByHandleFileInformation
-	e = windows.GetFileInformationByHandle(h, &info)
-	if e == nil && info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-		e = errors.New("不支持链接或重解析点: " + name)
-	}
-	if e == nil && !dir && info.NumberOfLinks > 1 {
+	if !dir && info.NumberOfLinks > 1 {
 		e = errors.New("暂不支持硬链接文件: " + name)
 	}
 	if e == nil && dir {
@@ -122,4 +140,49 @@ func publishTransfer(f *os.File, parent windows.Handle, name string, replace boo
 func discardTransfer(f *os.File) error {
 	delete := byte(1)
 	return ntError(windows.NtSetInformationFile(windows.Handle(f.Fd()), &windows.IO_STATUS_BLOCK{}, &delete, 1, windows.FileDispositionInformation))
+}
+
+func publishTransferChecked(ctx context.Context, temp *os.File, parent windows.Handle, name string, replace bool, publication *transferPublication, publish func(*os.File, windows.Handle, string, bool) error) error {
+	return protectedTransferIO(ctx, func() error {
+		if e := ctx.Err(); e != nil {
+			return e
+		}
+		*publication = transferPublishUnknown
+		if e := publish(temp, parent, name, replace); e != nil {
+			return fmt.Errorf("%w (临时名称 %q): %w", errTransferPublicationUnknown, temp.Name(), e)
+		}
+		*publication = transferPublished
+		return nil
+	})
+}
+
+func finalizeTempTransfer(ctx context.Context, temp *os.File, publication *transferPublication) error {
+	return protectedTransferIO(ctx, func() (e error) {
+		if *publication == transferStaged {
+			e = discardTransfer(temp)
+		}
+		return errors.Join(e, temp.Close())
+	})
+}
+
+func deleteVerifiedSource(ctx context.Context, source *os.File, expected mirrorStamp, fat bool, remove func(*os.File) error) error {
+	return protectedTransferIO(ctx, func() error {
+		if e := ctx.Err(); e != nil {
+			return e
+		}
+		actual, e := mirrorFileStamp(source, fat)
+		if e != nil {
+			return e
+		}
+		if actual != expected {
+			return errors.New("目标已发布，但源对象已变化，未移除源")
+		}
+		if remove == nil {
+			remove = discardTransfer
+		}
+		if e := remove(source); e != nil {
+			return fmt.Errorf("目标已发布，源移除未完成，请检查两处文件: %w", e)
+		}
+		return nil
+	})
 }

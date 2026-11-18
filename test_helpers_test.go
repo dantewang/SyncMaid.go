@@ -76,6 +76,6 @@ func validateManual(ctx context.Context, q manualRequest) (result manualRequest,
 	if err != nil {
 		return result, err
 	}
-	defer func() { err = errors.Join(err, protectedTransferIO(ctx, r.Close)) }()
+	defer func() { err = errors.Join(err, r.close(ctx)) }()
 	return manualRequest{Source: r.source.path, Target: r.target.path}, nil
 }

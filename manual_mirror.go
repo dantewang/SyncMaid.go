@@ -61,7 +61,7 @@ func runMirrorWith(ctx context.Context, q manualRequest, d manualDestination, no
 	if e != nil {
 		return p, e
 	}
-	defer func() { err = errors.Join(err, protectedTransferIO(ctx, roots.Close)) }()
+	defer func() { err = errors.Join(err, roots.close(ctx)) }()
 	source, e := scanMirror(ctx, roots.source)
 	if e != nil {
 		return p, e

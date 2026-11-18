@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -59,7 +58,7 @@ func (a *application) settingsView(c *ui.Context) {
 			porcelainSection(c, a.tr("存储"), func() {
 				porcelainSettingRow(c, a.tr("数据目录"), func() {
 					porcelainButton(c, a.tr("打开数据目录")).OnClick(func() {
-						a.openDataError = mygo.Shell.OpenPath(pathLabel(a.installation.data))
+						a.openDataError = openShellPath(a.installation.data)
 					})
 				})
 				if a.openDataError != nil {

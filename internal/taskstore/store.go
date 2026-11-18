@@ -13,13 +13,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"sync"
 
+	"syncmaid/internal/atomicfile"
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/taskconfig"
 )
@@ -143,48 +143,30 @@ func readVersion(path string) version {
 }
 func readVersionFormat(path string, versioned bool) version {
 	v := version{status: Status{Path: path, State: Unreadable}}
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
+	var maxBytes int64
+	if versioned {
+		maxBytes = 8 << 20
+	}
+	res, err := atomicfile.ReadRegular(path, maxBytes)
+	if err != nil {
+		switch {
+		case errors.Is(err, errors.ErrUnsupported):
+			v.status.State = Unsupported
+		case errors.Is(err, atomicfile.ErrChanged):
+			err = ErrChanged
+		case errors.Is(err, atomicfile.ErrTooLarge):
+			v.info = res.Info
+			err = errors.New("Go task document exceeds 8 MiB")
+		}
+		v.status.Err = err
+		return v
+	}
+	if res.Info == nil {
 		v.status.State = Missing
 		return v
 	}
-	if err != nil {
-		v.status.Err = err
-		return v
-	}
-	if !info.Mode().IsRegular() {
-		v.status.State = Unsupported
-		v.status.Err = fmt.Errorf("%s: non-regular file: %w", path, errors.ErrUnsupported)
-		return v
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		v.status.Err = err
-		return v
-	}
-	opened, err := f.Stat()
-	if err == nil && !os.SameFile(info, opened) {
-		err = ErrChanged
-	}
-	if err == nil {
-		if versioned {
-			v.data, err = io.ReadAll(io.LimitReader(f, (8<<20)+1))
-		} else {
-			v.data, err = io.ReadAll(f)
-		}
-	}
-	after, statErr := f.Stat()
-	closeErr := f.Close()
-	err = errors.Join(err, statErr, closeErr)
-	if err == nil && (!os.SameFile(opened, after) || opened.Size() != after.Size() || !opened.ModTime().Equal(after.ModTime())) {
-		err = ErrChanged
-	}
-	if err != nil {
-		v.data = nil
-		v.status.Err = err
-		return v
-	}
-	v.info = after
+	v.data = res.Data
+	v.info = res.Info
 	_, _, err = decodeDocument(v.data, versioned)
 	v.status.State = Valid
 	if err != nil {

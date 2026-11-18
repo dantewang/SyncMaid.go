@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"syncmaid/internal/atomicfile"
 )
 
 var languageChoices = []struct{ tag, name string }{
@@ -35,7 +36,7 @@ func checkLanguageFile(data string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !info.Mode().IsRegular() || languageReparse(info) {
+	if !atomicfile.IsRegularFile(info) {
 		return "", fmt.Errorf("language file is not an ordinary file: %s", pathLabel(path))
 	}
 	if info.Size() > 128 {

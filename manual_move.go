@@ -91,7 +91,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 	if e != nil {
 		return failAll(e)
 	}
-	defer func() { err = errors.Join(err, protectedTransferIO(ctx, plan.Close)) }()
+	defer func() { err = errors.Join(err, plan.close(ctx)) }()
 	files, stamps, e := scanMoveFiles(ctx, plan.source)
 	if e != nil {
 		return failAll(e)
@@ -176,7 +176,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 			}
 			emit()
 		}
-		e = protectedTransferIO(ctx, roots.Close)
+		e = roots.close(ctx)
 		targetErrors = append(targetErrors, e)
 		combined := errors.Join(targetErrors...)
 		switch {

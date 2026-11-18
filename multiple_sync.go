@@ -82,7 +82,7 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 		}
 		return results, err
 	}
-	defer func() { err = errors.Join(err, protectedTransferIO(ctx, plan.Close)) }()
+	defer func() { err = errors.Join(err, plan.close(ctx)) }()
 	var failures []error
 	for _, d := range q.Destinations {
 		r := results[d.ID]

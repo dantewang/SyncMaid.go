@@ -45,7 +45,9 @@ func (r *transferRoots) Close() (err error) {
 	return
 }
 
-// Pin both roots and their ancestors. Identity comparisons detect aliases;
+func (r *transferRoots) close(ctx context.Context) error {
+	return closeProtected(ctx, r)
+}
 // no-delete-sharing handles keep the resolved operation paths stable for Scan.
 func openTransferRoots(ctx context.Context, q manualRequest) (roots *transferRoots, err error) {
 	return openTransferRootsAccess(ctx, q, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE)
@@ -66,7 +68,7 @@ func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess 
 	r := &transferRoots{}
 	defer func() {
 		if err != nil {
-			err = errors.Join(err, protectedTransferIO(ctx, r.Close))
+			err = errors.Join(err, r.close(ctx))
 		}
 	}()
 	if r.source, err = openDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {
@@ -133,7 +135,7 @@ func runManualWithFilters(ctx context.Context, q manualRequest, notify func(tran
 	if err != nil {
 		return p, err
 	}
-	defer func() { err = errors.Join(err, protectedTransferIO(ctx, r.Close)) }()
+	defer func() { err = errors.Join(err, r.close(ctx)) }()
 	p.Stage = "扫描源文件夹"
 	update()
 	inventory, err := fileinventory.Scan(ctx, r.source.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
@@ -195,20 +197,13 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	if err = ctx.Err(); err != nil {
 		return false, err
 	}
-	parts := strings.Split(entry.Path, "/")
-	for _, s := range parts {
-		if s == "" || s == "." || s == ".." || strings.ContainsAny(s, `\:`) {
-			return false, errors.New("非法相对路径")
-		}
+	parts, err := splitRelativePath(entry.Path)
+	if err != nil {
+		return false, errors.New("非法相对路径")
 	}
 	parents := []*os.File{}
 	defer func() {
-		err = errors.Join(err, protectedTransferIO(ctx, func() (e error) {
-			for i := len(parents) - 1; i >= 0; i-- {
-				e = errors.Join(e, parents[i].Close())
-			}
-			return
-		}))
+		err = errors.Join(err, closeFilesProtected(ctx, parents))
 	}()
 	// Open every actual directory relative to a pinned handle; never follow a
 	// replaced junction. Held no-delete-sharing handles also pin its spelling.
@@ -247,7 +242,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	if e != nil {
 		return false, e
 	}
-	defer func() { err = errors.Join(err, protectedTransferIO(ctx, source.Close)) }()
+	defer func() { err = errors.Join(err, closeProtected(ctx, source)) }()
 	stamp, e := source.Stat()
 	if e != nil {
 		return false, e
@@ -264,11 +259,9 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 			return false, errors.New("源对象已变化，请重新运行")
 		}
 	}
-	targetParts := strings.Split(targetRel, "/")
-	for _, part := range targetParts {
-		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, `\:`) {
-			return false, errors.New("非法目标相对路径")
-		}
+	targetParts, e := splitRelativePath(targetRel)
+	if e != nil {
+		return false, errors.New("非法目标相对路径")
 	}
 	name = targetParts[len(targetParts)-1]
 	dp, e := openParents(roots.target.handle, true, targetParts)
@@ -289,7 +282,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 			replace = true
 			defer func() {
 				if existing != nil {
-					err = errors.Join(err, protectedTransferIO(ctx, existing.Close))
+					err = errors.Join(err, closeProtected(ctx, existing))
 				}
 			}()
 			destStamp, se := existing.Stat()
@@ -314,12 +307,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	}
 	publication := transferStaged
 	defer func() {
-		err = errors.Join(err, protectedTransferIO(ctx, func() (e error) {
-			if publication == transferStaged {
-				e = discardTransfer(temp)
-			}
-			return errors.Join(e, temp.Close())
-		}))
+		err = errors.Join(err, finalizeTempTransfer(ctx, temp, &publication))
 	}()
 	if e = ops.copy(ctx, source, temp, progress); e != nil {
 		return false, e
@@ -348,45 +336,11 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 		publication, e = publishMoveSuffix(ctx, temp, dp, name, ops.publish)
 		copied = publication == transferPublished
 	} else {
-		e = protectedTransferIO(ctx, func() error {
-			if e := ctx.Err(); e != nil {
-				return e
-			}
-			// Once publish is attempted, an error alone is insufficient evidence
-			// that this handle still names our temp. Never delete that object on
-			// an uncertain result: it might already be the new target. Do not infer
-			// success from a missing path, either. No Windows bug is assumed here.
-			publication = transferPublishUnknown
-			if e := ops.publish(temp, dp, name, replace); e != nil {
-				return fmt.Errorf("%w (临时名称 %q): %w", errTransferPublicationUnknown, temp.Name(), e)
-			}
-			publication = transferPublished
-			copied = true
-			return nil
-		})
-
+		e = publishTransferChecked(ctx, temp, dp, name, replace, &publication, ops.publish)
+		copied = publication == transferPublished
 	}
 	if e == nil && copied && expected != nil {
-		e = protectedTransferIO(ctx, func() error {
-			if e := ctx.Err(); e != nil {
-				return e
-			}
-			actual, e := mirrorFileStamp(source, roots.source.fat)
-			if e != nil {
-				return e
-			}
-			if actual != *expected {
-				return errors.New("目标已发布，但源对象已变化，未移除源")
-			}
-			remove := ops.sourceDelete
-			if remove == nil {
-				remove = discardTransfer
-			}
-			if e := remove(source); e != nil {
-				return fmt.Errorf("目标已发布，源移除未完成，请检查两处文件: %w", e)
-			}
-			return nil
-		})
+		e = deleteVerifiedSource(ctx, source, *expected, roots.source.fat, ops.sourceDelete)
 	}
 	return copied, e
 }
