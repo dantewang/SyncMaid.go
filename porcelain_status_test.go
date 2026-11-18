@@ -21,9 +21,21 @@ func TestTaskHealthUsesCurrentDestinations(t *testing.T) {
 			t.Fatalf("health = %q %v; want %q %v", got, ink, want, color)
 		}
 	}
-	assertHealth("部分目标已完成", porcelain.Warning)
+	assertHealth("部分目标已完成", porcelain.Text)
+	task.Kind = taskconfig.Moving
+	a.manual = manualSession{id: task.ID, phase: manualDraft, message: messagef("任务已保存，可以运行。")}
+	results[second] = destinationResult{State: destinationSucceeded, Progress: transferProgress{Retained: 1}}
+	assertHealth("完成 · 保留 1 个源文件", porcelain.Text)
+	result := a.results[task.ID]
+	result.outcome, result.message = "failed", messagef("关闭句柄失败")
+	a.results[task.ID] = result
+	assertHealth("关闭句柄失败", porcelain.Danger)
+	result.outcome, result.message = "stopped", messagef("已停止")
+	a.results[task.ID] = result
 	results[second] = destinationResult{State: destinationCanceled}
 	assertHealth("已停止", porcelain.Warning)
+	result.outcome = "succeeded"
+	a.results[task.ID] = result
 	results[first] = destinationResult{State: destinationNoMatches}
 	results[second] = destinationResult{State: destinationNoMatches}
 	assertHealth(string(destinationNoMatches), porcelain.Text)

@@ -76,6 +76,6 @@ func (a *application) advanceBatchUsing(start func(taskconfig.ID, string, manual
 		for _, d := range t.Destinations {
 			goals[d.ID] = destinationResult{ID: d.ID, Name: d.Name, State: destinationFailed, Error: err.Error()}
 		}
-		a.results[id] = savedTaskResult{message: messagef("准备失败，任务未执行: %s", err.Error()), destinations: goals}
+		a.results[id] = savedTaskResult{outcome: "failed", message: messagef("准备失败，任务未执行: %s", err.Error()), destinations: goals}
 	}
 }

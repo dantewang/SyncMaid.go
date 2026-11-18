@@ -132,6 +132,12 @@ func (a *application) manualView(c *ui.Context) {
 			a.porcelainHeader(c, width)
 			if a.taskError != nil {
 				ui.Text(c, a.tr("任务文件不可用，已阻止保存与运行: ")+a.taskError.Error()).TextColor(porcelain.Danger)
+				if backup, ok := a.taskRecovery(); ok {
+					porcelainButton(c, a.tr("恢复任务备份")).Disabled(!a.taskRecoveryAllowed()).OnClick(func() { a.confirmTaskRecovery(backup) })
+				}
+			}
+			if a.recoveryNotice.key != "" {
+				ui.Text(c, a.render(a.recoveryNotice)).FontSize(13)
 			}
 			if a.importError != nil {
 				ui.Text(c, a.tr("导入拒绝，旧文件和任务库未修改：%s", a.importError.Error())).TextColor(porcelain.Danger)
@@ -269,7 +275,7 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 				porcelainPath(c, t.SourcePath)
 			})
 			ui.Text(c, status).FontSize(16).MaxWidth(healthWidth).SingleLine().Ellipsis("…").Tooltip(status).TextColor(func() ui.Color {
-				if color == porcelain.Danger {
+				if color == porcelain.Danger || color == porcelain.Warning {
 					return color
 				}
 				return porcelain.Text
@@ -306,6 +312,9 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 			ui.Row(c).FillWidth().MinHeight(68).Gap(8).Padding(10, 16, 10, 16).Children(func() {
 				mark := destinationHealthColor(r, ok)
+				if ok && r.State == destinationSkipped && result.outcome == "failed" {
+					mark = porcelain.Danger
+				}
 				ui.Box(c).Size(7, 7).Background(mark)
 				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Clip().Gap(3).Children(func() {
 					ui.Row(c).FillWidth().Clip().Gap(8).Children(func() {

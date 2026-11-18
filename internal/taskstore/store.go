@@ -306,13 +306,28 @@ type Recovery struct {
 	PreservedPath string
 }
 
-func (e *LoadError) Recover() (result Recovery, err error) {
-	if e == nil || e.store == nil || e.backup.status.State != Valid || !(e.primary.status.State == Missing || e.primary.info != nil) {
-		return result, ErrBlocked
+// CanRecover reports whether the loaded snapshot has a valid backup and an
+// absent or completely read primary. Recover rechecks both files before use.
+func (e *LoadError) CanRecover() bool {
+	if e == nil || e.store == nil || e.backup.status.State != Valid {
+		return false
 	}
-	// A bounded read of an oversized document is diagnostic only. Never archive
-	// that prefix and replace the full original as if all bytes were preserved.
-	if e.primary.info != nil && int64(len(e.primary.data)) != e.primary.info.Size() {
+	// An oversized file may have diagnostic bytes without its full contents.
+	return e.primary.status.State == Missing ||
+		e.primary.info != nil && int64(len(e.primary.data)) == e.primary.info.Size()
+}
+
+// BackupTasks returns an independent preview of the captured recovery input.
+func (e *LoadError) BackupTasks() ([]taskconfig.Task, error) {
+	if !e.CanRecover() {
+		return nil, ErrBlocked
+	}
+	tasks, _, err := decodeDocument(e.backup.data, e.store.versioned)
+	return tasks, err
+}
+
+func (e *LoadError) Recover() (result Recovery, err error) {
+	if !e.CanRecover() {
 		return result, ErrBlocked
 	}
 	s := e.store

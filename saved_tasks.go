@@ -36,16 +36,23 @@ func savedLibrary(snapshot *taskstore.Snapshot) (*savedTaskLibrary, error) {
 	if err != nil {
 		return nil, err
 	}
-	seen := map[taskconfig.ID]bool{}
-	for _, t := range tasks {
-		if seen[t.ID] {
-			return nil, errors.New("任务 ID 重复，已阻止编辑与运行")
-		}
-		seen[t.ID] = true
+	if err := uniqueSavedTasks(tasks); err != nil {
+		return nil, err
 	}
 	l := &savedTaskLibrary{snapshot: snapshot, tasks: tasks, reviews: snapshot.Confirmations()}
 	l.restoreReviews()
 	return l, nil
+}
+
+func uniqueSavedTasks(tasks []taskconfig.Task) error {
+	seen := map[taskconfig.ID]bool{}
+	for _, t := range tasks {
+		if seen[t.ID] {
+			return errors.New("任务 ID 重复，已阻止编辑与运行")
+		}
+		seen[t.ID] = true
+	}
+	return nil
 }
 func (l *savedTaskLibrary) find(id taskconfig.ID) (taskconfig.Task, error) {
 	if l != nil {

@@ -153,7 +153,7 @@ func historyResult(r runRecord) savedTaskResult {
 		progress = result.Progress
 		progress.Stage = string(result.State)
 	}
-	return savedTaskResult{message: message, progress: progress, destinations: results, started: r.Started, ended: r.Ended}
+	return savedTaskResult{outcome: r.Outcome, message: message, progress: progress, destinations: results, started: r.Started, ended: r.Ended}
 }
 func (a *application) restoreRunResults() {
 	if a.results == nil {

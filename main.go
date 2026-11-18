@@ -54,6 +54,7 @@ type application struct {
 	window             *mygo.Window
 	tasks              *savedTaskLibrary
 	taskError          error
+	recoveryNotice     localizedMessage
 	results            map[taskconfig.ID]savedTaskResult
 }
 
