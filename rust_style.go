@@ -94,7 +94,7 @@ func porcelainIcon(c *ui.Context, glyph, label string) ui.Element {
 	return ui.Button(c, "").Padding(0).Radius(0).Size(24, 24).Label(label).Tooltip(label).Shrink(0).Border(1, porcelain.Border).Children(func() { ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16) })
 }
 func porcelainPrimaryIcon(c *ui.Context, glyph, label string) ui.Element {
-	return ui.PrimaryButton(c, "").Padding(0).Radius(0).Size(24, 24).Label(label).Tooltip(label).Shrink(0).Border(1, porcelain.Border).Children(func() { ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16) })
+	return ui.PrimaryButton(c, "").Padding(0).Radius(0).Size(24, 24).Label(label).Tooltip(label).Shrink(0).Children(func() { ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16) })
 }
 func porcelainTag(c *ui.Context, text string, primary bool) {
 	pip := rgb(0x5B666E)
