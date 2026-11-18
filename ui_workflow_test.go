@@ -285,7 +285,7 @@ func TestEmptyTaskCardDoesNotDisplayOldTargetSuccessAsCurrentState(t *testing.T)
 	a.selectManual(id)
 	a.results = map[taskconfig.ID]savedTaskResult{id: {message: messagef("全部目标同步完成"), destinations: multipleResult{taskconfig.NewID(): {State: destinationSucceeded}}}}
 	view := ui.NewTester(a.view, 760, 620)
-	if !view.HasText(a.tr("无目标，未执行文件操作。")) || view.HasText(a.tr("全部已同步")) {
+	if !view.HasText(a.tr("尚未添加目标")) || view.HasText(a.tr("全部已同步")) {
 		t.Fatal("past results masked empty task state")
 	}
 }

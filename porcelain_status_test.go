@@ -8,6 +8,29 @@ import (
 	"time"
 )
 
+func TestTaskHealthUsesCurrentDestinations(t *testing.T) {
+	task := taskconfig.Task{ID: taskconfig.NewID(), Destinations: []taskconfig.Destination{{ID: taskconfig.NewID()}, {ID: taskconfig.NewID()}}}
+	first, second := task.Destinations[0].ID, task.Destinations[1].ID
+	results := multipleResult{first: {State: destinationSucceeded}}
+	a := &application{locale: "zh-Hans", results: map[taskconfig.ID]savedTaskResult{
+		task.ID: {destinations: results, message: messagef("已停止")},
+	}}
+	assertHealth := func(want string, color ui.Color) {
+		t.Helper()
+		if got, ink := a.taskHealth(task); got != a.tr(want) || ink != color {
+			t.Fatalf("health = %q %v; want %q %v", got, ink, want, color)
+		}
+	}
+	assertHealth("部分目标已完成", porcelain.Warning)
+	results[second] = destinationResult{State: destinationCanceled}
+	assertHealth("已停止", porcelain.Warning)
+	results[first] = destinationResult{State: destinationNoMatches}
+	results[second] = destinationResult{State: destinationNoMatches}
+	assertHealth(string(destinationNoMatches), porcelain.Text)
+	task.Destinations = nil
+	assertHealth("尚未添加目标", porcelain.TextMuted)
+}
+
 func TestRuleSummaryUsesNaturalLabels(t *testing.T) {
 	a := &application{locale: "zh-Hans"}
 	pattern := "*.txt"

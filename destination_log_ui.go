@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"path/filepath"
@@ -85,7 +84,10 @@ func (a *application) destinationLogView(c *ui.Context) {
 		ui.Column(c).Gap(2).LineHeight(1.5).Children(func() {
 			ui.Text(c, a.tr("同步日志")).FontSize(18).Bold().Tooltip(a.tr("显示最近20条已记录运行结果；刷新读取当前诊断快照，不重试同步。"))
 			ui.Text(c, name).FontSize(16).MaxLines(2).TextColor(porcelain.TextMuted).Tooltip(name)
-			ui.Text(c, string(a.logTask)).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
+			if a.logDetails {
+				ui.Text(c, string(a.logTask)).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
+				porcelainPath(c, pathLabel(filepath.Join(a.installation.data, runHistoryFile)))
+			}
 		})
 		if a.historyError != nil {
 			ui.Text(c, a.tr("记录不可用或未保存：")+a.historyError.Error()).TextColor(porcelain.Danger)
@@ -110,8 +112,9 @@ func (a *application) destinationLogView(c *ui.Context) {
 							}
 							ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(4).Children(func() {
 								ui.Text(c, a.tr(string(g.State))).Font("Consolas").FontSize(14).TextColor(color)
-								p := g.Counts
-								ui.Text(c, fmt.Sprintf(a.tr("源 %d · 匹配 %d · 已发布 %d · 移动 %d · 移除 %d · 保留/待核对 %d · 未变化 %d · 移动失败 %d · 源未匹配 %d · %d字节"), p.SourceFiles, p.Total, p.Copied, p.Moved, p.Removed, p.Retained, p.Unchanged, p.Failed, p.Unmatched, p.Bytes)).Font("Consolas").FontSize(13)
+								if counts := a.runCounts(g, a.logDetails); counts != "" {
+									ui.Text(c, counts).FontSize(13)
+								}
 								if g.Error != "" {
 									ui.Text(c, g.Error).Font("Consolas").FontSize(14).TextColor(color)
 								}
@@ -131,7 +134,8 @@ func (a *application) destinationLogView(c *ui.Context) {
 			})
 		})
 		ui.Row(c).FillWidth().Gap(10).Children(func() {
-			ui.Text(c, pathLabel(filepath.Join(a.installation.data, runHistoryFile))).Font("Consolas").FontSize(12).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(pathLabel(filepath.Join(a.installation.data, runHistoryFile)))
+			porcelainButton(c, a.tr("诊断详情")).OnClick(func() { a.logDetails = !a.logDetails })
+			ui.Box(c).Grow(1)
 			porcelainButton(c, a.tr("刷新")).FontSize(14).Padding(3, 8).Disabled(a.logReading).OnClick(a.refreshDestinationLog)
 			ui.PrimaryButton(c, a.tr("打开日志文件")).FontSize(14).Padding(3, 8).OnClick(func() {
 				if err := mygo.Shell.OpenPath(filepath.Join(a.installation.data, runHistoryFile)); err != nil {

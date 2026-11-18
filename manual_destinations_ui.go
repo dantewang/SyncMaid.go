@@ -124,7 +124,8 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 		ui.Column(c).FillWidth().Gap(8).Border(1, porcelain.Border).Padding(12).Children(func() {
 			ui.Row(c).MinHeight(60).Gap(8).Children(func() {
 				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(4).Children(func() {
-					ui.Text(c, a.ruleSummary(d.Filters)+"  →  "+d.Name).SingleLine()
+					ui.Text(c, d.Name).SingleLine().Ellipsis("…").Tooltip(d.Name).FontWeight(600)
+					ui.Text(c, a.filterSummary(d.Filters)).FontSize(12).TextColor(porcelain.TextMuted).Tooltip(a.ruleSummary(d.Filters))
 					porcelainPath(c, d.Path)
 				})
 				porcelainIcon(c, "copy", a.tr("复制目标（仅配置）")+" "+d.Name).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { a.copyManualTarget(id) })
@@ -132,14 +133,14 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 				label := a.tr("编辑或收起目标") + " " + d.Name
 				if id == s.targetID && a.cards.targetHidden != id {
 					glyph = "check"
-					label = a.tr("接受目标") + " " + d.Name
+					label = a.tr("应用修改") + " " + d.Name
 				}
 				porcelainIcon(c, glyph, label).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { a.toggleDestinationEditor(id) })
 				if id == s.targetID && a.cards.targetHidden != id {
 					porcelainIcon(c, "×", a.tr("取消目标编辑")+" "+d.Name).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { a.cancelDestination(id) })
 				}
-				porcelainButton(c, a.tr("上移")).Disabled(locked || !s.canMoveTarget(i, -1)).OnClick(func() { a.moveManualTarget(id, -1) })
-				porcelainButton(c, a.tr("下移")).Disabled(locked || !s.canMoveTarget(i, 1)).OnClick(func() { a.moveManualTarget(id, 1) })
+				porcelainIcon(c, "up", a.tr("上移")).Border(0, ui.Transparent).Disabled(locked || !s.canMoveTarget(i, -1)).OnClick(func() { a.moveManualTarget(id, -1) })
+				porcelainIcon(c, "⌄", a.tr("下移")).Border(0, ui.Transparent).Disabled(locked || !s.canMoveTarget(i, 1)).OnClick(func() { a.moveManualTarget(id, 1) })
 				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { s.selectTarget(id); a.confirmRemoveManualTarget() })
 			})
 			a.sourcePreviewTargetView(c, id)
@@ -206,7 +207,7 @@ func (a *application) selectedTargetEditor(c *ui.Context, locked bool) {
 		ui.TextInput(c, &s.target).Height(32).Label(a.tr("目标文件夹路径")).Grow(1).Placeholder(a.tr("现有目标文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
 		porcelainButton(c, a.tr("浏览")).Label(a.tr("选择目标")).Disabled(locked).OnClick(func() { a.chooseFolder(false) })
 	})
-	ui.Text(c, a.tr("请选择现有目标文件夹；本版本不会创建目标根目录。")).FontSize(14).Padding(12).FillWidth().Border(1, porcelain.Border)
+
 	if manualKind(s.kind) == taskconfig.Moving {
 		a.moveOptionsView(c, locked)
 	} else {

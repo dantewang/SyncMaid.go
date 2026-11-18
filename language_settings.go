@@ -58,7 +58,7 @@ func checkLanguageFile(data string) (string, error) {
 }
 
 func prepareLanguageChange(data, tag string) error {
-	if !supportedLanguage(tag) {
+	if tag != "" && !supportedLanguage(tag) {
 		return errors.New("unsupported language")
 	}
 	if _, err := checkLanguageFile(data); err != nil {
@@ -103,7 +103,12 @@ func (a *application) changeLanguage(tag string) {
 			mygo.App.SetLocale(tag)
 			go func() {
 				err := verifyLanguageChange(data, tag)
-				a.window.Update(func() { a.finishLanguageChange(err) })
+				a.window.Update(func() {
+					if err == nil {
+						a.languagePreference = tag
+					}
+					a.finishLanguageChange(err)
+				})
 			}()
 		})
 	}()

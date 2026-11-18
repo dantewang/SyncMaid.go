@@ -13,44 +13,48 @@ import (
 )
 
 type application struct {
-	sourcePreview   sourcePreviewSession
-	batch           manualBatch
-	destinationLog  *mygo.Window
-	logTask         taskconfig.ID
-	logDestination  taskconfig.ID
-	logReading      bool
-	cards           taskCardLayout
-	regexSession    *regexSession
-	importPreview   *legacyImport
-	importPrevious  manualPhase
-	importError     error
-	common          *commonSettingsStore
-	commonValue     commonSettings
-	commonBusy      bool
-	commonError     error
-	startupEntry    startupEntry
-	startupStatus   startupStatus
-	startupError    error
-	history         *runHistoryStore
-	historyView     runHistoryData
-	historyError    error
-	historyOpen     bool
-	historySelected taskconfig.ID
-	watchWorkers    sync.WaitGroup
-	watches         map[taskconfig.ID]*watchedTask
-	watchPhase      watchServicePhase
-	watchActivity   localizedMessage
-	settingsOpen    bool
-	languageBusy    bool
-	languageError   error
-	locale          string // Native-thread snapshot of MyGo's language, not a second setting.
-	installation    installation
-	lifecycle       lifecycle
-	manual          manualSession
-	window          *mygo.Window
-	tasks           *savedTaskLibrary
-	taskError       error
-	results         map[taskconfig.ID]savedTaskResult
+	sourcePreview      sourcePreviewSession
+	batch              manualBatch
+	destinationLog     *mygo.Window
+	logTask            taskconfig.ID
+	logDestination     taskconfig.ID
+	logReading         bool
+	logDetails         bool
+	historyDetails     bool
+	cards              taskCardLayout
+	regexSession       *regexSession
+	importPreview      *legacyImport
+	importPrevious     manualPhase
+	importError        error
+	common             *commonSettingsStore
+	commonValue        commonSettings
+	commonBusy         bool
+	commonError        error
+	startupEntry       startupEntry
+	startupStatus      startupStatus
+	startupError       error
+	history            *runHistoryStore
+	historyView        runHistoryData
+	historyError       error
+	historyOpen        bool
+	historySelected    taskconfig.ID
+	watchWorkers       sync.WaitGroup
+	watches            map[taskconfig.ID]*watchedTask
+	watchPhase         watchServicePhase
+	watchActivity      localizedMessage
+	settingsOpen       bool
+	openDataError      error
+	languagePreference string
+	languageBusy       bool
+	languageError      error
+	locale             string // Native-thread snapshot of MyGo's language, not a second setting.
+	installation       installation
+	lifecycle          lifecycle
+	manual             manualSession
+	window             *mygo.Window
+	tasks              *savedTaskLibrary
+	taskError          error
+	results            map[taskconfig.ID]savedTaskResult
 }
 
 func (a *application) view(c *ui.Context) {
@@ -104,6 +108,7 @@ func run() (result error) {
 	var startupError error
 	mygo.App.WhenReady(func() {
 		a.locale = mygo.App.Locale()
+		a.languagePreference, a.languageError = checkLanguageFile(install.data)
 		offLocale := mygo.App.OnLocaleChanged(func(tag string) {
 			a.locale = tag
 			if a.destinationLog != nil {
@@ -111,14 +116,8 @@ func run() (result error) {
 			}
 		})
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { offLocale() })
-		icon, err := trayIcon()
-		if err != nil {
-			startupError = startupProblem(err, startupFramework, install.directory)
-			mygo.App.Quit()
-			return
-		}
 		tray, err := mygo.NewTray(mygo.TrayOptions{
-			ID: install.key, Icon: icon, ToolTip: "SyncMaid",
+			ID: install.key, Icon: porcelainAppIcon, ToolTip: "SyncMaid",
 		})
 		if err != nil {
 			// Without a tray there must not be an unreachable hidden app.

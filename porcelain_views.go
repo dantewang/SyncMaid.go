@@ -12,7 +12,7 @@ func (a *application) manualView(c *ui.Context) {
 	width, height := c.Size()
 	s := &a.manual
 	ui.Row(c).Fill().Gap(0).Children(func() {
-		ui.Column(c).Width(210).FillHeight().Background(rgb(0xD9DFE3)).Border(1, porcelain.Border).Children(func() {
+		ui.Column(c).Width(210).FillHeight().Background(rgb(0xD9DFE3)).Children(func() {
 			ui.Text(c, a.tr("任务")).FontSize(10).TextColor(porcelain.TextMuted).Padding(14, 14, 6, 14)
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 				ui.Column(c).FillWidth().Gap(0).Children(func() {
@@ -37,7 +37,8 @@ func (a *application) manualView(c *ui.Context) {
 							if active {
 								name.FontWeight(600)
 							}
-							ui.Box(c).Size(7, 7).Background(a.taskHealthColor(id))
+							_, health := a.taskHealth(t)
+							ui.Box(c).Size(7, 7).Background(health)
 						}).Disabled(!a.cardActionAllowed()).OnClick(func() {
 							a.selectManual(id)
 							a.cards.navigation = id
@@ -49,7 +50,8 @@ func (a *application) manualView(c *ui.Context) {
 					}
 				})
 			})
-			ui.Row(c).FillWidth().Padding(6, 10).Gap(6).Border(1, porcelain.Border).Children(func() {
+			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+			ui.Row(c).FillWidth().Padding(6, 10).Gap(6).Children(func() {
 				ui.Text(c, "SYNC").FontSize(13).LineHeight(1.5).Bold().Background(porcelain.Accent).TextColor(porcelain.AccentText).Padding(4, 6)
 				ui.Text(c, "MAID").FontSize(13).Bold().Grow(1)
 				gear := porcelainIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
@@ -89,6 +91,7 @@ func (a *application) manualView(c *ui.Context) {
 				}).Label(a.tr("更多操作")).Tooltip(a.tr("更多操作")).Padding(0).Shrink(0).Size(24, 24)
 			})
 		})
+		ui.Box(c).Width(1).FillHeight().Background(porcelain.Border)
 		pane := ui.Column(c).Grow(1).FillHeight().Gap(0)
 		if !a.settingsOpen {
 			pane = pane.Padding(12, 16)
@@ -137,7 +140,10 @@ func (a *application) manualView(c *ui.Context) {
 				ui.Text(c, a.tr("运行记录不可用或未保存；文件执行结果仍有效：")+historyText(a.historyError.Error(), historyErrorBytes)).TextColor(porcelain.Danger)
 			}
 			if a.watchPhase == watchesPaused {
-				ui.Text(c, a.tr("自动触发已暂停；恢复后Watch重等静默期，Scheduled重新计算下一次。")).FontSize(12)
+				ui.Row(c).Gap(8).Children(func() {
+					ui.Text(c, a.tr("自动触发已暂停"))
+					porcelainButton(c, a.tr("恢复自动触发")).Disabled(!a.cardActionAllowed()).OnClick(a.resumeWatches)
+				})
 			}
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
@@ -177,7 +183,7 @@ func (a *application) porcelainHeader(c *ui.Context, width float32) {
 			targets += len(t.Destinations)
 		}
 	}
-	ui.Row(c).FillWidth().Gap(8).Padding(0, 0, 12, 0).Children(func() {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(0, 0, 12, 0).Children(func() {
 		ui.Text(c, a.tr("同步任务")).FontSize(18).Margin(0, 12, 0, 0)
 		if width >= 900 {
 			for _, v := range []struct {
@@ -197,12 +203,12 @@ func (a *application) porcelainHeader(c *ui.Context, width float32) {
 			}
 		}
 		ui.Box(c).Grow(1)
-		collapsed := len(a.cards.collapsed) > 0
+		collapsed := a.hasCollapsedCards()
 		label := "全部折叠"
 		if collapsed {
 			label = "全部展开"
 		}
-		porcelainButton(c, a.tr(label)).OnClick(func() {
+		porcelainButton(c, a.tr(label)).Height(32).OnClick(func() {
 			if collapsed {
 				a.cards.collapsed = nil
 			} else {
@@ -214,10 +220,8 @@ func (a *application) porcelainHeader(c *ui.Context, width float32) {
 				}
 			}
 		})
-		if width >= 900 {
-			porcelainButton(c, "▷ "+a.tr("运行全部")).Disabled(!a.cardActionAllowed()).Tooltip(a.tr("按已保存顺序串行运行；停止会丢弃余下任务。")).OnClick(a.startBatch)
-		}
-		ui.PrimaryButton(c, "＋ "+a.tr("新建任务")).Padding(5, 10).Disabled(!a.cardActionAllowed()).OnClick(func() { a.newManual(); a.cards.editor = true; a.cards.destinations = false })
+		porcelainButton(c, "▷ "+a.tr("运行全部")).Height(32).Disabled(!a.cardActionAllowed()).Tooltip(a.tr("按已保存顺序串行运行；停止会丢弃余下任务。")).OnClick(a.startBatch)
+		ui.PrimaryButton(c, "＋ "+a.tr("新建任务")).Radius(0).Padding(5, 10).FontSize(16).Height(32).Disabled(!a.cardActionAllowed()).OnClick(func() { a.newManual(); a.cards.editor = true; a.cards.destinations = false })
 	})
 }
 
@@ -230,46 +234,8 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 	}
 	id := t.ID
 	running := id == a.cards.running && (a.manual.phase == manualRunning || a.manual.phase == manualChecking || a.manual.phase == manualStopping)
-	result, hasResult := a.results[id]
-	color := porcelain.Border
-	status := a.tr("未开始")
-	if hasResult {
-		status = a.tr("全部已同步")
-		failed := 0
-		complete := len(result.destinations) > 0
-		for _, r := range result.destinations {
-			if r.State != destinationSucceeded && r.State != destinationNoMatches {
-				complete = false
-			}
-			if r.State == destinationFailed {
-				failed++
-				color = porcelain.Danger
-			}
-		}
-		if !complete {
-			status = a.render(result.message)
-		}
-		if failed > 0 {
-			status = a.tr("%d个中有%d个失败", len(t.Destinations), failed)
-		}
-	}
-	if id == a.manual.id && a.manual.phase == manualDraft && !a.manual.dirty && a.manual.message.key != "" {
-		status = a.render(a.manual.message)
-		color = porcelain.Danger
-	}
-	if running {
-		status = a.tr("正在运行…")
-		if a.manual.phase == manualStopping {
-			status = a.render(a.manual.message)
-		}
-		color = porcelain.Accent
-	}
-	if len(t.Destinations) == 0 && !running {
-		if _, issue := multipleRequestFromSaved(t); issue == nil {
-			status = a.tr("无目标，未执行文件操作。")
-			color = porcelain.Border
-		}
-	}
+	result := a.results[id]
+	status, color := a.taskHealth(t)
 	card := ui.Column(c).FillWidth().Gap(0).Border(1, color)
 	if a.cards.focus == id {
 		card = card.ScrollIntoView()
@@ -339,13 +305,7 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 			}
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 			ui.Row(c).FillWidth().MinHeight(68).Gap(8).Padding(10, 16, 10, 16).Children(func() {
-				mark := porcelain.TextMuted
-				if ok && r.State == destinationSucceeded {
-					mark = porcelain.Text
-				}
-				if ok && r.State == destinationFailed {
-					mark = porcelain.Danger
-				}
+				mark := destinationHealthColor(r, ok)
 				ui.Box(c).Size(7, 7).Background(mark)
 				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Clip().Gap(3).Children(func() {
 					ui.Row(c).FillWidth().Clip().Gap(8).Children(func() {
@@ -361,7 +321,7 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 							}
 							porcelainTag(c, a.tr(key), false)
 						}
-						porcelainTag(c, a.ruleSummary(d.Filters), false)
+						porcelainTag(c, a.filterSummary(d.Filters), false)
 					})
 					porcelainPath(c, d.Target.Path)
 				})

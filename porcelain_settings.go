@@ -1,6 +1,23 @@
 package main
 
-import "github.com/egoist/mygo/ui"
+import (
+	_ "embed"
+	"encoding/json"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+)
+
+//go:embed mygo.json
+var appMetadata []byte
+
+var appVersion = func() string {
+	var metadata struct{ Version string }
+	if err := json.Unmarshal(appMetadata, &metadata); err != nil {
+		panic(err)
+	}
+	return metadata.Version
+}()
 
 func porcelainSection(c *ui.Context, title string, content func()) {
 	ui.Column(c).FillWidth().Gap(2).Children(func() {
@@ -9,12 +26,9 @@ func porcelainSection(c *ui.Context, title string, content func()) {
 		content()
 	})
 }
-func porcelainSettingRow(c *ui.Context, title, description string, controls func()) {
+func porcelainSettingRow(c *ui.Context, title string, controls func()) {
 	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(16).Padding(11, 0).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).MinWidth(100).Gap(3).Children(func() {
-			ui.Text(c, title).FontWeight(500)
-			ui.Text(c, description).FontSize(14).TextColor(porcelain.TextMuted)
-		})
+		ui.Text(c, title).Grow(1).Shrink(1).MinWidth(100).FontWeight(500)
 		controls()
 	})
 }
@@ -23,12 +37,13 @@ func (a *application) settingsView(c *ui.Context) {
 		ui.Column(c).FillWidth().LineHeight(1.5).Gap(22).Padding(16, 22).Children(func() {
 			ui.Text(c, a.tr("设置")).FontSize(18).FontWeight(500).Padding(0, 0, 6, 0)
 			porcelainSection(c, a.tr("常规"), func() {
-				porcelainSettingRow(c, a.tr("界面语言"), a.tr("只切换界面语言。任务名称、路径和表达式保持原样，不修改已有运行记录。"), func() {
+				porcelainSettingRow(c, a.tr("界面语言"), func() {
 					ui.Row(c).Gap(0).Wrap().Shrink(1).MinWidth(0).Children(func() {
+						porcelainSegment(c, a.tr("系统默认"), a.languagePreference == "").Disabled(a.languageBusy || a.manual.phase == manualLoading).OnClick(func() { a.changeLanguage("") })
 						for _, i := range []int{0, 2, 3, 1} {
 							choice := languageChoices[i]
 							tag := choice.tag
-							porcelainSegment(c, choice.name, a.locale == tag).Disabled(a.languageBusy || a.manual.phase == manualLoading).OnClick(func() { a.changeLanguage(tag) })
+							porcelainSegment(c, choice.name, a.languagePreference == tag).Disabled(a.languageBusy || a.manual.phase == manualLoading).OnClick(func() { a.changeLanguage(tag) })
 						}
 					})
 				})
@@ -42,25 +57,32 @@ func (a *application) settingsView(c *ui.Context) {
 			})
 			a.commonSettingsView(c)
 			porcelainSection(c, a.tr("存储"), func() {
-				porcelainSettingRow(c, a.tr("数据目录"), a.tr("任务、设置和诊断保存在程序旁的 Data 目录。"), func() {})
+				porcelainSettingRow(c, a.tr("数据目录"), func() {
+					porcelainButton(c, a.tr("打开数据目录")).OnClick(func() {
+						a.openDataError = mygo.Shell.OpenPath(pathLabel(a.installation.data))
+					})
+				})
+				if a.openDataError != nil {
+					ui.Text(c, a.tr("无法打开数据目录：%s", a.openDataError.Error())).TextColor(porcelain.Danger)
+				}
 				porcelainPath(c, pathLabel(a.installation.data))
 			})
 			porcelainSection(c, a.tr("关于"), func() {
 				ui.Row(c).Gap(14).Padding(11, 0).Children(func() {
 					ui.Text(c, "SyncMaid").Bold()
-					ui.Text(c, "Go Native").Font("Consolas").FontSize(14).TextColor(porcelain.TextMuted)
+					ui.Text(c, appVersion).Font("Consolas").FontSize(14).TextColor(porcelain.TextMuted)
 				})
 			})
-			ui.Text(c, a.tr("取得 Data 所有权前的启动错误仍使用简体中文。")).FontSize(12).TextColor(porcelain.TextMuted)
+
 		})
 	})
 }
 func (a *application) commonSettingsView(c *ui.Context) {
 	locked := a.commonBusy || a.common == nil || a.commonError != nil
 	porcelainSection(c, a.tr("启动"), func() {
-		porcelainSettingRow(c, a.tr("开机自启：")+a.tr(string(a.startupStatus)), a.tr("登录 Windows 时启动本副本。"), func() {
+		porcelainSettingRow(c, a.tr("开机自启：")+a.tr(string(a.startupStatus)), func() {
 			enabled := a.startupStatus == startupRegistered || a.startupStatus == startupDisabled || a.startupStatus == startupUnknown
-			porcelainSwitch(c, &enabled).Label(a.tr("开机自启：")).Tooltip(a.tr("系统禁用请在任务管理器中处理；移动程序后需重新登记，旧路径项不会自动清理。")).Disabled(a.commonBusy || a.startupError != nil || a.startupEntry.name == "" || a.startupStatus == startupDisabled || a.startupStatus == startupForeign).OnChange(func() { a.setStartup(enabled) })
+			porcelainSwitch(c, &enabled).Label(a.tr("开机自启：")).Disabled(a.commonBusy || a.startupError != nil || a.startupEntry.name == "" || a.startupStatus == startupDisabled || a.startupStatus == startupForeign).OnChange(func() { a.setStartup(enabled) })
 		})
 		if a.startupError != nil {
 			ui.Text(c, a.tr("自启操作或读取失败：")+a.startupError.Error()).FontSize(12).TextColor(porcelain.Danger)
@@ -71,7 +93,7 @@ func (a *application) commonSettingsView(c *ui.Context) {
 		if a.commonValue.CloseToTray {
 			closeLabel = "关闭窗口：隐藏到托盘"
 		}
-		porcelainSettingRow(c, a.tr("关闭到托盘"), a.tr("普通任务继续运行；待确认的镜像移除将被拒绝。"), func() {
+		porcelainSettingRow(c, a.tr("关闭到托盘"), func() {
 			enabled := a.commonValue.CloseToTray
 			porcelainSwitch(c, &enabled).Label(a.tr(closeLabel)).Disabled(locked).OnChange(func() { v := a.commonValue; v.CloseToTray = enabled; a.changeCommon(v) })
 		})
@@ -80,7 +102,7 @@ func (a *application) commonSettingsView(c *ui.Context) {
 		if a.commonValue.StartMinimized {
 			startLabel = "启动时：隐藏到托盘"
 		}
-		porcelainSettingRow(c, a.tr("启动时最小化"), a.tr("启动后隐藏在托盘，可从托盘恢复主窗口。"), func() {
+		porcelainSettingRow(c, a.tr("启动时最小化"), func() {
 			enabled := a.commonValue.StartMinimized
 			porcelainSwitch(c, &enabled).Label(a.tr(startLabel)).Disabled(locked).OnChange(func() { v := a.commonValue; v.StartMinimized = enabled; a.changeCommon(v) })
 		})

@@ -68,7 +68,37 @@ func (a *application) toggleCard(id taskconfig.ID) {
 	if a.cards.collapsed == nil {
 		a.cards.collapsed = make(map[taskconfig.ID]bool)
 	}
-	a.cards.collapsed[id] = !a.cards.collapsed[id]
+	if a.cards.collapsed[id] {
+		delete(a.cards.collapsed, id)
+		return
+	}
+	a.cards.collapsed[id] = true
+}
+
+func (a *application) hasCollapsedCards() bool {
+	if a.tasks != nil {
+		for _, t := range a.tasks.tasks {
+			if a.cards.collapsed[t.ID] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (a *application) filterSummary(rules []taskconfig.Rule) string {
+	if len(rules) == 0 {
+		return a.tr("无规则")
+	}
+	if len(rules) == 1 {
+		switch rules[0].Kind {
+		case "all":
+			return a.tr("所有文件")
+		case "none":
+			return a.tr("无匹配")
+		}
+	}
+	return a.tr("%d 条过滤规则", len(rules))
 }
 
 func (a *application) ruleSummary(rules []taskconfig.Rule) string {

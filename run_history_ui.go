@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
-	"path/filepath"
+	"strings"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -33,8 +33,7 @@ func (a *application) selectedHistory() (runRecord, bool) {
 func (a *application) historyViewContent(c *ui.Context) {
 	ui.Column(c).Grow(1).FillWidth().Gap(8).Padding(16).Children(func() {
 		ui.Text(c, a.tr("近期运行记录")).FontSize(18).FontWeight(500)
-		ui.Text(c, a.tr("最多100次近期记录 / 总计4 MiB；最近任务结果优先保留。错误摘要最多1 KiB；只供诊断，不授权执行或删除。")).FontSize(12)
-		ui.Text(c, pathLabel(filepath.Join(a.installation.data, runHistoryFile))).FontSize(12)
+		porcelainButton(c, a.tr("诊断详情")).OnClick(func() { a.historyDetails = !a.historyDetails })
 		if a.historyError != nil {
 			ui.Text(c, a.tr("记录不可用或未保存：")+historyText(a.historyError.Error(), historyErrorBytes))
 			ui.Text(c, a.tr("已发生的文件执行结果不变。请保留并修复记录文件后重新载入。"))
@@ -57,7 +56,9 @@ func (a *application) historyViewContent(c *ui.Context) {
 		ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 			ui.Column(c).FillWidth().Gap(10).Children(func() {
 				ui.Text(c, r.Name+a.tr(" · ")+a.tr(runOutcome(r))).Bold()
-				ui.Text(c, fmt.Sprintf(a.tr("任务 %s · 运行 %s · %s / %s"), r.TaskID, r.ID, r.Kind, a.tr(r.Origin))).FontSize(12)
+				if a.historyDetails {
+					ui.Text(c, fmt.Sprintf(a.tr("任务 %s · 运行 %s · %s / %s"), r.TaskID, r.ID, r.Kind, a.tr(r.Origin))).FontSize(12)
+				}
 				ui.Text(c, a.tr("开始: ")+r.Started.Local().Format("2006-01-02 15:04:05 MST"))
 				if !r.Ended.IsZero() {
 					ui.Text(c, a.tr("结束: ")+r.Ended.Local().Format("2006-01-02 15:04:05 MST"))
@@ -69,16 +70,19 @@ func (a *application) historyViewContent(c *ui.Context) {
 				}
 				for _, g := range r.Goals {
 					ui.Text(c, g.Name+a.tr(" · ")+a.tr(string(g.State))).Bold()
-					ui.Text(c, a.tr("目标ID: ")+string(g.ID)).FontSize(12)
-					if !g.Started.IsZero() {
+					if a.historyDetails {
+						ui.Text(c, a.tr("目标ID: ")+string(g.ID)).FontSize(12)
+					}
+					if a.historyDetails && !g.Started.IsZero() {
 						ui.Text(c, a.tr("目标开始: ")+g.Started.Local().Format("01-02 15:04:05"))
 					}
-					if !g.Ended.IsZero() {
+					if a.historyDetails && !g.Ended.IsZero() {
 						ui.Text(c, a.tr("目标结束: ")+g.Ended.Local().Format("01-02 15:04:05"))
 					}
 					if r.Outcome != "running" {
-						p := g.Counts
-						ui.Text(c, fmt.Sprintf(a.tr("源 %d · 匹配 %d · 已发布 %d · 移动 %d · 移除 %d · 保留/待核对 %d · 未变化 %d · 移动失败 %d · 源未匹配 %d · %d字节"), p.SourceFiles, p.Total, p.Copied, p.Moved, p.Removed, p.Retained, p.Unchanged, p.Failed, p.Unmatched, p.Bytes))
+						if counts := a.runCounts(g, a.historyDetails); counts != "" {
+							ui.Text(c, counts)
+						}
 					}
 					if g.Error != "" {
 						ui.Text(c, a.tr("错误: ")+g.Error)
@@ -87,6 +91,26 @@ func (a *application) historyViewContent(c *ui.Context) {
 			})
 		})
 	})
+}
+
+func (a *application) runCounts(goal runGoal, details bool) string {
+	p := goal.Counts
+	if details {
+		return a.tr("源 %d · 匹配 %d · 已发布 %d · 移动 %d · 移除 %d · 保留/待核对 %d · 未变化 %d · 移动失败 %d · 源未匹配 %d · %d字节", p.SourceFiles, p.Total, p.Copied, p.Moved, p.Removed, p.Retained, p.Unchanged, p.Failed, p.Unmatched, p.Bytes)
+	}
+	var counts []string
+	for _, item := range []struct {
+		label string
+		n     int
+	}{
+		{"已发布 %d", p.Copied}, {"移动 %d", p.Moved}, {"移除 %d", p.Removed},
+		{"保留/待核对 %d", p.Retained}, {"未变化 %d", p.Unchanged}, {"移动失败 %d", p.Failed}, {"源未匹配 %d", p.Unmatched},
+	} {
+		if item.n != 0 {
+			counts = append(counts, a.tr(item.label, item.n))
+		}
+	}
+	return strings.Join(counts, " · ")
 }
 
 func taskIDs(tasks []taskconfig.Task) []taskconfig.ID {

@@ -102,7 +102,7 @@ func TestLanguageEditorAndHistoryRegions(t *testing.T) {
 			view := ui.NewTester(a.view, 1000, 1400)
 			a.cards.destinations = true
 			destinationView := ui.NewTester(a.view, 1000, 1400)
-			for _, key := range []string{"任务名称", "路径前缀", "任一规则", "Skip保留源", "Suffix加编号", "cron表达式"} {
+			for _, key := range []string{"任务名称", "路径前缀", "任一规则", "保留源", "加编号", "cron表达式"} {
 				if !view.HasText(a.tr(key)) && !destinationView.HasText(a.tr(key)) {
 					t.Errorf("missing translated editor region %q", key)
 				}
@@ -177,11 +177,26 @@ func TestLanguageStorageProtectionAndRestart(t *testing.T) {
 	if err := verifyLanguageChange(data, "en"); err == nil {
 		t.Fatal("silent framework save failure not reported")
 	}
+	if err := prepareLanguageChange(data, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyLanguageChange(data, ""); err == nil {
+		t.Fatal("failed reset was not detected")
+	}
+	if err := os.Remove(filepath.Join(data, "locale")); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyLanguageChange(data, ""); err != nil {
+		t.Fatal(err)
+	}
 	for _, bad := range []string{"", "{broken}", "fr", strings.Repeat("x", 129)} {
 		path := filepath.Join(data, "locale")
 		os.WriteFile(path, []byte(bad), 0600)
 		if err := prepareLanguageChange(data, "ja"); err == nil {
 			t.Fatal("allowed overwriting bad locale")
+		}
+		if err := prepareLanguageChange(data, ""); err == nil {
+			t.Fatal("reset would remove malformed preference")
 		}
 		got, _ := os.ReadFile(path)
 		if string(got) != bad {

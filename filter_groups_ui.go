@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
+	"strings"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -53,7 +54,12 @@ func (a *application) filterGroupsView(c *ui.Context, locked bool) {
 							}
 							a.filterEdited()
 						})
-						ui.Text(c, a.ruleSummary([]taskconfig.Rule{r})).SingleLine().Ellipsis("…").Tooltip(a.ruleSummary([]taskconfig.Rule{r})).Grow(1).Shrink(1).MinWidth(0)
+						display := r
+						if excluded {
+							display = *r.Rule
+						}
+						summary := a.ruleSummary([]taskconfig.Rule{display})
+						ui.Text(c, summary).SingleLine().Ellipsis("…").Tooltip(summary).Grow(1).Shrink(1).MinWidth(0)
 						porcelainIcon(c, "×", a.tr("删除规则")).Disabled(locked).OnClick(func() { g.Rows = append(g.Rows[:j], g.Rows[j+1:]...); a.filterEdited() })
 					})
 				}
@@ -61,8 +67,8 @@ func (a *application) filterGroupsView(c *ui.Context, locked bool) {
 					for k, key := range []string{"路径前缀", "扩展名", "通配符"} {
 						filterSegment(c, a.tr(key), g.Kind == k).Disabled(locked).OnClick(func() { g.Kind = k })
 					}
-					ui.TextInput(c, &g.Input).Label(a.tr("新规则")).Grow(1).Shrink(1).MinWidth(100).Height(32).MaxLength(8192).ReadOnly(locked)
-					porcelainButton(c, a.tr("添加")).Background(porcelain.Accent).TextColor(porcelain.AccentText).Disabled(locked || len(g.Rows) >= 128).OnClick(func() { a.addFilterRule(i) })
+					ui.TextInput(c, &g.Input).Label(a.tr("新规则")).Placeholder([]string{"photos/2024", "jpg", "**/*.png"}[g.Kind]).Grow(1).Shrink(1).MinWidth(100).Height(32).MaxLength(8192).ReadOnly(locked)
+					porcelainButton(c, a.tr("添加")).Background(porcelain.Accent).TextColor(porcelain.AccentText).Disabled(locked || strings.TrimSpace(g.Input) == "" || len(g.Rows) >= 128).OnClick(func() { a.addFilterRule(i) })
 				})
 				if a.sourcePreview.phase == previewReady && a.sourcePreview.result != nil {
 					ui.Text(c, a.tr("源扩展名：点击添加到此组")).FontSize(12).TextColor(porcelain.TextMuted)
@@ -81,10 +87,6 @@ func (a *application) filterGroupsView(c *ui.Context, locked bool) {
 			key := "此目标不接收文件；不会删除任何已有文件。"
 			ui.Text(c, a.tr(key)).FontSize(12)
 		}
-		for _, d := range a.manual.targets {
-			if d.ID == a.manual.targetID {
-				ui.Text(c, a.ruleSummary(d.Filters)).FontSize(12).TextColor(porcelain.TextMuted)
-			}
-		}
+
 	})
 }

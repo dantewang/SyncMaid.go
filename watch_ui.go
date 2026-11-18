@@ -74,6 +74,6 @@ func (a *application) watchView(c *ui.Context) {
 		ui.Button(c, a.tr("恢复自动触发")).Disabled(a.watchPhase != watchesPaused).OnClick(a.resumeWatches)
 	})
 	if a.watchPhase == watchesPaused {
-		ui.Text(c, a.tr("自动触发已暂停；恢复后Watch重等静默期，Scheduled重新计算下一次。"))
+		ui.Text(c, a.tr("自动触发已暂停"))
 	}
 }

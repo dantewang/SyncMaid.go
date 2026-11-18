@@ -49,8 +49,8 @@ func (a *application) moveOptionsView(c *ui.Context, locked bool) {
 		if d.ID == a.manual.targetID {
 			ui.Text(c, a.tr("Move冲突处理：保留源，或在扩展名前加编号；都不覆盖已有文件。"))
 			ui.Row(c).Gap(8).Children(func() {
-				ui.Button(c, a.tr("Skip保留源")).Selected(d.Collision == "" || d.Collision == taskconfig.Skip).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Skip) })
-				ui.Button(c, a.tr("Suffix加编号")).Selected(d.Collision == taskconfig.Suffix).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Suffix) })
+				ui.Button(c, a.tr("保留源")).Selected(d.Collision == "" || d.Collision == taskconfig.Skip).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Skip) })
+				ui.Button(c, a.tr("加编号")).Selected(d.Collision == taskconfig.Suffix).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Suffix) })
 			})
 			ui.Row(c).Gap(8).Children(func() {
 				ui.Button(c, a.tr("保留目录结构")).Selected(!d.Flatten).Disabled(locked).OnClick(func() { a.setMoveFlatten(false) })

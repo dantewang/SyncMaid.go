@@ -15,7 +15,7 @@ func TestDirtyEditorFooterActionsStayInside760(t *testing.T) {
 		a.cards.editor = true
 		a.cards.destinations = true
 		view := ui.NewTester(a.view, 760, 620)
-		for _, key := range []string{"取消", "保存任务"} {
+		for _, key := range []string{"取消", "保存"} {
 			r, ok := view.Find(a.tr(key))
 			if !ok || r.X < 0 || r.Y < 0 || r.X+r.W > 760 || r.Y+r.H > 620 {
 				t.Fatalf("%s %s: %+v visible=%v", lang.tag, key, r, ok)

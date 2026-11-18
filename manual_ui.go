@@ -103,11 +103,9 @@ func (a *application) taskEditorView(c *ui.Context) {
 				ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error())
 			}
 			if a.cards.destinations {
-				key := "每个目标各自同步源，因此同一个文件可以同时进入多个目标。"
 				if manualKind(s.kind) == taskconfig.Moving {
-					key = "按目标顺序首个匹配；失败不转投后续目标。"
+					ui.Text(c, a.tr("按目标顺序首个匹配；失败不转投后续目标。")).TextColor(porcelain.TextMuted)
 				}
-				ui.Text(c, a.tr(key)).TextColor(porcelain.TextMuted)
 				porcelainPath(c, s.source)
 				ui.Box(c).Height(12)
 				a.manualTargetsView(c, locked)
@@ -127,9 +125,7 @@ func (a *application) taskEditorView(c *ui.Context) {
 				})
 			})
 			a.manualKindView(c, locked)
-			if len(s.targets) > 0 {
-				ui.Text(c, a.tr("已保存任务不能切换类型。")).FontSize(14).Padding(12).FillWidth().Border(1, porcelain.Border)
-			}
+
 			ui.Text(c, a.tr("触发器"))
 			a.triggerView(c, locked)
 			if s.dirty || s.phase == manualDraft || s.phase == manualSaving {
@@ -139,7 +135,11 @@ func (a *application) taskEditorView(c *ui.Context) {
 	})
 	ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Padding(12, 0, 0, 0).Children(func() {
 		porcelainButton(c, a.tr("取消")).Disabled(s.busy()).OnClick(a.closeTaskEditor)
-		ui.PrimaryButton(c, a.tr("保存任务")).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
+		saveLabel := "保存任务"
+		if a.cards.destinations {
+			saveLabel = "保存"
+		}
+		ui.PrimaryButton(c, a.tr(saveLabel)).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
 	})
 }
 func (a *application) chooseFolder(source bool) {

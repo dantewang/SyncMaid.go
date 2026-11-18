@@ -11,7 +11,7 @@ var porcelainIcons embed.FS
 //go:embed assets/syncmaid.png
 var porcelainAppIcon []byte
 var porcelainGlyphs = func() map[string]*ui.SVG {
-	names := map[string]string{"♢": "pencil", "▷": "play", "⌄": "chevron-down", "›": "chevron-right", "＋": "plus", "⚙": "settings", "□": "folder", "■": "circle-stop", "×": "close", "⌫": "trash-2", "sync": "refresh-cw", "move": "split", "manual": "mouse-pointer-click", "clock": "clock", "eye": "eye", "filter": "funnel", "copy": "copy", "check": "check"}
+	names := map[string]string{"♢": "pencil", "▷": "play", "⌄": "chevron-down", "up": "arrow-up", "›": "chevron-right", "＋": "plus", "⚙": "settings", "□": "folder", "■": "circle-stop", "×": "close", "⌫": "trash-2", "sync": "refresh-cw", "move": "split", "manual": "mouse-pointer-click", "clock": "clock", "eye": "eye", "filter": "funnel", "copy": "copy", "check": "check"}
 	out := map[string]*ui.SVG{}
 	for key, name := range names {
 		data, err := porcelainIcons.ReadFile("assets/porcelain-icons/" + name + ".svg")

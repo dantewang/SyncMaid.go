@@ -19,7 +19,7 @@ func (a *application) sourcePreviewView(c *ui.Context) {
 				porcelainButton(c, a.tr("取消预览")).Disabled(p.phase == previewStopping).OnClick(p.invalidate)
 			}
 		})
-		ui.Text(c, a.tr("只读预览当前草稿的规则归属，不预测覆盖或删除；目录变化后需刷新。")).FontSize(12).TextColor(porcelain.TextMuted)
+
 		switch p.phase {
 		case previewScanning:
 			ui.Text(c, a.tr("正在读取源文件…"))

@@ -56,6 +56,23 @@ func TestCardLayoutIdentityAndEditorGuards(t *testing.T) {
 	}
 }
 
+func TestCollapseActionTracksCurrentCards(t *testing.T) {
+	id := taskconfig.NewID()
+	a := &application{tasks: &savedTaskLibrary{tasks: []taskconfig.Task{{ID: id}}}}
+	a.toggleCard(taskconfig.NewID())
+	if a.hasCollapsedCards() {
+		t.Fatal("removed card controls the action")
+	}
+	a.toggleCard(id)
+	if !a.hasCollapsedCards() {
+		t.Fatal("collapsed card ignored")
+	}
+	a.toggleCard(id)
+	if a.hasCollapsedCards() {
+		t.Fatal("expanded card still counted as collapsed")
+	}
+}
+
 func TestCardOverviewLanguagesAndIndependentResults(t *testing.T) {
 	l, err := loadSavedTasks(t.TempDir())
 	if err != nil {
