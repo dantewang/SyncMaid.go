@@ -1,15 +1,19 @@
 package main
 
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"errors"
+	"os"
 	"path/filepath"
 	"syncmaid/internal/taskconfig"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func (a *application) openDestinationLog(task, destination taskconfig.ID) {
 	a.logTask = task
 	a.logDestination = destination
+	a.logOpenError = nil
 	title := a.tr("运行记录")
 	if a.tasks != nil {
 		if t, e := a.tasks.find(task); e == nil {
@@ -25,6 +29,7 @@ func (a *application) openDestinationLog(task, destination taskconfig.ID) {
 		a.destinationLog.Show()
 		a.destinationLog.Focus()
 		a.destinationLog.Update(func() {})
+		a.checkDestinationLogFile(a.destinationLog)
 		return
 	}
 	window, err := createStartupWindow(func() *mygo.Window {
@@ -37,6 +42,50 @@ func (a *application) openDestinationLog(task, destination taskconfig.ID) {
 	a.destinationLog = window
 	_ = window.SetIcon(porcelainAppIcon)
 	window.OnClose(func(*mygo.CloseEvent) { a.destinationLog = nil })
+	a.checkDestinationLogFile(window)
+}
+
+func (a *application) destinationLogPath() string {
+	return filepath.Join(a.installation.data, runHistoryFile)
+}
+
+func inspectDestinationLogFile(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !historyRegularFile(info) {
+		return errors.ErrUnsupported
+	}
+	return nil
+}
+
+func (a *application) checkDestinationLogFile(window *mygo.Window) {
+	a.logFileAvailable = false
+	path := a.destinationLogPath()
+	go func() {
+		available := inspectDestinationLogFile(path) == nil
+		a.window.Update(func() {
+			if a.destinationLog == window {
+				window.Update(func() { a.logFileAvailable = available })
+			}
+		})
+	}()
+}
+
+func (a *application) openDestinationLogFile(open func(string) error) {
+	if !a.logFileAvailable {
+		return
+	}
+	path := a.destinationLogPath()
+	a.logOpenError = inspectDestinationLogFile(path)
+	if a.logOpenError != nil {
+		a.logFileAvailable = false
+		return
+	}
+	// The Shell expects a DOS/UNC spelling. File inspection above uses the
+	// original native path; the display spelling is only for this handoff.
+	a.logOpenError = open(pathLabel(path))
 }
 func (a *application) refreshDestinationLog() {
 	if a.logReading {
@@ -44,8 +93,10 @@ func (a *application) refreshDestinationLog() {
 	}
 	a.logReading = true
 	data := a.installation.data
+	path := a.destinationLogPath()
 	go func() {
 		history := loadRunHistory(data)
+		available := inspectDestinationLogFile(path) == nil
 		a.window.Update(func() {
 			a.logReading = false
 			a.historyError = history.err
@@ -53,7 +104,7 @@ func (a *application) refreshDestinationLog() {
 				a.historyView = history.data
 			}
 			if a.destinationLog != nil {
-				a.destinationLog.Update(func() {})
+				a.destinationLog.Update(func() { a.logFileAvailable = available })
 			}
 		})
 	}()
@@ -91,6 +142,9 @@ func (a *application) destinationLogView(c *ui.Context) {
 		})
 		if a.historyError != nil {
 			ui.Text(c, a.tr("记录不可用或未保存：")+a.historyError.Error()).TextColor(porcelain.Danger)
+		}
+		if a.logOpenError != nil {
+			ui.Text(c, a.tr("无法打开日志文件：%s", a.logOpenError.Error())).TextColor(porcelain.Danger)
 		}
 		ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Background(rgb(0xE7EAEC)).Children(func() {
 			ui.Column(c).FillWidth().Padding(10).Gap(6).Children(func() {
@@ -137,10 +191,8 @@ func (a *application) destinationLogView(c *ui.Context) {
 			porcelainButton(c, a.tr("诊断详情")).OnClick(func() { a.logDetails = !a.logDetails })
 			ui.Box(c).Grow(1)
 			porcelainButton(c, a.tr("刷新")).FontSize(14).Padding(3, 8).Disabled(a.logReading).OnClick(a.refreshDestinationLog)
-			ui.PrimaryButton(c, a.tr("打开日志文件")).FontSize(14).Padding(3, 8).OnClick(func() {
-				if err := mygo.Shell.OpenPath(filepath.Join(a.installation.data, runHistoryFile)); err != nil {
-					a.historyError = err
-				}
+			ui.PrimaryButton(c, a.tr("打开日志文件")).FontSize(14).Padding(3, 8).Disabled(!a.logFileAvailable || a.logReading).OnClick(func() {
+				a.openDestinationLogFile(mygo.Shell.OpenPath)
 			})
 		})
 	})

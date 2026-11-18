@@ -1,4 +1,5 @@
 {
+  "无法打开日志文件：%s": "Could not open the log file: %s",
   "%s 原文件：%s": "%s Original file: %s",
   "恢复未能确认，请重新载入任务核对：%s": "Restore could not be confirmed. Reload tasks to check: %s",
   "任务备份已恢复。": "Task backup restored.",

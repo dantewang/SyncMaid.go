@@ -19,6 +19,8 @@ type application struct {
 	logTask            taskconfig.ID
 	logDestination     taskconfig.ID
 	logReading         bool
+	logFileAvailable   bool
+	logOpenError       error
 	logDetails         bool
 	historyDetails     bool
 	cards              taskCardLayout
