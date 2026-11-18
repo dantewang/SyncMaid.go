@@ -84,17 +84,21 @@ func TestMirrorUnsafeSourceAndCopyFailureNeverConfirm(t *testing.T) {
 	}
 }
 func TestMirrorExpiredPreviewAndCancellation(t *testing.T) {
-	for _, kind := range []string{"source", "target", "replacement", "cancel", "nil"} {
+	for _, kind := range []string{"source-reappeared", "source-emptied", "target-changed", "replacement", "cancel", "nil"} {
 		t.Run(kind, func(t *testing.T) {
 			p, d := mirrorFixture(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			confirm := mirrorConfirmation(func(context.Context, mirrorPreview) error {
 				switch kind {
-				case "source":
-					manualWrite(t, filepath.Join(p.Source, "new.txt"), "changed")
-				case "target":
-					manualWrite(t, filepath.Join(p.Target, "new.txt"), "changed")
+				case "source-reappeared":
+					manualWrite(t, filepath.Join(p.Source, "extra.txt"), "reappeared")
+				case "source-emptied":
+					if e := os.Remove(filepath.Join(p.Source, "keep.txt")); e != nil {
+						t.Fatal(e)
+					}
+				case "target-changed":
+					manualWrite(t, filepath.Join(p.Target, "extra.txt"), "changed")
 				case "replacement":
 					if e := os.Remove(filepath.Join(p.Target, "extra.txt")); e != nil {
 						t.Fatal(e)
@@ -112,7 +116,9 @@ func TestMirrorExpiredPreviewAndCancellation(t *testing.T) {
 			if err == nil || progress.Removed != 0 {
 				t.Fatal(progress, err)
 			}
-			if kind != "replacement" {
+			if kind == "target-changed" {
+				manualRead(t, filepath.Join(p.Target, "extra.txt"), "changed")
+			} else if kind != "replacement" {
 				manualRead(t, filepath.Join(p.Target, "extra.txt"), "extra")
 			}
 		})

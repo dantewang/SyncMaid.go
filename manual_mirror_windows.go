@@ -20,10 +20,6 @@ type mirrorStamp struct {
 	Size     int64
 	Modified windows.Filetime
 }
-type mirrorListing struct {
-	Files map[string]mirrorStamp
-	Dirs  []fileinventory.Directory
-}
 
 // Parents remain pinned until the returned closer runs. Neither an intermediate
 // reparse point nor a replaced final reparse file is followed.
@@ -75,32 +71,6 @@ func mirrorFileStamp(f *os.File, fat bool) (s mirrorStamp, err error) {
 	s.Size = int64(uint64(b.FileSizeHigh)<<32 | uint64(b.FileSizeLow))
 	s.Modified = b.LastWriteTime
 	return
-}
-func scanMirror(ctx context.Context, root *directoryObject) (out mirrorListing, err error) {
-	inventory, err := fileinventory.Scan(ctx, root.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
-	if err != nil {
-		return out, err
-	}
-	out = mirrorListing{Files: map[string]mirrorStamp{}, Dirs: inventory.Directories()}
-	for _, entry := range inventory.Files() {
-		if err = ctx.Err(); err != nil {
-			return out, err
-		}
-		f, close, e := openMirrorFile(root.handle, entry.Path, windows.GENERIC_READ)
-		if e != nil {
-			return out, e
-		}
-		stamp, e := mirrorFileStamp(f, root.fat)
-		e = errors.Join(e, close())
-		if e != nil {
-			return out, e
-		}
-		if stamp.Size != entry.Size || stamp.Modified.Nanoseconds() != entry.Modified.UnixNano() {
-			return out, errMirrorChanged
-		}
-		out.Files[entry.Path] = stamp
-	}
-	return out, nil
 }
 
 // restoreMirrorDirectories creates missing source directories and preserves their
@@ -177,30 +147,61 @@ func recycleMirrorFile(path string) error {
 	return mygo.Shell.TrashItem(path)
 }
 
-func mirrorCandidates(ctx context.Context, roots *transferRoots) ([]string, error) {
+func mirrorSourceExists(sourceRoot windows.Handle, rel string) (bool, error) {
+	_, close, e := openMirrorFile(sourceRoot, rel, windows.GENERIC_READ)
+	if e == nil {
+		return true, close()
+	}
+	if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) {
+		return false, nil
+	}
+	return false, e
+}
+
+func collectMirrorCandidates(ctx context.Context, roots *transferRoots, targetFiles []fileinventory.File) ([]string, map[string]mirrorStamp, error) {
 	// Use the actual filesystem's case-insensitive lookup, not filter Unicode
 	// comparison, to distinguish destination extras from source spellings.
-	inventory, e := fileinventory.Scan(ctx, roots.target.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
-	if e != nil {
-		return nil, e
-	}
 	var paths []string
-	for _, entry := range inventory.Files() {
-		_, close, e := openMirrorFile(roots.source.handle, entry.Path, windows.GENERIC_READ)
-		if e == nil {
-			if e = close(); e != nil {
-				return nil, e
-			}
+	stamps := map[string]mirrorStamp{}
+	for _, entry := range targetFiles {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		exists, e := mirrorSourceExists(roots.source.handle, entry.Path)
+		if e != nil {
+			return nil, nil, e
+		}
+		if exists {
 			continue
 		}
-		if !errors.Is(e, windows.ERROR_FILE_NOT_FOUND) && !errors.Is(e, windows.ERROR_PATH_NOT_FOUND) {
-			return nil, e
+		f, close, e := openMirrorFile(roots.target.handle, entry.Path, windows.GENERIC_READ)
+		if e != nil {
+			if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) {
+				return nil, nil, errMirrorChanged
+			}
+			return nil, nil, e
+		}
+		stamp, e := mirrorFileStamp(f, roots.target.fat)
+		e = errors.Join(e, close())
+		if e != nil {
+			return nil, nil, e
+		}
+		if stamp.Size != entry.Size || stamp.Modified.Nanoseconds() != entry.Modified.UnixNano() {
+			return nil, nil, errMirrorChanged
 		}
 		paths = append(paths, entry.Path)
+		stamps[entry.Path] = stamp
 	}
-	return paths, nil
+	return paths, stamps, nil
 }
 func removeMirrorCandidate(ctx context.Context, roots *transferRoots, rel string, expected mirrorStamp, mode taskconfig.DeleteMode, recycle func(string) error) error {
+	exists, e := mirrorSourceExists(roots.source.handle, rel)
+	if e != nil {
+		return e
+	}
+	if exists {
+		return errMirrorChanged
+	}
 	f, close, e := openMirrorFile(roots.target.handle, rel, windows.GENERIC_READ|windows.DELETE)
 	if e != nil {
 		return e

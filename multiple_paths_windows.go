@@ -12,20 +12,42 @@ import (
 )
 
 type multiplePlan struct {
-	source   *directoryObject
-	roots    []*transferRoots
-	requests map[taskconfig.ID]manualRequest
-	failures map[taskconfig.ID]error
+	source          *directoryObject
+	sourceAncestors []*directoryObject
+	roots           []*transferRoots
+	targetRoots     map[taskconfig.ID]*transferRoots
+	requests        map[taskconfig.ID]manualRequest
+	failures        map[taskconfig.ID]error
 }
 
 func (p *multiplePlan) Close() (err error) {
 	for _, r := range p.roots {
-		err = errors.Join(err, r.Close())
+		if r != nil {
+			err = errors.Join(err, r.Close())
+		}
+	}
+	for _, d := range p.sourceAncestors {
+		err = errors.Join(err, d.Close())
 	}
 	if p.source != nil {
 		err = errors.Join(err, p.source.Close())
 	}
 	return
+}
+
+func (p *multiplePlan) takeTargetRoots(id taskconfig.ID) *transferRoots {
+	r := p.targetRoots[id]
+	if r == nil {
+		return nil
+	}
+	delete(p.targetRoots, id)
+	for i, existing := range p.roots {
+		if existing == r {
+			p.roots[i] = nil
+			break
+		}
+	}
+	return r
 }
 
 func (p *multiplePlan) close(ctx context.Context) error {
@@ -64,7 +86,11 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 	if len(q.Destinations) == 0 {
 		return nil, errors.New("请添加至少一个目标文件夹")
 	}
-	p := &multiplePlan{requests: map[taskconfig.ID]manualRequest{}, failures: map[taskconfig.ID]error{}}
+	p := &multiplePlan{
+		targetRoots: map[taskconfig.ID]*transferRoots{},
+		requests:    map[taskconfig.ID]manualRequest{},
+		failures:    map[taskconfig.ID]error{},
+	}
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, p.close(ctx))
@@ -74,6 +100,9 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 		return nil, fmt.Errorf("源文件夹: %w", err)
 	}
 	if err = ordinaryDirectory(p.source.handle); err != nil {
+		return nil, err
+	}
+	if p.sourceAncestors, err = openAncestors(ctx, p.source.path, ""); err != nil {
 		return nil, err
 	}
 	seen := map[taskconfig.ID]bool{}
@@ -98,7 +127,7 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 		}
 		// Read-only preflight allows an unwritable target to get its own run
 		// failure, while still checking its identity before any target writes.
-		r, e := openTransferRootsAccess(ctx, manualRequest{Source: p.source.path, Target: d.Path}, windows.FILE_READ_ATTRIBUTES)
+		r, e := openDestinationRoots(ctx, p.source, p.sourceAncestors, d.Path, windows.FILE_READ_ATTRIBUTES)
 		if e != nil {
 			if errors.Is(e, errTransferOverlap) {
 				return nil, e
@@ -107,6 +136,7 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 			continue // never authorize this unresolved target
 		}
 		p.roots = append(p.roots, r)
+		p.targetRoots[d.ID] = r
 		for _, other := range p.roots[:len(p.roots)-1] {
 			if targetObjectsOverlap(r, other) {
 				return nil, fmt.Errorf("%w: 目标目录相同或互相包含（包括别名）", errTransferOverlap)

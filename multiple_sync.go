@@ -7,19 +7,21 @@ import (
 	"time"
 
 	"syncmaid/internal/filefilter"
+	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
 )
 
 type manualDestination struct {
-	matcher     *filefilter.Matcher
-	filterError error
-	ID          taskconfig.ID
-	Name, Path  string
-	Filters     []taskconfig.Rule
-	Strategy    taskconfig.Strategy
-	DeleteMode  taskconfig.DeleteMode
-	Flatten     bool
-	Collision   taskconfig.CollisionPolicy
+	matcher        *filefilter.Matcher
+	filterError    error
+	ID             taskconfig.ID
+	Name, Path     string
+	Filters        []taskconfig.Rule
+	Strategy       taskconfig.Strategy
+	DeleteMode     taskconfig.DeleteMode
+	VerifyContents bool
+	Flatten        bool
+	Collision      taskconfig.CollisionPolicy
 }
 type manualTaskRequest struct {
 	regexTask    *taskconfig.Task
@@ -83,7 +85,12 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 		return results, err
 	}
 	defer func() { err = errors.Join(err, plan.close(ctx)) }()
-	var failures []error
+	var (
+		failures      []error
+		sourceScanned bool
+		sourceInv     *fileinventory.Inventory
+		sourceScanErr error
+	)
 	for _, d := range q.Destinations {
 		r := results[d.ID]
 		if e := ctx.Err(); e != nil {
@@ -117,10 +124,22 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 				e = d.filterError
 			}
 			if e == nil {
-				if destinationStrategy(d) == taskconfig.Mirror {
-					p, e = runMirror(ctx, plan.requests[d.ID], d, progress, confirm)
+				if !sourceScanned {
+					sourceScanned = true
+					sourceInv, sourceScanErr = fileinventory.Scan(ctx, plan.source.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+				}
+				if sourceScanErr != nil {
+					e = sourceScanErr
 				} else {
-					p, e = runManualWithFilters(ctx, plan.requests[d.ID], progress, transferIO{copy: copyChecked, publish: publishTransfer}, d.Filters, d.matcher)
+					roots := plan.takeTargetRoots(d.ID)
+					if destinationStrategy(d) == taskconfig.Mirror {
+						p, e = runMirrorSession(ctx, plan.requests[d.ID], d, roots, sourceInv, progress, confirm, nil, recycleMirrorFile)
+					} else {
+						p, e = runManualWithSession(ctx, plan.requests[d.ID], roots, sourceInv, progress, transferIO{copy: transferCopier(d.VerifyContents), publish: publishTransfer}, d.Filters, d.matcher)
+					}
+					if roots != nil {
+						e = errors.Join(e, roots.close(ctx))
+					}
 				}
 			}
 			r.Progress = p

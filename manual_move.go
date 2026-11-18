@@ -134,8 +134,17 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 			emit()
 			continue
 		}
-		roots, e := openTransferRoots(ctx, plan.requests[d.ID])
+		roots := plan.takeTargetRoots(d.ID)
+		var e error
+		if roots == nil {
+			roots, e = openTransferRoots(ctx, plan.requests[d.ID])
+		} else {
+			e = roots.ensureWritableTarget(ctx)
+		}
 		if e != nil {
+			if roots != nil {
+				e = errors.Join(e, roots.close(ctx))
+			}
 			r.Ended = time.Now()
 			r.State = destinationFailed
 			r.Error = e.Error()
@@ -160,7 +169,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 			if d.Flatten {
 				rel = path.Base(rel)
 			}
-			published, e := moveFile(ctx, roots, f, rel, stamps[f.Path], d.Collision, func(n int64) { r.Progress.Bytes += n; emit() })
+			published, e := moveFile(ctx, roots, f, rel, stamps[f.Path], d.Collision, d.VerifyContents, func(n int64) { r.Progress.Bytes += n; emit() })
 			if published {
 				r.Progress.Copied++
 			}

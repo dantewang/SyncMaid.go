@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
+	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -54,47 +54,54 @@ func validateDestinationMode(d manualDestination) error {
 type mirrorCopy func(context.Context, manualRequest, []taskconfig.Rule, func(transferProgress)) (transferProgress, error)
 
 func runMirrorWith(ctx context.Context, q manualRequest, d manualDestination, notify func(transferProgress), confirm mirrorConfirmation, copyFiles mirrorCopy, recycle func(string) error) (p transferProgress, err error) {
+	return runMirrorSession(ctx, q, d, nil, nil, notify, confirm, copyFiles, recycle)
+}
+
+func runMirrorSession(ctx context.Context, q manualRequest, d manualDestination, roots *transferRoots, sourceInv *fileinventory.Inventory, notify func(transferProgress), confirm mirrorConfirmation, copyFiles mirrorCopy, recycle func(string) error) (p transferProgress, err error) {
 	if err = validateDestinationMode(d); err != nil {
 		return
 	}
-	roots, e := openTransferRoots(ctx, q)
-	if e != nil {
+	if roots == nil {
+		var openErr error
+		roots, openErr = openTransferRoots(ctx, q)
+		if openErr != nil {
+			return p, openErr
+		}
+		defer func() { err = errors.Join(err, roots.close(ctx)) }()
+	} else if e := roots.ensureWritableTarget(ctx); e != nil {
 		return p, e
 	}
-	defer func() { err = errors.Join(err, roots.close(ctx)) }()
-	source, e := scanMirror(ctx, roots.source)
-	if e != nil {
-		return p, e
+	if sourceInv == nil {
+		var scanErr error
+		sourceInv, scanErr = fileinventory.Scan(ctx, roots.source.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+		if scanErr != nil {
+			return p, scanErr
+		}
 	}
-	if len(source.Files) == 0 {
+	if len(sourceInv.Files()) == 0 {
 		return p, errors.New("源没有普通文件，Mirror禁止删除")
 	}
-	// An incomplete/unsupported target blocks this target before copying too.
-	if _, e = scanMirror(ctx, roots.target); e != nil {
-		return p, e
-	}
-	p, e = copyFiles(ctx, q, allFileRules(), notify)
+	// Scan target once before copy: an incomplete/unsupported target blocks before
+	// any copy, and its file list establishes pre-existing deletion candidates.
+	targetBefore, e := fileinventory.Scan(ctx, roots.target.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 	if e != nil {
 		return p, e
 	}
-	current, e := scanMirror(ctx, roots.source)
+	if copyFiles != nil {
+		p, e = copyFiles(ctx, q, allFileRules(), notify)
+	} else {
+		p, e = runManualWithSession(ctx, q, roots, sourceInv, notify, transferIO{copy: transferCopier(d.VerifyContents), publish: publishTransfer}, allFileRules())
+	}
 	if e != nil {
 		return p, e
 	}
-	if !reflect.DeepEqual(source, current) {
-		return p, errMirrorChanged
-	}
-	target, e := scanMirror(ctx, roots.target)
-	if e != nil {
-		return p, e
-	}
-	paths, e := mirrorCandidates(ctx, roots)
+	paths, targetStamps, e := collectMirrorCandidates(ctx, roots, targetBefore.Files())
 	if e != nil {
 		return p, e
 	}
 	preview := mirrorPreview{DestinationID: d.ID, Name: d.Name, Target: pathLabel(roots.target.path), Mode: destinationDeleteMode(d), Paths: paths}
 	if len(preview.Paths) == 0 {
-		return p, restoreMirrorDirectories(ctx, roots.target, source.Dirs)
+		return p, restoreMirrorDirectories(ctx, roots.target, sourceInv.Directories())
 	}
 	if preview.Mode == taskconfig.Recycle && (roots.target.network || roots.target.removable || roots.target.fat) {
 		return p, errors.New("此目标不支持回收确认；多余文件未移除。若需要，请明确选择永久删除后重新运行。")
@@ -114,16 +121,12 @@ func runMirrorWith(ctx context.Context, q manualRequest, d manualDestination, no
 	if e = ctx.Err(); e != nil {
 		return p, e
 	}
-	checkSource, e := scanMirror(ctx, roots.source)
+	hasRegular, e := fileinventory.HasRegularFile(ctx, roots.source.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 	if e != nil {
 		return p, e
 	}
-	checkTarget, e := scanMirror(ctx, roots.target)
-	if e != nil {
-		return p, e
-	}
-	if !reflect.DeepEqual(source, checkSource) || !reflect.DeepEqual(target, checkTarget) {
-		return p, errMirrorChanged
+	if !hasRegular {
+		return p, errors.New("源没有普通文件，Mirror禁止删除")
 	}
 	for _, rel := range preview.Paths {
 		if e = ctx.Err(); e != nil {
@@ -134,7 +137,7 @@ func runMirrorWith(ctx context.Context, q manualRequest, d manualDestination, no
 		if notify != nil {
 			notify(p)
 		}
-		e = removeMirrorCandidate(ctx, roots, rel, target.Files[rel], preview.Mode, recycle)
+		e = removeMirrorCandidate(ctx, roots, rel, targetStamps[rel], preview.Mode, recycle)
 		if e != nil {
 			return p, fmt.Errorf("%s: %w", rel, e)
 		}
@@ -143,5 +146,5 @@ func runMirrorWith(ctx context.Context, q manualRequest, d manualDestination, no
 			notify(p)
 		}
 	}
-	return p, restoreMirrorDirectories(ctx, roots.target, source.Dirs)
+	return p, restoreMirrorDirectories(ctx, roots.target, sourceInv.Directories())
 }

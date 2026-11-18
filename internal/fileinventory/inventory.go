@@ -157,23 +157,54 @@ func Scan(ctx context.Context, root string, opts Options) (*Inventory, error) {
 	return scanWith(ctx, root, opts, openRootDirectory)
 }
 
-func scanWith(ctx context.Context, root string, opts Options, open func(string) (directory, error)) (*Inventory, error) {
+// HasRegularFile reports whether root contains at least one ordinary file,
+// short-circuiting traversal on the first match while still rejecting
+// unreadable or unsafe roots.
+func HasRegularFile(ctx context.Context, root string, opts Options) (bool, error) {
+	s, d, err := startScanner(ctx, root, opts, true, openRootDirectory)
+	if err != nil {
+		return false, err
+	}
+	err = s.walk(d, "", 0)
+	if errors.Is(err, errFoundRegularFile) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if s.unsupportedTotal > 0 {
+		e := s.fail(Unsupported, s.unsupported[0].Path, nil)
+		e.Unsupported, e.UnsupportedTotal = s.unsupported, s.unsupportedTotal
+		return false, e
+	}
+	return false, nil
+}
+
+func startScanner(ctx context.Context, root string, opts Options, stopOnFirstFile bool, open func(string) (directory, error)) (*scanner, directory, error) {
 	if opts.MaxEntries <= 0 {
 		opts.MaxEntries = DefaultMaxEntries
 	}
 	if opts.MaxDepth <= 0 {
 		opts.MaxDepth = DefaultMaxDepth
 	}
-	s := &scanner{ctx: ctx, opts: opts, root: root}
+	s := &scanner{ctx: ctx, opts: opts, root: root, stopOnFirstFile: stopOnFirstFile}
 	if root == "" || !filepath.IsAbs(root) {
-		return nil, s.fail(InvalidRoot, "", errors.New("root must be an absolute path"))
+		return nil, nil, s.fail(InvalidRoot, "", errors.New("root must be an absolute path"))
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, s.fail(Canceled, "", err)
+		return nil, nil, s.fail(Canceled, "", err)
 	}
 	d, err := open(root)
 	if err != nil {
-		return nil, s.fail(RootUnavailable, "", err)
+		return nil, nil, s.fail(RootUnavailable, "", err)
+	}
+	return s, d, nil
+}
+
+func scanWith(ctx context.Context, root string, opts Options, open func(string) (directory, error)) (*Inventory, error) {
+	s, d, err := startScanner(ctx, root, opts, false, open)
+	if err != nil {
+		return nil, err
 	}
 	if err := s.walk(d, "", 0); err != nil {
 		return nil, err

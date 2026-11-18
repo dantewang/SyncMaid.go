@@ -11,10 +11,13 @@ import (
 	"unicode"
 )
 
+var errFoundRegularFile = errors.New("found regular file")
+
 type scanner struct {
 	ctx              context.Context
 	opts             Options
 	root             string
+	stopOnFirstFile  bool
 	entries          int
 	files            []File
 	dirs             []Directory
@@ -157,6 +160,9 @@ func (s *scanner) entry(entry fs.DirEntry, rel string, folded map[string]string,
 		s.dirs = append(s.dirs, Directory{Path: path, Modified: info.ModTime().UTC()})
 		*subdirs = append(*subdirs, name)
 	case mode.IsRegular():
+		if s.stopOnFirstFile {
+			return errFoundRegularFile
+		}
 		s.files = append(s.files, File{Path: path, Size: info.Size(), Modified: info.ModTime().UTC()})
 	default:
 		s.addUnsupported(path, "special file: "+mode.Type().String())

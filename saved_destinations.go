@@ -42,7 +42,7 @@ func multipleRequestFromSaved(t taskconfig.Task) (manualTaskRequest, error) {
 		if strings.TrimSpace(d.Name) == "" {
 			return manualTaskRequest{}, errors.New("目标名称为空")
 		}
-		q.Destinations = append(q.Destinations, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy})
+		q.Destinations = append(q.Destinations, manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, VerifyContents: d.VerifyContents, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy})
 	}
 	return q, nil
 }
@@ -101,7 +101,7 @@ func (l *savedTaskLibrary) prepareMultiple(id taskconfig.ID, name string, q manu
 		seen[edit.ID] = true
 		d, ok := old[edit.ID]
 		if !ok {
-			d = taskconfig.Destination{ID: edit.ID, Strategy: taskconfig.AddOnly, Target: taskconfig.Target{Kind: "local"}, Filters: []taskconfig.Rule{{Kind: "all"}}, VerifyContents: true, DeleteMode: taskconfig.Recycle, CollisionPolicy: taskconfig.Skip, MassDeleteThreshold: 0.5}
+			d = taskconfig.Destination{ID: edit.ID, Strategy: taskconfig.AddOnly, Target: taskconfig.Target{Kind: "local"}, Filters: []taskconfig.Rule{{Kind: "all"}}, DeleteMode: taskconfig.Recycle, CollisionPolicy: taskconfig.Skip, MassDeleteThreshold: 0.5}
 		}
 		d.Name = edit.Name
 		d.Target.Path = edit.Path
