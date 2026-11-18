@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/egoist/mygo/ui"
 	"strings"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
@@ -77,7 +78,7 @@ func TestRelativeStatusAndLogRetainRealCountsAndErrors(t *testing.T) {
 
 func TestDiagnosticViewRetainsRootErrorAcrossLanguages(t *testing.T) {
 	task, destination := taskconfig.NewID(), taskconfig.NewID()
-	a := &application{logTask: task, logDestination: destination, historyView: runHistoryData{Recent: []runRecord{{ID: taskconfig.NewID(), TaskID: task, Name: "Original task", Error: "unabridged root failure", Goals: []runGoal{{ID: destination, Name: "Original destination", State: syncengine.DestinationFailed}}}}}}
+	a := &application{logTask: task, logDestination: destination, historyView: appcore.RunHistoryData{Recent: []appcore.RunRecord{{ID: taskconfig.NewID(), TaskID: task, Name: "Original task", Error: "unabridged root failure", Goals: []appcore.RunGoal{{ID: destination, Name: "Original destination", State: syncengine.DestinationFailed}}}}}}
 	for _, choice := range languageChoices {
 		a.locale = choice.tag
 		tt := ui.NewTester(a.destinationLogView, 720, 420)
@@ -88,14 +89,14 @@ func TestDiagnosticViewRetainsRootErrorAcrossLanguages(t *testing.T) {
 }
 func TestDestinationLogsBoundedAndLatestFallback(t *testing.T) {
 	task, destination := taskconfig.NewID(), taskconfig.NewID()
-	a := &application{logTask: task, logDestination: destination, historyView: runHistoryData{Latest: map[taskconfig.ID]runRecord{}}}
-	latest := runRecord{ID: taskconfig.NewID(), TaskID: task, Goals: []runGoal{{ID: destination, Error: "preserve"}}}
+	a := &application{logTask: task, logDestination: destination, historyView: appcore.RunHistoryData{Latest: map[taskconfig.ID]appcore.RunRecord{}}}
+	latest := appcore.RunRecord{ID: taskconfig.NewID(), TaskID: task, Goals: []appcore.RunGoal{{ID: destination, Error: "preserve"}}}
 	a.historyView.Latest[task] = latest
 	if records := a.destinationLogRecords(); len(records) != 1 || records[0].Goals[0].Error != "preserve" {
 		t.Fatal(records)
 	}
 	for i := 0; i < 30; i++ {
-		a.historyView.Recent = append(a.historyView.Recent, runRecord{ID: taskconfig.NewID(), TaskID: task, Goals: []runGoal{{ID: destination}}})
+		a.historyView.Recent = append(a.historyView.Recent, appcore.RunRecord{ID: taskconfig.NewID(), TaskID: task, Goals: []appcore.RunGoal{{ID: destination}}})
 	}
 	if records := a.destinationLogRecords(); len(records) != 20 || records[0].ID != a.historyView.Recent[29].ID {
 		t.Fatal("unbounded or unordered log")

@@ -1,13 +1,14 @@
 package main
 
 import (
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
 )
 
 func TestBatchOrderGateFailureAndSingleOwner(t *testing.T) {
-	l, e := loadSavedTasks(t.TempDir())
+	l, e := appcore.LoadSavedTasks(t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -15,14 +16,14 @@ func TestBatchOrderGateFailureAndSingleOwner(t *testing.T) {
 	for _, name := range []string{"First", "Unsupported", "Mirror"} {
 		q := manualFixture(t)
 		var id taskconfig.ID
-		l, id, e = l.save("", name, q)
+		l, id, e = saveTask(l, "", name, q)
 		if e != nil {
 			t.Fatal(e)
 		}
 		ids = append(ids, id)
 	}
-	l.tasks[2].Destinations[0].Strategy = taskconfig.Mirror
-	l.tasks[1].Trigger = taskconfig.Trigger{Kind: "future"}
+	l.Tasks[2].Destinations[0].Strategy = taskconfig.Mirror
+	l.Tasks[1].Trigger = taskconfig.Trigger{Kind: "future"}
 	a := &application{tasks: l}
 	a.batch.begin(ids)
 	// The click owns an independent order, even if the caller reuses its slice.
@@ -39,7 +40,7 @@ func TestBatchOrderGateFailureAndSingleOwner(t *testing.T) {
 		}
 	}
 	a.advanceBatchUsing(start)
-	if len(ran) != 1 || ran[0] != l.tasks[0].ID {
+	if len(ran) != 1 || ran[0] != l.Tasks[0].ID {
 		t.Fatal(ran)
 	}
 	a.advanceBatchUsing(start)
@@ -51,7 +52,7 @@ func TestBatchOrderGateFailureAndSingleOwner(t *testing.T) {
 	}
 	a.manual.phase = manualFinished
 	a.advanceBatchUsing(start)
-	if len(ran) != 2 || ran[1] != l.tasks[2].ID || a.results[l.tasks[1].ID].message.key == "" {
+	if len(ran) != 2 || ran[1] != l.Tasks[2].ID || a.results[l.Tasks[1].ID].message.key == "" {
 		t.Fatal("failure swallowed or order changed", ran)
 	}
 	a.manual.phase = manualFinished
@@ -83,15 +84,15 @@ func TestBatchStopAndDirtyPreviewGuards(t *testing.T) {
 }
 
 func TestBatchRejectsPreviewsAndAutomaticEntry(t *testing.T) {
-	l, e := loadSavedTasks(t.TempDir())
+	l, e := appcore.LoadSavedTasks(t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
-	l, _, e = l.save("", "Saved", manualFixture(t))
+	l, _, e = saveTask(l, "", "Saved", manualFixture(t))
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, block := range []func(*application){func(a *application) { a.manual.dirty = true }, func(a *application) { a.importPreview = &legacyImport{} }, func(a *application) { a.regexSession = &regexSession{} }, func(a *application) { a.manual.mirrorPreview = &syncengine.MirrorPreview{} }} {
+	for _, block := range []func(*application){func(a *application) { a.manual.dirty = true }, func(a *application) { a.importPreview = &appcore.LegacyImport{} }, func(a *application) { a.regexSession = &regexSession{} }, func(a *application) { a.manual.mirrorPreview = &syncengine.MirrorPreview{} }} {
 		a := &application{tasks: l, manual: manualSession{phase: manualReady}}
 		block(a)
 		a.startBatch()

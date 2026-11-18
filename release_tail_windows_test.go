@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"testing"
 	"time"
@@ -54,7 +55,7 @@ func TestReleaseTailLegacyMutexBlocksBeforeConfigWrites(t *testing.T) {
 	if !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		t.Fatalf("Rust would miss Go holding the legacy mutex: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(data, savedTaskFile)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(data, appcore.SavedTaskFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("ownership claimed by writing tasks: %v", err)
 	}
 }
@@ -123,7 +124,7 @@ func TestReleaseTailPollingSignalsChangeAndStops(t *testing.T) {
 	changed, done := make(chan struct{}, 1), make(chan struct{})
 	go func() {
 		defer close(done)
-		servePollingWatch(ctx, path, func(err error) {
+		appcore.ServePollingWatch(ctx, path, func(err error) {
 			select {
 			case ready <- err:
 			case <-ctx.Done():

@@ -3,21 +3,22 @@ package main
 import (
 	"github.com/egoist/mygo/ui"
 	"strings"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
 )
 
 func TestCardLayoutIdentityAndEditorGuards(t *testing.T) {
-	l, err := loadSavedTasks(t.TempDir())
+	l, err := appcore.LoadSavedTasks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, first, err := l.save("", "First", manualFixture(t))
+	l, first, err := saveTask(l, "", "First", manualFixture(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, second, err := l.save("", "Second", manualFixture(t))
+	l, second, err := saveTask(l, "", "Second", manualFixture(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,8 +31,8 @@ func TestCardLayoutIdentityAndEditorGuards(t *testing.T) {
 		t.Fatal("collapse state leaked across IDs")
 	}
 	// Reordering the library cannot change the ID selected by a card.
-	l.tasks[0], l.tasks[1] = l.tasks[1], l.tasks[0]
-	task, _ := l.find(second)
+	l.Tasks[0], l.Tasks[1] = l.Tasks[1], l.Tasks[0]
+	task, _ := l.Find(second)
 	destination := task.Destinations[0].ID
 	a.editCard(second, destination)
 	if a.manual.id != second || a.manual.targetID != destination || !a.cards.editor {
@@ -59,7 +60,7 @@ func TestCardLayoutIdentityAndEditorGuards(t *testing.T) {
 
 func TestCollapseActionTracksCurrentCards(t *testing.T) {
 	id := taskconfig.NewID()
-	a := &application{tasks: &savedTaskLibrary{tasks: []taskconfig.Task{{ID: id}}}}
+	a := &application{tasks: &appcore.SavedTaskLibrary{Tasks: []taskconfig.Task{{ID: id}}}}
 	a.toggleCard(taskconfig.NewID())
 	if a.hasCollapsedCards() {
 		t.Fatal("removed card controls the action")
@@ -75,15 +76,15 @@ func TestCollapseActionTracksCurrentCards(t *testing.T) {
 }
 
 func TestCardOverviewLanguagesAndIndependentResults(t *testing.T) {
-	l, err := loadSavedTasks(t.TempDir())
+	l, err := appcore.LoadSavedTasks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, id, err := l.save("", "Overview", manualFixture(t))
+	l, id, err := saveTask(l, "", "Overview", manualFixture(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, _ := l.find(id)
+	task, _ := l.Find(id)
 	did := task.Destinations[0].ID
 	a := &application{tasks: l, results: map[taskconfig.ID]savedTaskResult{id: {message: messagef("全部目标同步完成"), destinations: syncengine.MultipleResult{did: {Name: "Destination", State: syncengine.DestinationSucceeded}}}}}
 	for _, choice := range languageChoices {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"testing"
 
@@ -14,9 +15,9 @@ import (
 	"syncmaid/internal/taskconfig"
 )
 
-func editorRules(t *testing.T, e filterEditor) []taskconfig.Rule {
+func editorRules(t *testing.T, e appcore.FilterEditor) []taskconfig.Rule {
 	t.Helper()
-	rules, err := e.rules()
+	rules, err := e.Rules()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,10 +29,10 @@ func notRule(r taskconfig.Rule) taskconfig.Rule {
 }
 
 func TestDestinationIncludeExcludeSelection(t *testing.T) {
-	rules := editorRules(t, filterEditor{
-		Mode:     filterGrouped,
+	rules := editorRules(t, appcore.FilterEditor{
+		Mode:     appcore.FilterGrouped,
 		MatchAll: true,
-		Groups: []filterDraftGroup{
+		Groups: []appcore.FilterDraftGroup{
 			{Rows: []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt"), taskconfig.WildcardFilter("images/*.jpg")}},
 			{All: true, Rows: []taskconfig.Rule{notRule(taskconfig.PathFilter("中文/私密")), notRule(taskconfig.ExtensionFilter("bin")), notRule(taskconfig.WildcardFilter("**/skip.*"))}},
 		},
@@ -48,9 +49,9 @@ func TestDestinationIncludeExcludeSelection(t *testing.T) {
 			t.Fatal(c, got, err)
 		}
 	}
-	allExcept := editorRules(t, filterEditor{
-		Mode:   filterGrouped,
-		Groups: []filterDraftGroup{{All: true, Rows: []taskconfig.Rule{{Kind: "all"}, notRule(taskconfig.ExtensionFilter("tmp"))}}},
+	allExcept := editorRules(t, appcore.FilterEditor{
+		Mode:   appcore.FilterGrouped,
+		Groups: []appcore.FilterDraftGroup{{All: true, Rows: []taskconfig.Rule{{Kind: "all"}, notRule(taskconfig.ExtensionFilter("tmp"))}}},
 	})
 	m, err = filefilter.Compile(allExcept)
 	if err != nil {
@@ -65,9 +66,9 @@ func TestDestinationIncludeExcludeSelection(t *testing.T) {
 }
 
 func TestFilterProjectionKeepsOnePassExtensionAndReadOnlyShapes(t *testing.T) {
-	rules := editorRules(t, filterEditor{
-		Mode:   filterGrouped,
-		Groups: []filterDraftGroup{{Rows: []taskconfig.Rule{taskconfig.ExtensionFilter("*.*.jpg")}}},
+	rules := editorRules(t, appcore.FilterEditor{
+		Mode:   appcore.FilterGrouped,
+		Groups: []appcore.FilterDraftGroup{{Rows: []taskconfig.Rule{taskconfig.ExtensionFilter("*.*.jpg")}}},
 	})
 	b, err := json.Marshal(rules)
 	if err != nil {
@@ -77,12 +78,12 @@ func TestFilterProjectionKeepsOnePassExtensionAndReadOnlyShapes(t *testing.T) {
 	if err = json.Unmarshal(b, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	e := projectNativeFilter(decoded)
-	if e.Mode != filterGrouped {
+	e := appcore.ProjectNativeFilter(decoded)
+	if e.Mode != appcore.FilterGrouped {
 		t.Fatal(e)
 	}
 	e.MatchAll = true
-	e.Groups = append(e.Groups, filterDraftGroup{All: true, Rows: []taskconfig.Rule{notRule(taskconfig.PathFilter("ignored"))}})
+	e.Groups = append(e.Groups, appcore.FilterDraftGroup{All: true, Rows: []taskconfig.Rule{notRule(taskconfig.PathFilter("ignored"))}})
 	again := editorRules(t, e)
 	m, err := filefilter.Compile(again)
 	if err != nil {
@@ -98,8 +99,8 @@ func TestFilterProjectionKeepsOnePassExtensionAndReadOnlyShapes(t *testing.T) {
 	}
 	deep := syncengine.FilterGroup("allOf", []taskconfig.Rule{syncengine.FilterGroup("anyOf", []taskconfig.Rule{syncengine.FilterGroup("allOf", []taskconfig.Rule{taskconfig.ExtensionFilter("txt")})})})
 	for _, rules := range [][]taskconfig.Rule{{deep}, {{Kind: "regex", Pattern: filterText("a+")}}} {
-		e := projectNativeFilter(rules)
-		if e.Mode != filterReadOnly || e.Reason == "" {
+		e := appcore.ProjectNativeFilter(rules)
+		if e.Mode != appcore.FilterReadOnly || e.Reason == "" {
 			t.Fatal(e)
 		}
 	}
@@ -121,17 +122,17 @@ func TestFilteredTransfersOnlyChangeMatchedFiles(t *testing.T) {
 	manualWrite(t, filepath.Join(first.Target, "中文/update.txt"), "old")
 	manualWrite(t, filepath.Join(first.Target, "other.bin"), "keep-filtered-old")
 	manualWrite(t, filepath.Join(q.Destinations[1].Path, "new.txt"), "keep-other-target-txt")
-	q.Destinations[0].Filters = editorRules(t, filterEditor{
-		Mode:     filterGrouped,
+	q.Destinations[0].Filters = editorRules(t, appcore.FilterEditor{
+		Mode:     appcore.FilterGrouped,
 		MatchAll: true,
-		Groups: []filterDraftGroup{
+		Groups: []appcore.FilterDraftGroup{
 			{Rows: []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")}},
 			{All: true, Rows: []taskconfig.Rule{notRule(taskconfig.ExtensionFilter("bin")), notRule(taskconfig.WildcardFilter("**/skip.txt"))}},
 		},
 	})
-	q.Destinations[1].Filters = editorRules(t, filterEditor{
-		Mode:   filterGrouped,
-		Groups: []filterDraftGroup{{Rows: []taskconfig.Rule{taskconfig.ExtensionFilter("bin")}}},
+	q.Destinations[1].Filters = editorRules(t, appcore.FilterEditor{
+		Mode:   appcore.FilterGrouped,
+		Groups: []appcore.FilterDraftGroup{{Rows: []taskconfig.Rule{taskconfig.ExtensionFilter("bin")}}},
 	})
 	r, err := runMultiple(context.Background(), q, nil)
 	if err != nil {
@@ -167,14 +168,14 @@ func TestFilteredCompileFailureDoesNotWriteAndHealthyTargetContinues(t *testing.
 }
 
 func TestNoMatchIsNotEmptySourceAndNeverDeletes(t *testing.T) {
-	for _, mode := range []filterMode{filterNone, filterGrouped} {
+	for _, mode := range []appcore.FilterMode{appcore.FilterNone, appcore.FilterGrouped} {
 		q, first := multiFixture(t)
 		q.Destinations = q.Destinations[:1]
 		manualWrite(t, filepath.Join(first.Source, "a.txt"), "input")
 		manualWrite(t, filepath.Join(first.Target, "a.txt"), "unchanged")
-		editor := filterEditor{Mode: mode}
-		if mode == filterGrouped {
-			editor.Groups = []filterDraftGroup{{Rows: []taskconfig.Rule{taskconfig.ExtensionFilter("absent")}}}
+		editor := appcore.FilterEditor{Mode: mode}
+		if mode == appcore.FilterGrouped {
+			editor.Groups = []appcore.FilterDraftGroup{{Rows: []taskconfig.Rule{taskconfig.ExtensionFilter("absent")}}}
 		}
 		q.Destinations[0].Filters = editorRules(t, editor)
 		r, err := runMultiple(context.Background(), q, nil)
@@ -189,7 +190,7 @@ func TestNoMatchIsNotEmptySourceAndNeverDeletes(t *testing.T) {
 func TestFilteringNeverSkipsRawScanSafety(t *testing.T) {
 	q, first := multiFixture(t)
 	q.Destinations = q.Destinations[:1]
-	q.Destinations[0].Filters = editorRules(t, filterEditor{Mode: filterNone})
+	q.Destinations[0].Filters = editorRules(t, appcore.FilterEditor{Mode: appcore.FilterNone})
 	manualJunction(t, filepath.Join(first.Source, "excluded-link"), t.TempDir())
 	r, err := runMultiple(context.Background(), q, nil)
 	if err == nil || r[q.Destinations[0].ID].State != syncengine.DestinationFailed {
@@ -199,19 +200,19 @@ func TestFilteringNeverSkipsRawScanSafety(t *testing.T) {
 
 func TestFilterDraftBindingErrorAndReload(t *testing.T) {
 	data := t.TempDir()
-	l, err := loadSavedTasks(data)
+	l, err := appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	q, _ := multiFixture(t)
-	l, id, err := l.saveMultiple("", "Filters", q)
+	l, id, err := saveMultiple(l, "", "Filters", q)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a := &application{tasks: l}
 	a.selectManual(id)
 	first, second := a.manual.targets[0].ID, a.manual.targets[1].ID
-	a.setFilterMode(filterGrouped)
+	a.setFilterMode(appcore.FilterGrouped)
 	a.manual.filterEditor.Groups[0].Kind = 1
 	a.manual.filterEditor.Groups[0].Input = "."
 	a.addFilterRule(0)
@@ -223,7 +224,7 @@ func TestFilterDraftBindingErrorAndReload(t *testing.T) {
 		t.Fatal("invalid draft wrote or blocked disk unnecessarily")
 	}
 	a.manual.selectTarget(second)
-	a.setFilterMode(filterGrouped)
+	a.setFilterMode(appcore.FilterGrouped)
 	a.manual.filterEditor.Groups[0].Kind = 2
 	a.manual.filterEditor.Groups[0].Input = "**/*.bin"
 	a.addFilterRule(0)
@@ -235,27 +236,27 @@ func TestFilterDraftBindingErrorAndReload(t *testing.T) {
 	a.manual.filterEditor.Error = ""
 	a.manual.filterEditor.Groups[0].Input = "txt"
 	a.addFilterRule(0)
-	l, _, err = l.saveMultiple(id, "Filters", a.manual.draftRequest())
+	l, _, err = saveMultiple(l, id, "Filters", a.manual.draftRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err = loadSavedTasks(data)
+	l, err = appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, _ := l.find(id)
-	request, err := multipleRequestFromSaved(task)
+	task, _ := l.Find(id)
+	request, err := appcore.MultipleRequestFromSaved(task)
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstProj := projectNativeFilter(request.Destinations[0].Filters)
-	secondProj := projectNativeFilter(request.Destinations[1].Filters)
+	firstProj := appcore.ProjectNativeFilter(request.Destinations[0].Filters)
+	secondProj := appcore.ProjectNativeFilter(request.Destinations[1].Filters)
 	if request.Destinations[0].ID != second || *firstProj.Groups[0].Rows[0].Pattern != "**/*.bin" || request.Destinations[1].ID != first || *secondProj.Groups[0].Rows[0].Extension != "txt" {
 		t.Fatal(request)
 	}
 	a.manual.phase = manualRunning
 	before := a.manual.targets[1].Filters
-	a.setFilterMode(filterNone)
+	a.setFilterMode(appcore.FilterNone)
 	a.filterEdited()
 	if !syncengine.SameFilterRules(before, a.manual.targets[1].Filters) || a.manual.phase != manualRunning {
 		t.Fatal("running guard bypassed")
@@ -264,62 +265,62 @@ func TestFilterDraftBindingErrorAndReload(t *testing.T) {
 
 func TestReadOnlyUnknownFiltersPreservedAndIsolated(t *testing.T) {
 	data := t.TempDir()
-	l, err := loadSavedTasks(data)
+	l, err := appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	q, first := multiFixture(t)
 	manualWrite(t, filepath.Join(first.Source, "f.txt"), "healthy-input")
-	l, id, err := l.saveMultiple("", "Future", q)
+	l, id, err := saveMultiple(l, "", "Future", q)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tasks, _ := l.snapshot.Tasks()
+	tasks, _ := l.Snapshot.Tasks()
 	var unknown taskconfig.Rule
 	if err = json.Unmarshal([]byte(`{"kind":"extension","Extension":"txt","Future":900719925474099312345}`), &unknown); err != nil {
 		t.Fatal(err)
 	}
 	tasks[0].Destinations[0].Filters = []taskconfig.Rule{unknown}
-	snap, err := l.snapshot.Save(tasks)
+	snap, err := l.Snapshot.Save(tasks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err = savedLibrary(snap)
+	l, err = appcore.SavedLibrary(snap)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, _ := l.find(id)
-	request, err := multipleRequestFromSaved(task)
+	task, _ := l.Find(id)
+	request, err := appcore.MultipleRequestFromSaved(task)
 	if err != nil {
 		t.Fatal(err)
 	}
-	form := projectNativeFilter(request.Destinations[0].Filters)
-	if form.Mode != filterReadOnly || form.RunError == "" {
+	form := appcore.ProjectNativeFilter(request.Destinations[0].Filters)
+	if form.Mode != appcore.FilterReadOnly || form.RunError == "" {
 		t.Fatal(form)
 	}
 	request.Destinations[1].Name = "Rename healthy"
-	l, _, err = l.saveMultiple(id, "Metadata edit", request)
+	l, _, err = saveMultiple(l, id, "Metadata edit", request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = l.remove(id); err == nil {
+	if _, err = l.Remove(id); err == nil {
 		t.Fatal("unsupported record deleted")
 	}
 	badEdit := request
 	badEdit.Destinations = append([]syncengine.ManualDestination(nil), request.Destinations...)
 	badEdit.Destinations[0].Filters = syncengine.AllFileRules()
-	if _, _, err = l.saveMultiple(id, "Bad rewrite", badEdit); err == nil {
+	if _, _, err = saveMultiple(l, id, "Bad rewrite", badEdit); err == nil {
 		t.Fatal("unknown rule rewritten")
 	}
-	l, err = loadSavedTasks(data)
+	l, err = appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, _ = l.find(id)
+	task, _ = l.Find(id)
 	if !task.Destinations[0].Filters[0].HasUnknownFields() {
 		t.Fatal("unknown lost")
 	}
-	request, err = multipleRequestFromSaved(task)
+	request, err = appcore.MultipleRequestFromSaved(task)
 	if err != nil {
 		t.Fatal(err)
 	}

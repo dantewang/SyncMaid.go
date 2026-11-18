@@ -2,175 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"path"
 	"reflect"
-	"sort"
-	"strings"
-	"syncmaid/internal/filefilter"
-	"syncmaid/internal/fileinventory"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 )
-
-const previewSamples = 8
-
-type previewSelection struct {
-	Count   int
-	Samples []string
-}
-
-func (s *previewSelection) add(path string) {
-	s.Count++
-	if len(s.Samples) < previewSamples {
-		s.Samples = append(s.Samples, path)
-	}
-}
-
-type previewContest struct {
-	Path    string
-	Targets []taskconfig.ID
-}
-type routePreview struct {
-	Extensions  []previewExtension
-	SourceFiles int
-	EmptyRoot   bool
-	Targets     map[taskconfig.ID]previewSelection
-	Unmatched   previewSelection
-	Contested   []previewContest
-}
-
-type previewExtension struct {
-	Text  string
-	Count int
-}
-
-func sourceExtensions(files []fileinventory.File) []previewExtension {
-	counts := map[string]previewExtension{}
-	for _, f := range files {
-		ext := strings.TrimPrefix(path.Ext(f.Path), ".")
-		if ext == "" {
-			continue
-		}
-		key := strings.ToLower(ext)
-		v := counts[key]
-		if v.Text == "" {
-			v.Text = ext
-		}
-		v.Count++
-		counts[key] = v
-	}
-	list := make([]previewExtension, 0, len(counts))
-	for _, v := range counts {
-		list = append(list, v)
-	}
-	sort.Slice(list, func(i, j int) bool {
-		if list[i].Count != list[j].Count {
-			return list[i].Count > list[j].Count
-		}
-		return strings.ToLower(list[i].Text) < strings.ToLower(list[j].Text)
-	})
-	if len(list) > 12 {
-		list = list[:12]
-	}
-	return list
-}
-
-// Preview reads only the source. These counts say which rules claim a file,
-// not whether a target needs updating, and never authorize a file operation.
-func scanSourcePreview(ctx context.Context, q syncengine.ManualTaskRequest) (*routePreview, error) {
-	q.Destinations = append([]syncengine.ManualDestination(nil), q.Destinations...)
-	for i := range q.Destinations {
-		q.Destinations[i].Matcher = nil
-	}
-	q = syncengine.PrepareReviewedRequest(q)
-	matchers := make([]*filefilter.Matcher, len(q.Destinations))
-	seen := map[taskconfig.ID]bool{}
-	for i, d := range q.Destinations {
-		if d.ID == "" || seen[d.ID] {
-			return nil, fmt.Errorf("duplicate or missing destination ID")
-		}
-		seen[d.ID] = true
-		if d.FilterError != nil {
-			return nil, fmt.Errorf("%s: %w", d.Name, d.FilterError)
-		}
-		m := d.Matcher
-		var err error
-		if m == nil {
-			m, err = filefilter.Compile(d.Filters)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", d.Name, err)
-		}
-		matchers[i] = m
-		q.Destinations[i].Matcher = m
-	}
-	if syncengine.ManualKind(q.Kind) != taskconfig.Sync && syncengine.ManualKind(q.Kind) != taskconfig.Moving {
-		return nil, fmt.Errorf("unsupported task kind")
-	}
-	inv, err := fileinventory.Scan(ctx, q.Source, fileinventory.Options{MaxEntries: 200_000, MaxDepth: 128})
-	if err != nil {
-		return nil, err
-	}
-	files := inv.Files()
-	result := &routePreview{SourceFiles: len(files), EmptyRoot: inv.Empty(), Targets: map[taskconfig.ID]previewSelection{}}
-	result.Extensions = sourceExtensions(files)
-	for _, d := range q.Destinations {
-		result.Targets[d.ID] = previewSelection{}
-	}
-	moving := syncengine.ManualKind(q.Kind) == taskconfig.Moving
-	if moving {
-		routes, unmatched, err := syncengine.PrepareMoveRoutes(ctx, files, q.Destinations)
-		if err != nil {
-			return nil, err
-		}
-		result.Unmatched.Count = unmatched
-		for i, fs := range routes {
-			s := previewSelection{Count: len(fs)}
-			for j, f := range fs {
-				if j == previewSamples {
-					break
-				}
-				s.Samples = append(s.Samples, f.Path)
-			}
-			result.Targets[q.Destinations[i].ID] = s
-		}
-	}
-	for _, f := range files {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		var matches []taskconfig.ID
-		for i, m := range matchers {
-			yes, err := m.Match(f.Path)
-			if err != nil {
-				return nil, err
-			}
-			if yes {
-				matches = append(matches, q.Destinations[i].ID)
-				if !moving {
-					s := result.Targets[q.Destinations[i].ID]
-					s.add(f.Path)
-					result.Targets[q.Destinations[i].ID] = s
-				}
-			}
-		}
-		if len(matches) == 0 {
-			if !moving {
-				result.Unmatched.add(f.Path)
-			} else if len(result.Unmatched.Samples) < previewSamples {
-				result.Unmatched.Samples = append(result.Unmatched.Samples, f.Path)
-			}
-		}
-		if moving && len(matches) > 1 && len(result.Contested) < previewSamples {
-			result.Contested = append(result.Contested, previewContest{f.Path, matches})
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
 
 type sourcePreviewPhase uint8
 
@@ -195,7 +31,7 @@ type sourcePreviewSession struct {
 	phase      sourcePreviewPhase
 	generation uint64
 	job        *sourcePreviewJob
-	result     *routePreview
+	result     *appcore.RoutePreview
 	err        error
 }
 
@@ -211,7 +47,7 @@ func (s *sourcePreviewSession) invalidate() {
 		s.phase = previewStale
 	}
 }
-func (s *sourcePreviewSession) finish(job *sourcePreviewJob, result *routePreview, err error) {
+func (s *sourcePreviewSession) finish(job *sourcePreviewJob, result *appcore.RoutePreview, err error) {
 	if s.job != job {
 		return
 	}
@@ -288,7 +124,7 @@ func (a *application) startSourcePreview() {
 	s.job = job
 	s.phase = previewScanning
 	go func() {
-		result, err := scanSourcePreview(ctx, q)
+		result, err := appcore.ScanSourcePreview(ctx, q)
 		a.window.Update(func() {
 			s.finish(job, result, err)
 			a.finishAsyncStep(true)
@@ -299,7 +135,7 @@ func (a *application) startSourcePreview() {
 func (a *application) addPreviewExtension(group int, extension string) {
 	p := &a.sourcePreview
 	e := &a.manual.filterEditor
-	if p.phase != previewReady || p.result == nil || !a.targetEditAllowed() || a.selectedMirror() || e.Mode != filterGrouped || group < 0 || group >= len(e.Groups) || len(e.Groups[group].Rows) >= 128 {
+	if p.phase != previewReady || p.result == nil || !a.targetEditAllowed() || a.selectedMirror() || e.Mode != appcore.FilterGrouped || group < 0 || group >= len(e.Groups) || len(e.Groups[group].Rows) >= 128 {
 		return
 	}
 	found := false

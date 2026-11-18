@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 
@@ -19,7 +20,7 @@ func (a *application) openDestinationLog(task, destination taskconfig.ID) {
 	a.logOpenError = nil
 	title := a.tr("运行记录")
 	if a.tasks != nil {
-		if t, e := a.tasks.find(task); e == nil {
+		if t, e := a.tasks.Find(task); e == nil {
 			for _, d := range t.Destinations {
 				if d.ID == destination {
 					title += " · " + d.Name
@@ -49,7 +50,7 @@ func (a *application) openDestinationLog(task, destination taskconfig.ID) {
 }
 
 func (a *application) destinationLogPath() string {
-	return filepath.Join(a.installation.Data, runHistoryFile)
+	return filepath.Join(a.installation.Data, appcore.RunHistoryFile)
 }
 
 func inspectDestinationLogFile(path string) error {
@@ -98,13 +99,13 @@ func (a *application) refreshDestinationLog() {
 	data := a.installation.Data
 	path := a.destinationLogPath()
 	go func() {
-		history := loadRunHistory(data)
+		history := appcore.LoadRunHistory(data)
 		available := inspectDestinationLogFile(path) == nil
 		a.window.Update(func() {
 			a.logReading = false
-			a.historyError = history.err
-			if history.err == nil {
-				a.historyView = history.data
+			a.historyError = history.Err
+			if history.Err == nil {
+				a.historyView = history.Data
 			}
 			if a.destinationLog != nil {
 				a.destinationLog.Update(func() { a.logFileAvailable = available })
@@ -117,7 +118,7 @@ func (a *application) destinationLogView(c *ui.Context) {
 	records := a.destinationLogRecords()
 	name := ""
 	if a.tasks != nil {
-		if task, e := a.tasks.find(a.logTask); e == nil {
+		if task, e := a.tasks.Find(a.logTask); e == nil {
 			name = task.Name
 			for _, d := range task.Destinations {
 				if d.ID == a.logDestination {
@@ -140,7 +141,7 @@ func (a *application) destinationLogView(c *ui.Context) {
 			ui.Text(c, name).FontSize(16).MaxLines(2).TextColor(porcelain.TextMuted).Tooltip(name)
 			if a.logDetails {
 				ui.Text(c, string(a.logTask)).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
-				porcelainPath(c, winutil.PathLabel(filepath.Join(a.installation.Data, runHistoryFile)))
+				porcelainPath(c, winutil.PathLabel(filepath.Join(a.installation.Data, appcore.RunHistoryFile)))
 			}
 		})
 		if a.historyError != nil {
@@ -201,10 +202,10 @@ func (a *application) destinationLogView(c *ui.Context) {
 	})
 }
 
-func (a *application) destinationLogRecords() []runRecord {
-	out := make([]runRecord, 0, 20)
+func (a *application) destinationLogRecords() []appcore.RunRecord {
+	out := make([]appcore.RunRecord, 0, 20)
 	seen := map[taskconfig.ID]bool{}
-	add := func(r runRecord) {
+	add := func(r appcore.RunRecord) {
 		if r.TaskID != a.logTask || seen[r.ID] || len(out) >= 20 {
 			return
 		}

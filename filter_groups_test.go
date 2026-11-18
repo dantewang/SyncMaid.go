@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
@@ -19,10 +20,10 @@ func TestNativeFilterProjectionKeepsMeaningAndOriginal(t *testing.T) {
 		{syncengine.FilterGroup("allOf", []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")})},
 		{syncengine.FilterGroup("anyOf", nil)}, {syncengine.FilterGroup("allOf", nil)},
 		{{Kind: "not", Rule: filterRulePtr(syncengine.FilterGroup("anyOf", nil))}},
-		editorRules(t, filterEditor{
-			Mode:     filterGrouped,
+		editorRules(t, appcore.FilterEditor{
+			Mode:     appcore.FilterGrouped,
 			MatchAll: true,
-			Groups: []filterDraftGroup{
+			Groups: []appcore.FilterDraftGroup{
 				{Rows: []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")}},
 				{All: true, Rows: []taskconfig.Rule{{Kind: "not", Rule: filterRulePtr(taskconfig.ExtensionFilter("tmp"))}}},
 			},
@@ -30,11 +31,11 @@ func TestNativeFilterProjectionKeepsMeaningAndOriginal(t *testing.T) {
 	}
 	for _, rs := range cases {
 		before, _ := json.Marshal(rs)
-		e := projectNativeFilter(rs)
-		if e.Mode == filterReadOnly {
+		e := appcore.ProjectNativeFilter(rs)
+		if e.Mode == appcore.FilterReadOnly {
 			t.Fatalf("projection rejected %s", before)
 		}
-		after, err := e.rules()
+		after, err := e.Rules()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -61,7 +62,7 @@ func TestNativeFilterUnknownDeepAndRegexStayReadOnly(t *testing.T) {
 	}
 	for _, r := range []taskconfig.Rule{unknown, {Kind: "regex", Pattern: filterText("a")}, syncengine.FilterGroup("allOf", []taskconfig.Rule{syncengine.FilterGroup("anyOf", []taskconfig.Rule{syncengine.FilterGroup("allOf", []taskconfig.Rule{taskconfig.PathFilter("a")})})})} {
 		before, _ := json.Marshal(r)
-		if projectNativeFilter([]taskconfig.Rule{r}).Mode != filterReadOnly {
+		if appcore.ProjectNativeFilter([]taskconfig.Rule{r}).Mode != appcore.FilterReadOnly {
 			t.Fatal("unsafe projection")
 		}
 		after, _ := json.Marshal(r)
@@ -81,21 +82,21 @@ func TestNativeFilterUnknownDeepAndRegexStayReadOnly(t *testing.T) {
 }
 func TestNativeGroupCopyAndSaveRestart(t *testing.T) {
 	data := t.TempDir()
-	l, err := loadSavedTasks(data)
+	l, err := appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, id, err := l.save("", "Saved", manualFixture(t))
+	l, id, err := saveTask(l, "", "Saved", manualFixture(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := l.tasks[0].Destinations[0].Filters
+	before := l.Tasks[0].Destinations[0].Filters
 	a := &application{tasks: l}
 	a.selectManual(id)
 	if !syncengine.SameFilterRules(before, a.manual.targets[0].Filters) || a.manual.dirty {
 		t.Fatal("opening editor rewrote rules")
 	}
-	a.setFilterMode(filterGrouped)
+	a.setFilterMode(appcore.FilterGrouped)
 	a.manual.filterEditor.Groups[0].Kind = 1
 	a.manual.filterEditor.Groups[0].Input = "txt"
 	a.addFilterRule(0)
@@ -109,25 +110,25 @@ func TestNativeGroupCopyAndSaveRestart(t *testing.T) {
 	}
 	// Save failure must retain the same draft and ID rather than rebuilding it.
 	draft := a.manual.draftRequest()
-	l, _, err = l.saveMultiple(id, "Saved", draft)
+	l, _, err = saveMultiple(l, id, "Saved", draft)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reloaded, err := loadSavedTasks(data)
+	reloaded, err := appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !syncengine.SameFilterRules(reloaded.tasks[0].Destinations[0].Filters, draft.Destinations[0].Filters) {
+	if !syncengine.SameFilterRules(reloaded.Tasks[0].Destinations[0].Filters, draft.Destinations[0].Filters) {
 		t.Fatal("restart changed rules")
 	}
-	b, err := os.ReadFile(filepath.Join(data, savedTaskFile))
+	b, err := os.ReadFile(filepath.Join(data, appcore.SavedTaskFile))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(data, savedTaskFile), append(b, ' '), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(data, appcore.SavedTaskFile), append(b, ' '), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = l.saveMultiple(id, "Saved", draft); err == nil {
+	if _, _, err = saveMultiple(l, id, "Saved", draft); err == nil {
 		t.Fatal("invalid save accepted")
 	}
 	if !a.manual.dirty || a.manual.targetID == original {

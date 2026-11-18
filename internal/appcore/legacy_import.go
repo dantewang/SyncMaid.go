@@ -1,4 +1,4 @@
-package main
+package appcore
 
 import (
 	"bytes"
@@ -11,34 +11,34 @@ import (
 	"syncmaid/internal/taskconfig"
 )
 
-const importBytes = 4 << 20
-const importTasks = 256
+const ImportBytes = 4 << 20
+const ImportTasks = 256
 
 // The preview owns the decoded snapshot. Confirmation never reopens the source.
-type legacyImport struct {
-	path   string
-	tasks  []taskconfig.Task
-	issues []error
+type LegacyImport struct {
+	Path   string
+	Tasks  []taskconfig.Task
+	Issues []error
 }
 
-func readLegacyImport(path string, library *savedTaskLibrary) (*legacyImport, error) {
+func ReadLegacyImport(path string, library *SavedTaskLibrary) (*LegacyImport, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	b, readErr := io.ReadAll(io.LimitReader(f, importBytes+1))
+	b, readErr := io.ReadAll(io.LimitReader(f, ImportBytes+1))
 	err = errors.Join(readErr, f.Close())
 	if err != nil {
 		return nil, err
 	}
-	if len(b) > importBytes {
+	if len(b) > ImportBytes {
 		return nil, errors.New("import exceeds 4 MiB")
 	}
 	tasks, err := taskconfig.Decode(b)
 	if err != nil {
 		return nil, err
 	}
-	if len(tasks) == 0 || len(tasks) > importTasks {
+	if len(tasks) == 0 || len(tasks) > ImportTasks {
 		return nil, errors.New("import requires 1–256 tasks")
 	}
 	for i := range tasks {
@@ -53,17 +53,17 @@ func readLegacyImport(path string, library *savedTaskLibrary) (*legacyImport, er
 			t.Trigger = taskconfig.Trigger{Kind: "manual"}
 		}
 	}
-	p := &legacyImport{path: path, tasks: tasks}
-	if err := library.checkImport(p); err != nil {
+	p := &LegacyImport{Path: path, Tasks: tasks}
+	if err := library.CheckImport(p); err != nil {
 		return nil, err
 	}
 	for _, t := range tasks {
-		p.issues = append(p.issues, importedTaskIssue(t))
+		p.Issues = append(p.Issues, ImportedTaskIssue(t))
 	}
 	return p, nil
 }
 
-func importContent(t taskconfig.Task) ([]byte, error) {
+func ImportContent(t taskconfig.Task) ([]byte, error) {
 	// Missing legacy IDs are generated on decode. Compare canonical content too
 	// so selecting such a file twice cannot silently append duplicate tasks.
 	const zero taskconfig.ID = "00000000-0000-0000-0000-000000000000"
@@ -74,28 +74,28 @@ func importContent(t taskconfig.Task) ([]byte, error) {
 	}
 	return taskconfig.Encode([]taskconfig.Task{t})
 }
-func (l *savedTaskLibrary) checkImport(p *legacyImport) error {
-	if l == nil || l.snapshot == nil || p == nil {
+func (l *SavedTaskLibrary) CheckImport(p *LegacyImport) error {
+	if l == nil || l.Snapshot == nil || p == nil {
 		return errors.New("task library unavailable")
 	}
-	if len(l.tasks)+len(p.tasks) > importTasks {
+	if len(l.Tasks)+len(p.Tasks) > ImportTasks {
 		return errors.New("combined task count exceeds 256")
 	}
 	ids := map[taskconfig.ID]bool{}
 	goals := map[taskconfig.ID]bool{}
 	contents := [][]byte{}
-	for _, t := range l.tasks {
+	for _, t := range l.Tasks {
 		ids[t.ID] = true
 		for _, d := range t.Destinations {
 			goals[d.ID] = true
 		}
-		b, err := importContent(t)
+		b, err := ImportContent(t)
 		if err != nil {
 			return err
 		}
 		contents = append(contents, b)
 	}
-	for i, t := range p.tasks {
+	for i, t := range p.Tasks {
 		if ids[t.ID] {
 			return fmt.Errorf("tasks[%d].Id: duplicate task ID %s", i, t.ID)
 		}
@@ -106,7 +106,7 @@ func (l *savedTaskLibrary) checkImport(p *legacyImport) error {
 			}
 			goals[d.ID] = true
 		}
-		b, err := importContent(t)
+		b, err := ImportContent(t)
 		if err != nil {
 			return err
 		}
@@ -119,26 +119,26 @@ func (l *savedTaskLibrary) checkImport(p *legacyImport) error {
 	}
 	return nil
 }
-func (l *savedTaskLibrary) appendImport(p *legacyImport) (*savedTaskLibrary, error) {
-	if err := l.checkImport(p); err != nil {
+func (l *SavedTaskLibrary) AppendImport(p *LegacyImport) (*SavedTaskLibrary, error) {
+	if err := l.CheckImport(p); err != nil {
 		return nil, err
 	}
-	tasks, err := l.snapshot.Tasks()
+	tasks, err := l.Snapshot.Tasks()
 	if err != nil {
 		return nil, err
 	}
-	tasks = append(tasks, p.tasks...)
-	next, err := l.snapshot.Save(tasks)
+	tasks = append(tasks, p.Tasks...)
+	next, err := l.Snapshot.Save(tasks)
 	if err != nil {
 		return nil, err
 	}
-	return savedLibrary(next)
+	return SavedLibrary(next)
 }
-func importedTaskIssue(t taskconfig.Task) error {
+func ImportedTaskIssue(t taskconfig.Task) error {
 	if _, err := taskconfig.Validate([]taskconfig.Task{t}); err != nil {
 		return err
 	}
-	if _, err := multipleRequestFromSaved(t); err != nil {
+	if _, err := MultipleRequestFromSaved(t); err != nil {
 		return err
 	}
 	for i, d := range t.Destinations {

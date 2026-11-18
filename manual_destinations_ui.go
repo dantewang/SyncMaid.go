@@ -108,7 +108,7 @@ func (a *application) discardManual() {
 	id := a.manual.id
 	a.manual.dirty = false
 	if id != "" {
-		if _, err := a.tasks.find(id); err == nil {
+		if _, err := a.tasks.Find(id); err == nil {
 			a.selectManual(id)
 			a.syncWatches()
 			return

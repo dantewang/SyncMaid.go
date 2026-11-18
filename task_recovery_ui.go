@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"syncmaid/internal/appcore"
 
 	"github.com/egoist/mygo"
 	"syncmaid/internal/taskstore"
@@ -40,7 +41,7 @@ func (a *application) confirmTaskRecovery(backup *taskstore.LoadError) {
 	go func() {
 		tasks, err := backup.BackupTasks()
 		if err == nil {
-			err = uniqueSavedTasks(tasks)
+			err = appcore.UniqueSavedTasks(tasks)
 		}
 		if err != nil {
 			a.window.Update(func() {
@@ -74,9 +75,9 @@ func (a *application) restoreTaskBackup(backup *taskstore.LoadError) {
 	a.manual.phase = manualSaving
 	go func() {
 		recovered, err := backup.Recover()
-		var library *savedTaskLibrary
+		var library *appcore.SavedTaskLibrary
 		if err == nil {
-			library, err = savedLibrary(recovered.Snapshot)
+			library, err = appcore.SavedLibrary(recovered.Snapshot)
 		}
 		a.window.Update(func() {
 			notice := messagef("任务备份已恢复。")

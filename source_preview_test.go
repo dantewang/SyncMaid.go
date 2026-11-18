@@ -6,6 +6,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/syncengine"
@@ -15,7 +16,7 @@ import (
 
 func TestSourcePreviewMessagesDistinguishEmptyAndErrorInFourLanguages(t *testing.T) {
 	for _, lang := range languageChoices {
-		a := &application{locale: lang.tag, sourcePreview: sourcePreviewSession{phase: previewReady, result: &routePreview{EmptyRoot: true}}}
+		a := &application{locale: lang.tag, sourcePreview: sourcePreviewSession{phase: previewReady, result: &appcore.RoutePreview{EmptyRoot: true}}}
 		view := ui.NewTester(a.sourcePreviewView, 760, 620)
 		if !view.HasText(a.tr("源目录为空。")) {
 			t.Fatal(lang.tag, "empty missing")
@@ -39,7 +40,7 @@ func TestSourceExtensionStatisticsAreBounded(t *testing.T) {
 	for i := 0; i < 16; i++ {
 		files = append(files, fileinventory.File{Path: "file.ext" + string(rune('a'+i))})
 	}
-	stats := sourceExtensions(files)
+	stats := appcore.SourceExtensions(files)
 	if len(stats) != 12 || stats[0].Text != "txt" || stats[0].Count != 2 {
 		t.Fatal(stats)
 	}
@@ -48,7 +49,7 @@ func TestSourceExtensionStatisticsAreBounded(t *testing.T) {
 func TestSourcePreviewRequiresCurrentRegexConfirmation(t *testing.T) {
 	l, task, p, _ := migrationFixture(t, true)
 	manualWrite(t, filepath.Join(p.Source, "a.txt"), "synthetic")
-	l, err := l.saveRegexConfirmation(migrationReview(t, task, `\.txt$`))
+	l, err := l.SaveRegexConfirmation(migrationReview(t, task, `\.txt$`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +59,7 @@ func TestSourcePreviewRequiresCurrentRegexConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := scanSourcePreview(context.Background(), q)
+	r, err := appcore.ScanSourcePreview(context.Background(), q)
 	if err != nil || r.Targets[task.Destinations[0].ID].Count != 1 {
 		t.Fatal(r, err)
 	}
@@ -68,7 +69,7 @@ func TestSourcePreviewRequiresCurrentRegexConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err = scanSourcePreview(context.Background(), q)
+	r, err = appcore.ScanSourcePreview(context.Background(), q)
 	if r != nil || !errors.Is(err, filefilter.ErrUnsupportedRegex) {
 		t.Fatal("preview renewed a receipt", r, err)
 	}
@@ -94,7 +95,7 @@ func previewFixture(t *testing.T) syncengine.ManualTaskRequest {
 }
 func TestSourcePreviewSyncAndMoveAreReadOnlyAndBounded(t *testing.T) {
 	q := previewFixture(t)
-	r, err := scanSourcePreview(context.Background(), q)
+	r, err := appcore.ScanSourcePreview(context.Background(), q)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestSourcePreviewSyncAndMoveAreReadOnlyAndBounded(t *testing.T) {
 		q.Destinations[i].Strategy = taskconfig.Move
 		q.Destinations[i].Collision = taskconfig.Skip
 	}
-	r, err = scanSourcePreview(context.Background(), q)
+	r, err = appcore.ScanSourcePreview(context.Background(), q)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,30 +130,30 @@ func TestSourcePreviewSyncAndMoveAreReadOnlyAndBounded(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	r, err = scanSourcePreview(context.Background(), q)
+	r, err = appcore.ScanSourcePreview(context.Background(), q)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Contested) != previewSamples || len(r.Targets[q.Destinations[0].ID].Samples) != previewSamples {
+	if len(r.Contested) != appcore.PreviewSamples || len(r.Targets[q.Destinations[0].ID].Samples) != appcore.PreviewSamples {
 		t.Fatal("unbounded sample")
 	}
 }
 func TestSourcePreviewEmptyMissingCanceledAndInvalidRules(t *testing.T) {
 	q := previewFixture(t)
 	q.Source = t.TempDir()
-	r, e := scanSourcePreview(context.Background(), q)
+	r, e := appcore.ScanSourcePreview(context.Background(), q)
 	if e != nil || !r.EmptyRoot || r.SourceFiles != 0 {
 		t.Fatal(r, e)
 	}
 	if e = os.Mkdir(filepath.Join(q.Source, "folder"), 0700); e != nil {
 		t.Fatal(e)
 	}
-	r, e = scanSourcePreview(context.Background(), q)
+	r, e = appcore.ScanSourcePreview(context.Background(), q)
 	if e != nil || r.EmptyRoot || r.SourceFiles != 0 {
 		t.Fatal(r, e)
 	}
 	q.Source = filepath.Join(q.Source, "absent")
-	r, e = scanSourcePreview(context.Background(), q)
+	r, e = appcore.ScanSourcePreview(context.Background(), q)
 	var scanError *fileinventory.ScanError
 	if r != nil || !errors.As(e, &scanError) {
 		t.Fatal("missing became empty", r, e)
@@ -160,12 +161,12 @@ func TestSourcePreviewEmptyMissingCanceledAndInvalidRules(t *testing.T) {
 	q = previewFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	r, e = scanSourcePreview(ctx, q)
+	r, e = appcore.ScanSourcePreview(ctx, q)
 	if r != nil || !errors.Is(e, context.Canceled) {
 		t.Fatal(r, e)
 	}
 	q.Destinations[1].Filters = []taskconfig.Rule{{Kind: "regex", Pattern: filterText("a")}}
-	r, e = scanSourcePreview(context.Background(), q)
+	r, e = appcore.ScanSourcePreview(context.Background(), q)
 	if r != nil || e == nil {
 		t.Fatal("unconfirmed regex granted partial preview")
 	}
@@ -187,37 +188,37 @@ func TestSourcePreviewDraftIsolationAndLateResult(t *testing.T) {
 	if ctx.Err() == nil || p.phase != previewStopping {
 		t.Fatal("invalidate did not cancel")
 	}
-	p.finish(job, &routePreview{SourceFiles: 99}, nil)
+	p.finish(job, &appcore.RoutePreview{SourceFiles: 99}, nil)
 	if p.job != nil || p.result != nil || p.phase != previewStale {
 		t.Fatal("late result installed")
 	}
 	newer := &sourcePreviewJob{cancel: func() {}, generation: p.generation}
 	p.job = newer
 	p.phase = previewScanning
-	p.finish(job, &routePreview{}, nil)
+	p.finish(job, &appcore.RoutePreview{}, nil)
 	if p.job != newer {
 		t.Fatal("old callback cleared new job")
 	}
 }
 func TestPreviewExtensionTargetsExplicitGroupAndGuards(t *testing.T) {
-	l, e := loadSavedTasks(t.TempDir())
+	l, e := appcore.LoadSavedTasks(t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
-	l, id, e := l.save("", "Draft", manualFixture(t))
+	l, id, e := saveTask(l, "", "Draft", manualFixture(t))
 	if e != nil {
 		t.Fatal(e)
 	}
 	a := &application{tasks: l}
 	a.selectManual(id)
-	a.setFilterMode(filterGrouped)
-	a.manual.filterEditor.Groups = append(a.manual.filterEditor.Groups, filterDraftGroup{Input: "keep typing"})
-	a.sourcePreview = sourcePreviewSession{phase: previewReady, result: &routePreview{Extensions: []previewExtension{{"txt", 2}}}}
+	a.setFilterMode(appcore.FilterGrouped)
+	a.manual.filterEditor.Groups = append(a.manual.filterEditor.Groups, appcore.FilterDraftGroup{Input: "keep typing"})
+	a.sourcePreview = sourcePreviewSession{phase: previewReady, result: &appcore.RoutePreview{Extensions: []appcore.PreviewExtension{{Text: "txt", Count: 2}}}}
 	a.addPreviewExtension(1, "txt")
 	if len(a.manual.filterEditor.Groups[0].Rows) != 0 || len(a.manual.filterEditor.Groups[1].Rows) != 1 || a.manual.filterEditor.Groups[1].Input != "keep typing" || a.sourcePreview.phase != previewStale || !a.manual.dirty {
 		t.Fatal("chip lost draft or selected wrong group")
 	}
-	a.sourcePreview = sourcePreviewSession{phase: previewReady, result: &routePreview{Extensions: []previewExtension{{"txt", 2}}}}
+	a.sourcePreview = sourcePreviewSession{phase: previewReady, result: &appcore.RoutePreview{Extensions: []appcore.PreviewExtension{{Text: "txt", Count: 2}}}}
 	a.manual.phase = manualRunning
 	a.addPreviewExtension(0, "txt")
 	if len(a.manual.filterEditor.Groups[0].Rows) != 0 {

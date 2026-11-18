@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"testing"
 
@@ -24,42 +25,42 @@ func multiFixture(t *testing.T) (syncengine.ManualTaskRequest, syncengine.Manual
 }
 func TestMultipleDestinationsCRUDKeepsIDsAndFields(t *testing.T) {
 	data := t.TempDir()
-	l, e := loadSavedTasks(data)
+	l, e := appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
 	q, _ := multiFixture(t)
-	l, id, e := l.saveMultiple("", "Multiple", q)
+	l, id, e := saveMultiple(l, "", "Multiple", q)
 	if e != nil {
 		t.Fatal(e)
 	}
 	// Preserve an existing supported field the editor does not expose.
-	tasks, _ := l.snapshot.Tasks()
+	tasks, _ := l.Snapshot.Tasks()
 	tasks[0].Destinations[0].VerifyContents = false
 	tasks[0].Destinations[0].MassDeleteThreshold = 0.37
-	snap, e := l.snapshot.Save(tasks)
+	snap, e := l.Snapshot.Save(tasks)
 	if e != nil {
 		t.Fatal(e)
 	}
-	l, e = savedLibrary(snap)
+	l, e = appcore.SavedLibrary(snap)
 	if e != nil {
 		t.Fatal(e)
 	}
 	q.Destinations[0], q.Destinations[1] = q.Destinations[1], q.Destinations[0]
 	q.Destinations[0].Name = "Renamed"
-	l, _, e = l.saveMultiple(id, "Edited", q)
+	l, _, e = saveMultiple(l, id, "Edited", q)
 	if e != nil {
 		t.Fatal(e)
 	}
-	reloaded, e := loadSavedTasks(data)
+	reloaded, e := appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
-	task, e := reloaded.find(id)
+	task, e := reloaded.Find(id)
 	if e != nil {
 		t.Fatal(e)
 	}
-	actual, e := multipleRequestFromSaved(task)
+	actual, e := appcore.MultipleRequestFromSaved(task)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -67,11 +68,11 @@ func TestMultipleDestinationsCRUDKeepsIDsAndFields(t *testing.T) {
 		t.Fatal(task)
 	}
 	q.Destinations = q.Destinations[1:]
-	reloaded, _, e = reloaded.saveMultiple(id, "One again", q)
+	reloaded, _, e = saveMultiple(reloaded, id, "One again", q)
 	if e != nil {
 		t.Fatal(e)
 	}
-	task, _ = reloaded.find(id)
+	task, _ = reloaded.Find(id)
 	if len(task.Destinations) != 1 || task.Destinations[0].ID != q.Destinations[0].ID {
 		t.Fatal(task)
 	}
@@ -140,12 +141,12 @@ func TestMultipleOverlapBlocksBeforeAnyWrite(t *testing.T) {
 	}
 }
 func TestMultipleEditorGuardsAndExplicitDiscard(t *testing.T) {
-	l, e := loadSavedTasks(t.TempDir())
+	l, e := appcore.LoadSavedTasks(t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
 	q, _ := multiFixture(t)
-	l, id, e := l.saveMultiple("", "Task", q)
+	l, id, e := saveMultiple(l, "", "Task", q)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -176,12 +177,12 @@ func TestMultipleEditorGuardsAndExplicitDiscard(t *testing.T) {
 }
 
 func TestMultipleTargetEditorKeepsSelectionByID(t *testing.T) {
-	l, e := loadSavedTasks(t.TempDir())
+	l, e := appcore.LoadSavedTasks(t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
 	q, _ := multiFixture(t)
-	l, id, e := l.saveMultiple("", "Task", q)
+	l, id, e := saveMultiple(l, "", "Task", q)
 	if e != nil {
 		t.Fatal(e)
 	}

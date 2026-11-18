@@ -36,7 +36,7 @@ func (a *application) startBatch() {
 	if !a.cardActionAllowed() || a.hasModalOpen() || a.manual.quitPending {
 		return
 	}
-	a.batch.begin(taskIDs(a.tasks.tasks))
+	a.batch.begin(taskIDs(a.tasks.Tasks))
 	a.advanceBatch()
 }
 func (a *application) advanceBatch() { a.advanceBatchUsing(a.startTaskRun) }
@@ -55,9 +55,9 @@ func (a *application) advanceBatchUsing(start func(taskconfig.ID, string, syncen
 			a.drainWatches()
 			return
 		}
-		t, err := a.tasks.find(id)
+		t, err := a.tasks.Find(id)
 		if err == nil {
-			q, e := a.tasks.request(t)
+			q, e := a.tasks.Request(t)
 			err = e
 			if err == nil {
 				a.selectManual(id)

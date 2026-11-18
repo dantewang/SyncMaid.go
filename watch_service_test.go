@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
@@ -65,19 +66,19 @@ func TestWatchOldSubscriptionStopAndExit(t *testing.T) {
 }
 func TestWatchAllTasksReconcileAndManualRemoval(t *testing.T) {
 	data := t.TempDir()
-	l, e := loadSavedTasks(data)
+	l, e := appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
 	q, _ := multiFixture(t)
 	q.Trigger = watchTrigger(10)
-	l, first, e := l.saveMultiple("", "first", q)
+	l, first, e := saveMultiple(l, "", "first", q)
 	if e != nil {
 		t.Fatal(e)
 	}
 	other, _ := multiFixture(t)
 	other.Trigger = watchTrigger(1)
-	l, second, e := l.saveMultiple("", "second", other)
+	l, second, e := saveMultiple(l, "", "second", other)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -97,7 +98,7 @@ func TestWatchAllTasksReconcileAndManualRemoval(t *testing.T) {
 	a.manual.dirty = false
 	a.selectManual(second)
 	q.Trigger = taskconfig.Trigger{Kind: "manual"}
-	l, _, e = l.saveMultiple(first, "first", q)
+	l, _, e = saveMultiple(l, first, "first", q)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -110,17 +111,17 @@ func TestWatchAllTasksReconcileAndManualRemoval(t *testing.T) {
 	if a.watches[first] != nil {
 		t.Fatal("stale event restored removed watch")
 	}
-	l, e = loadSavedTasks(data)
+	l, e = appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
-	record, _ := l.find(second)
+	record, _ := l.Find(second)
 	if record.Trigger.Kind != "watch" || *record.Trigger.SettleSeconds != 1 {
 		t.Fatal(record.Trigger)
 	}
 }
 func TestWatchTriggerInputAndUnsupportedSyncPolicy(t *testing.T) {
-	l, e := loadSavedTasks(t.TempDir())
+	l, e := appcore.LoadSavedTasks(t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -149,21 +150,21 @@ func TestWatchTriggerInputAndUnsupportedSyncPolicy(t *testing.T) {
 		t.Fatal("manual retained watch payload")
 	}
 	q, _ := multiFixture(t)
-	l, id, e := l.saveMultiple("", "legacy manual", q)
+	l, id, e := saveMultiple(l, "", "legacy manual", q)
 	if e != nil {
 		t.Fatal(e)
 	}
-	record, _ := l.find(id)
+	record, _ := l.Find(id)
 	if record.Trigger.Kind != "manual" {
 		t.Fatal(record)
 	}
 	record.Destinations[0].CollisionPolicy = taskconfig.Suffix
-	if _, e = multipleRequestFromSaved(record); e == nil {
+	if _, e = appcore.MultipleRequestFromSaved(record); e == nil {
 		t.Fatal("Sync suffix silently ignored")
 	}
 	record.Destinations[0].CollisionPolicy = taskconfig.Skip
 	record.Trigger.Kind = "future"
-	if _, e = multipleRequestFromSaved(record); e == nil {
+	if _, e = appcore.MultipleRequestFromSaved(record); e == nil {
 		t.Fatal("unknown trigger silently manual")
 	}
 }

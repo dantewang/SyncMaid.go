@@ -26,7 +26,7 @@ func (a *application) beginRegexMigration() {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil || a.manual.id == "" {
 		return
 	}
-	t, err := a.tasks.find(a.manual.id)
+	t, err := a.tasks.Find(a.manual.id)
 	if err != nil {
 		return
 	}
@@ -39,7 +39,7 @@ func (a *application) beginRegexMigration() {
 		}
 		for _, spec := range specs {
 			edit := regexEdit{spec: spec, pattern: spec.Pattern, samples: "example.txt\n子目录/照片.jpg"}
-			for _, saved := range a.tasks.reviews {
+			for _, saved := range a.tasks.Reviews {
 				if saved.Origin == spec.Origin() {
 					edit.pattern = saved.Pattern
 					edit.notice = messagef("已有保存决定，执行时仍须通过绑定和版本校验。")
@@ -122,7 +122,7 @@ func (a *application) confirmRegexMigration() {
 	library := a.tasks
 	a.manual.phase = manualReviewWorking
 	go func() {
-		next, err := library.saveRegexConfirmation(review)
+		next, err := library.SaveRegexConfirmation(review)
 		a.window.Update(func() {
 			a.manual.phase = manualReviewing
 			e.err = err

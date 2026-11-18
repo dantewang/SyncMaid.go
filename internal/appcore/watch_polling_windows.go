@@ -1,4 +1,4 @@
-package main
+package appcore
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"syncmaid/internal/winutil"
 )
 
-func serveSourceWatch(ctx context.Context, path string, status func(error), changed func()) {
+func ServeSourceWatch(ctx context.Context, path string, status func(error), changed func(), native func(context.Context, string, func(error), func())) {
 	network := windowsfs.Network(path)
 	if !network {
 		if root, err := winutil.OpenDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES); err == nil {
@@ -21,13 +21,15 @@ func serveSourceWatch(ctx context.Context, path string, status func(error), chan
 		}
 	}
 	if network {
-		servePollingWatch(ctx, path, status, changed)
+		ServePollingWatch(ctx, path, status, changed)
 		return
 	}
-	serveNativeWatch(ctx, path, status, changed)
+	if native != nil {
+		native(ctx, path, status, changed)
+	}
 }
 
-func servePollingWatch(ctx context.Context, path string, status func(error), changed func()) {
+func ServePollingWatch(ctx context.Context, path string, status func(error), changed func()) {
 	var files []fileinventory.File
 	var dirs []fileinventory.Directory
 	ready := false

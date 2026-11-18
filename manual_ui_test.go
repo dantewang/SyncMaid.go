@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"syncmaid/internal/appcore"
 	"testing"
 
 	"syncmaid/internal/filefilter"
@@ -54,45 +55,45 @@ func TestMirrorFailureIsolatedAndPersistence(t *testing.T) {
 		t.Fatal(r, err)
 	}
 	data := t.TempDir()
-	l, e := loadSavedTasks(data)
+	l, e := appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
-	l, id, e := l.saveMultiple("", "Mirror", q)
+	l, id, e := saveMultiple(l, "", "Mirror", q)
 	if e != nil {
 		t.Fatal(e)
 	}
-	l, e = loadSavedTasks(data)
+	l, e = appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
-	record, e := l.find(id)
+	record, e := l.Find(id)
 	if e != nil {
 		t.Fatal(e)
 	}
-	saved, e := multipleRequestFromSaved(record)
+	saved, e := appcore.MultipleRequestFromSaved(record)
 	if e != nil || saved.Destinations[0].Strategy != taskconfig.Mirror || saved.Destinations[0].DeleteMode != taskconfig.Permanent {
 		t.Fatal(saved, e)
 	}
 	q.Destinations[0].Filters = []taskconfig.Rule{}
-	if _, _, e = l.saveMultiple(id, "invalid", q); e == nil {
+	if _, _, e = saveMultiple(l, id, "invalid", q); e == nil {
 		t.Fatal("filtered mirror saved")
 	}
 }
 
 func TestMovePersistenceAndGuards(t *testing.T) {
 	data := t.TempDir()
-	l, e := loadSavedTasks(data)
+	l, e := appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
 	q, _ := moveFixture(t)
 	q.Destinations[0].Flatten = true
-	l, id, e := l.saveMultiple("", "Move", q)
+	l, id, e := saveMultiple(l, "", "Move", q)
 	if e != nil {
 		t.Fatal(e)
 	}
-	l, e = loadSavedTasks(data)
+	l, e = appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -110,13 +111,13 @@ func TestMovePersistenceAndGuards(t *testing.T) {
 	if !a.manual.targets[0].Flatten {
 		t.Fatal("running edit")
 	}
-	task, _ := l.find(id)
+	task, _ := l.Find(id)
 	task.Destinations[0].CollisionPolicy = taskconfig.CollisionPolicy("Future")
-	if _, e := multipleRequestFromSaved(task); e == nil {
+	if _, e := appcore.MultipleRequestFromSaved(task); e == nil {
 		t.Fatal("unsupported collision policy ignored")
 	}
 	q.Kind = taskconfig.Sync
-	if _, _, e = l.saveMultiple(id, "wrong kind", q); e == nil {
+	if _, _, e = saveMultiple(l, id, "wrong kind", q); e == nil {
 		t.Fatal("kind downgraded")
 	}
 	_, _, e = syncengine.PrepareMoveRoutes(context.Background(), nil, []syncengine.ManualDestination{{ID: taskconfig.NewID(), Strategy: taskconfig.Move, Filters: []taskconfig.Rule{{Kind: "regex", Pattern: filterText("a")}}}})
@@ -127,28 +128,28 @@ func TestMovePersistenceAndGuards(t *testing.T) {
 
 func TestMoveSuffixPersistenceAndUI(t *testing.T) {
 	data := t.TempDir()
-	l, e := loadSavedTasks(data)
+	l, e := appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
 	q, _ := moveFixture(t)
-	l, id, e := l.saveMultiple("", "suffix", q)
+	l, id, e := saveMultiple(l, "", "suffix", q)
 	if e != nil {
 		t.Fatal(e)
 	}
 	a := application{tasks: l}
 	a.selectManual(id)
 	a.setMoveCollision(taskconfig.Suffix)
-	l, _, e = l.saveMultiple(id, "suffix", a.manual.draftRequest())
+	l, _, e = saveMultiple(l, id, "suffix", a.manual.draftRequest())
 	if e != nil {
 		t.Fatal(e)
 	}
-	l, e = loadSavedTasks(data)
+	l, e = appcore.LoadSavedTasks(data)
 	if e != nil {
 		t.Fatal(e)
 	}
-	task, _ := l.find(id)
-	request, e := multipleRequestFromSaved(task)
+	task, _ := l.Find(id)
+	request, e := appcore.MultipleRequestFromSaved(task)
 	if e != nil || request.Destinations[0].Collision != taskconfig.Suffix {
 		t.Fatal(request, e)
 	}
@@ -159,7 +160,7 @@ func TestMoveSuffixPersistenceAndUI(t *testing.T) {
 	}
 	task.Kind = taskconfig.Sync
 	task.Destinations[0].Strategy = taskconfig.AddOnly
-	if _, e = multipleRequestFromSaved(task); e == nil {
+	if _, e = appcore.MultipleRequestFromSaved(task); e == nil {
 		t.Fatal("Sync suffix silently accepted")
 	}
 }

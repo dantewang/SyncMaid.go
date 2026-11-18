@@ -77,7 +77,7 @@ func (a *application) toggleCard(id taskconfig.ID) {
 
 func (a *application) hasCollapsedCards() bool {
 	if a.tasks != nil {
-		for _, t := range a.tasks.tasks {
+		for _, t := range a.tasks.Tasks {
 			if a.cards.collapsed[t.ID] {
 				return true
 			}

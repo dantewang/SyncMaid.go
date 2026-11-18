@@ -1,4 +1,4 @@
-package main
+package appcore
 
 import (
 	"errors"
@@ -10,19 +10,19 @@ import (
 	"syncmaid/internal/taskstore"
 )
 
-const savedTaskFile = "tasks-go.json"
+const SavedTaskFile = "tasks-go.json"
 
 // The application opens this only after acquiring its installation/Data owner.
 // A library is immutable once handed to the UI; workers return a new library.
-type savedTaskLibrary struct {
-	reviews  []filefilter.RegexConfirmation
-	restored map[taskconfig.ID]map[taskconfig.ID]syncengine.ReviewBundle
-	snapshot *taskstore.Snapshot
-	tasks    []taskconfig.Task
+type SavedTaskLibrary struct {
+	Reviews  []filefilter.RegexConfirmation
+	Restored map[taskconfig.ID]map[taskconfig.ID]syncengine.ReviewBundle
+	Snapshot *taskstore.Snapshot
+	Tasks    []taskconfig.Task
 }
 
-func loadSavedTasks(data string) (*savedTaskLibrary, error) {
-	store, err := taskstore.NewVersioned(filepath.Join(data, savedTaskFile))
+func LoadSavedTasks(data string) (*SavedTaskLibrary, error) {
+	store, err := taskstore.NewVersioned(filepath.Join(data, SavedTaskFile))
 	if err != nil {
 		return nil, err
 	}
@@ -30,22 +30,22 @@ func loadSavedTasks(data string) (*savedTaskLibrary, error) {
 	if err != nil {
 		return nil, err
 	}
-	return savedLibrary(snapshot)
+	return SavedLibrary(snapshot)
 }
-func savedLibrary(snapshot *taskstore.Snapshot) (*savedTaskLibrary, error) {
+func SavedLibrary(snapshot *taskstore.Snapshot) (*SavedTaskLibrary, error) {
 	tasks, err := snapshot.Tasks()
 	if err != nil {
 		return nil, err
 	}
-	if err := uniqueSavedTasks(tasks); err != nil {
+	if err := UniqueSavedTasks(tasks); err != nil {
 		return nil, err
 	}
-	l := &savedTaskLibrary{snapshot: snapshot, tasks: tasks, reviews: snapshot.Confirmations()}
-	l.restoreReviews()
+	l := &SavedTaskLibrary{Snapshot: snapshot, Tasks: tasks, Reviews: snapshot.Confirmations()}
+	l.RestoreReviews()
 	return l, nil
 }
 
-func uniqueSavedTasks(tasks []taskconfig.Task) error {
+func UniqueSavedTasks(tasks []taskconfig.Task) error {
 	seen := map[taskconfig.ID]bool{}
 	for _, t := range tasks {
 		if seen[t.ID] {
@@ -55,9 +55,9 @@ func uniqueSavedTasks(tasks []taskconfig.Task) error {
 	}
 	return nil
 }
-func (l *savedTaskLibrary) find(id taskconfig.ID) (taskconfig.Task, error) {
+func (l *SavedTaskLibrary) Find(id taskconfig.ID) (taskconfig.Task, error) {
 	if l != nil {
-		for _, t := range l.tasks {
+		for _, t := range l.Tasks {
 			if t.ID == id {
 				return t, nil
 			}
@@ -66,18 +66,18 @@ func (l *savedTaskLibrary) find(id taskconfig.ID) (taskconfig.Task, error) {
 	return taskconfig.Task{}, errors.New("未找到此任务，请重新载入或新建")
 }
 
-func (l *savedTaskLibrary) remove(id taskconfig.ID) (*savedTaskLibrary, error) {
-	if l == nil || l.snapshot == nil {
+func (l *SavedTaskLibrary) Remove(id taskconfig.ID) (*SavedTaskLibrary, error) {
+	if l == nil || l.Snapshot == nil {
 		return nil, taskstore.ErrBlocked
 	}
-	task, err := l.find(id)
+	task, err := l.Find(id)
 	if err != nil {
 		return nil, err
 	}
-	if err = taskConfigurationDeletionIssue(task); err != nil {
+	if err = TaskConfigurationDeletionIssue(task); err != nil {
 		return nil, err
 	}
-	tasks, err := l.snapshot.Tasks()
+	tasks, err := l.Snapshot.Tasks()
 	if err != nil {
 		return nil, err
 	}
@@ -87,9 +87,9 @@ func (l *savedTaskLibrary) remove(id taskconfig.ID) (*savedTaskLibrary, error) {
 			break
 		}
 	}
-	next, err := l.snapshot.Save(tasks)
+	next, err := l.Snapshot.Save(tasks)
 	if err != nil {
 		return nil, err
 	}
-	return savedLibrary(next)
+	return SavedLibrary(next)
 }

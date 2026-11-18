@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/taskconfig"
 	"syncmaid/internal/winutil"
 
@@ -26,7 +27,7 @@ type application struct {
 	historyDetails     bool
 	cards              taskCardLayout
 	regexSession       *regexSession
-	importPreview      *legacyImport
+	importPreview      *appcore.LegacyImport
 	importPrevious     manualPhase
 	importError        error
 	common             *winutil.CommonSettingsStore
@@ -36,8 +37,8 @@ type application struct {
 	startupEntry       winutil.StartupEntry
 	startupStatus      winutil.StartupStatus
 	startupError       error
-	history            *runHistoryStore
-	historyView        runHistoryData
+	history            *appcore.RunHistoryStore
+	historyView        appcore.RunHistoryData
 	historyError       error
 	historyOpen        bool
 	historySelected    taskconfig.ID
@@ -56,7 +57,7 @@ type application struct {
 	lifecycle          lifecycle
 	manual             manualSession
 	window             *mygo.Window
-	tasks              *savedTaskLibrary
+	tasks              *appcore.SavedTaskLibrary
 	taskError          error
 	recoveryNotice     localizedMessage
 	results            map[taskconfig.ID]savedTaskResult

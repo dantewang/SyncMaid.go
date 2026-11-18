@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"time"
@@ -51,15 +52,15 @@ type manualSession struct {
 	targetName              string
 	dirty                   bool
 	destinationResults      syncengine.MultipleResult
-	filterEditor            filterEditor
-	filterDrafts            map[taskconfig.ID]filterEditor
+	filterEditor            appcore.FilterEditor
+	filterDrafts            map[taskconfig.ID]appcore.FilterEditor
 	destinationEdits        map[taskconfig.ID]destinationEditState
 	mirrorPreview           *syncengine.MirrorPreview
 	mirrorReply             chan error
 }
 
 type savedTaskResult struct {
-	outcome        outcomeState
+	outcome        appcore.OutcomeState
 	started, ended time.Time
 	message        localizedMessage
 	progress       syncengine.TransferProgress
@@ -247,10 +248,10 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 	active := []taskconfig.ID(nil)
 	var taskSnapshot []taskconfig.Task
 	if a.tasks != nil {
-		taskSnapshot = a.tasks.tasks
+		taskSnapshot = a.tasks.Tasks
 		active = taskIDs(taskSnapshot)
 	}
-	recordStart, recordStartErr := newRunRecord(id, name, q, automatic, time.Now())
+	recordStart, recordStartErr := appcore.NewRunRecord(id, name, q, automatic, time.Now())
 	go func() {
 		last := time.Time{}
 		var lastID taskconfig.ID
@@ -275,7 +276,7 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 				}
 			})
 		}
-		historyView, recordEnd, results, err, historyErr := executeRecordedRun(history, recordStart, recordStartErr, active, func() (syncengine.MultipleResult, error) {
+		historyView, recordEnd, results, err, historyErr := appcore.ExecuteRecordedRun(history, recordStart, recordStartErr, active, func() (syncengine.MultipleResult, error) {
 			var results syncengine.MultipleResult
 			err := syncengine.InterruptibleIO(ctx, func(ctx context.Context) error {
 				if err := syncengine.ValidateCrossTaskPaths(ctx, id, q, taskSnapshot); err != nil {
@@ -302,7 +303,7 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 			}
 			message := messagef("运行完成")
 			if err != nil {
-				message = messagef("运行未完成: %s", historyText(err.Error(), historyErrorBytes))
+				message = messagef("运行未完成: %s", appcore.HistoryText(err.Error(), appcore.HistoryErrorBytes))
 			}
 			a.watchActivity = messagef("%s: %s", name, message)
 			if w := a.watches[id]; w != nil && w.ticket.phase == watchArmed {
@@ -320,9 +321,9 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 			case err == nil:
 				s.message = messagef("全部目标同步完成")
 			case errors.Is(err, context.Canceled):
-				s.message = messagef("任务已停止；已完成目标不回滚。详情: %s", historyText(err.Error(), historyErrorBytes))
+				s.message = messagef("任务已停止；已完成目标不回滚。详情: %s", appcore.HistoryText(err.Error(), appcore.HistoryErrorBytes))
 			default:
-				s.message = messagef("任务存在失败或未执行目标: %s", historyText(err.Error(), historyErrorBytes))
+				s.message = messagef("任务存在失败或未执行目标: %s", appcore.HistoryText(err.Error(), appcore.HistoryErrorBytes))
 			}
 			if err != nil {
 				slog.Warn("multiple-sync-ended", "error", err, "targets", len(q.Destinations))

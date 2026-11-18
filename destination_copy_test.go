@@ -1,16 +1,17 @@
 package main
 
 import (
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"testing"
 )
 
 func TestDestinationCopyIsIndependentUnsavedConfiguration(t *testing.T) {
-	l, e := loadSavedTasks(t.TempDir())
+	l, e := appcore.LoadSavedTasks(t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
-	l, id, e := l.save("", "Saved", manualFixture(t))
+	l, id, e := saveTask(l, "", "Saved", manualFixture(t))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -18,14 +19,14 @@ func TestDestinationCopyIsIndependentUnsavedConfiguration(t *testing.T) {
 	a.selectManual(id)
 	original := a.manual.targets[0]
 	a.copyManualTarget(original.ID)
-	if len(a.manual.targets) != 2 || !a.manual.dirty || len(l.tasks[0].Destinations) != 1 {
+	if len(a.manual.targets) != 2 || !a.manual.dirty || len(l.Tasks[0].Destinations) != 1 {
 		t.Fatal("copy was not an unsaved draft")
 	}
 	copy := a.manual.targets[1]
 	if copy.ID == original.ID || copy.Path != original.Path || copy.Name == original.Name || a.manual.targetID != copy.ID || copy.Matcher != nil {
 		t.Fatal("copy identity or capability leaked")
 	}
-	a.setFilterMode(filterNone)
+	a.setFilterMode(appcore.FilterNone)
 	if !syncengine.IsAllFileRules(a.manual.targets[0].Filters) {
 		t.Fatal("editing copy changed original")
 	}

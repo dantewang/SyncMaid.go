@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"time"
@@ -49,7 +50,7 @@ func (a *application) manualView(c *ui.Context) {
 					if a.tasks == nil {
 						return
 					}
-					for _, t := range a.tasks.tasks {
+					for _, t := range a.tasks.Tasks {
 						id := t.ID
 						active := a.cards.navigation == id
 						nav := ui.ButtonBase(c).Label(t.Name).Tooltip(t.Name).Justify(ui.Start).FillWidth().Height(37).Gap(10).Padding(0, 14)
@@ -172,7 +173,7 @@ func (a *application) manualView(c *ui.Context) {
 				ui.Text(c, a.tr("导入拒绝，旧文件和任务库未修改：%s", a.importError.Error())).TextColor(porcelain.Danger)
 			}
 			if a.historyError != nil {
-				ui.Text(c, a.tr("运行记录不可用或未保存；文件执行结果仍有效：")+historyText(a.historyError.Error(), historyErrorBytes)).TextColor(porcelain.Danger)
+				ui.Text(c, a.tr("运行记录不可用或未保存；文件执行结果仍有效：")+appcore.HistoryText(a.historyError.Error(), appcore.HistoryErrorBytes)).TextColor(porcelain.Danger)
 			}
 			if a.watchPhase == watchesPaused {
 				ui.Row(c).Gap(8).Children(func() {
@@ -186,7 +187,7 @@ func (a *application) manualView(c *ui.Context) {
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
 					if a.tasks != nil {
-						for _, t := range a.tasks.tasks {
+						for _, t := range a.tasks.Tasks {
 							a.taskCard(c, t, now, focusID)
 						}
 					}
@@ -213,8 +214,8 @@ func (a *application) manualView(c *ui.Context) {
 func (a *application) porcelainHeader(c *ui.Context, width float32) {
 	count, targets := 0, 0
 	if a.tasks != nil {
-		count = len(a.tasks.tasks)
-		for _, t := range a.tasks.tasks {
+		count = len(a.tasks.Tasks)
+		for _, t := range a.tasks.Tasks {
 			targets += len(t.Destinations)
 		}
 	}
@@ -249,7 +250,7 @@ func (a *application) porcelainHeader(c *ui.Context, width float32) {
 			} else {
 				a.cards.collapsed = map[taskconfig.ID]bool{}
 				if a.tasks != nil {
-					for _, t := range a.tasks.tasks {
+					for _, t := range a.tasks.Tasks {
 						a.cards.collapsed[t.ID] = true
 					}
 				}

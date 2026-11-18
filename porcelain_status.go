@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"time"
@@ -78,7 +79,7 @@ func (a *application) destinationStatus(r syncengine.DestinationResult, exists b
 	}
 	if r.State != syncengine.DestinationSucceeded {
 		if r.Error != "" {
-			return a.tr(string(r.State)) + " · " + historyText(r.Error, historyErrorBytes)
+			return a.tr(string(r.State)) + " · " + appcore.HistoryText(r.Error, appcore.HistoryErrorBytes)
 		}
 		return a.tr(string(r.State))
 	}

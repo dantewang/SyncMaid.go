@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
 	"strings"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -81,7 +82,7 @@ func (a *application) filterGroupsView(c *ui.Context, locked bool) {
 			})
 		}
 		ui.Row(c).Children(func() {
-			porcelainButton(c, "+ "+a.tr("添加组")).Disabled(locked || len(e.Groups) >= 32).OnClick(func() { e.Groups = append(e.Groups, filterDraftGroup{}); a.filterEdited() })
+			porcelainButton(c, "+ "+a.tr("添加组")).Disabled(locked || len(e.Groups) >= 32).OnClick(func() { e.Groups = append(e.Groups, appcore.FilterDraftGroup{}); a.filterEdited() })
 		})
 		if len(e.Groups) == 0 {
 			key := "此目标不接收文件；不会删除任何已有文件。"

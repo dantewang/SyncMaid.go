@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"testing"
 
@@ -27,12 +28,12 @@ func legacyFixture(t *testing.T, q syncengine.ManualRequest) []byte {
 }
 func TestLegacyImportAppendSnapshotAndRestart(t *testing.T) {
 	data := t.TempDir()
-	l, err := loadSavedTasks(data)
+	l, err := appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	q := manualFixture(t)
-	l, existing, err := l.save("", "Existing", q)
+	l, existing, err := saveTask(l, "", "Existing", q)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,35 +41,35 @@ func TestLegacyImportAppendSnapshotAndRestart(t *testing.T) {
 	b := legacyFixture(t, manualFixture(t))
 	os.WriteFile(old, b, 0600)
 	os.WriteFile(old+".bak", []byte("backup bytes"), 0600)
-	p, err := readLegacyImport(old, l)
+	p, err := appcore.ReadLegacyImport(old, l)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.tasks[0].Trigger.Kind != "manual" || p.issues[0] != nil {
-		t.Fatal("not safely prepared", p.issues)
+	if p.Tasks[0].Trigger.Kind != "manual" || p.Issues[0] != nil {
+		t.Fatal("not safely prepared", p.Issues)
 	}
 	// Changing the selected file cannot change what confirmation saves.
 	os.WriteFile(old, []byte("changed externally"), 0600)
-	l, err = l.appendImport(p)
+	l, err = l.AppendImport(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err = loadSavedTasks(data)
-	if err != nil || len(l.tasks) != 2 {
+	l, err = appcore.LoadSavedTasks(data)
+	if err != nil || len(l.Tasks) != 2 {
 		t.Fatal(err)
 	}
-	if _, err = l.find(existing); err != nil {
+	if _, err = l.Find(existing); err != nil {
 		t.Fatal("existing task lost")
 	}
-	imported, err := l.find(p.tasks[0].ID)
+	imported, err := l.Find(p.Tasks[0].ID)
 	if err != nil || imported.Trigger.Kind != "manual" {
 		t.Fatal(imported, err)
 	}
-	if _, err = l.appendImport(p); err == nil {
+	if _, err = l.AppendImport(p); err == nil {
 		t.Fatal("same preview appended twice")
 	}
 	os.WriteFile(old, b, 0600)
-	if _, err = readLegacyImport(old, l); err == nil || !strings.Contains(err.Error(), "duplicate task content") {
+	if _, err = appcore.ReadLegacyImport(old, l); err == nil || !strings.Contains(err.Error(), "duplicate task content") {
 		t.Fatal("missing-ID repeated import allowed", err)
 	}
 	actual, _ := os.ReadFile(old)
@@ -76,7 +77,7 @@ func TestLegacyImportAppendSnapshotAndRestart(t *testing.T) {
 	if !bytes.Equal(actual, b) || string(backup) != "backup bytes" {
 		t.Fatal("legacy source touched")
 	}
-	q2, err := multipleRequestFromSaved(imported)
+	q2, err := appcore.MultipleRequestFromSaved(imported)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,25 +87,25 @@ func TestLegacyImportAppendSnapshotAndRestart(t *testing.T) {
 	}
 }
 func TestLegacyImportPreservesUnknownAndRegex(t *testing.T) {
-	l, _ := loadSavedTasks(t.TempDir())
+	l, _ := appcore.LoadSavedTasks(t.TempDir())
 	q := manualFixture(t)
 	b := legacyFixture(t, q)
 	b = bytes.Replace(b, []byte(`"Trigger":{"SettleSeconds":10,"kind":"watch"}`), []byte(`"Trigger":{"kind":"manual","Future":900719925474099312345}`), 1)
 	b = bytes.Replace(b, []byte(`"Filters":[{"kind":"all"}]`), []byte(`"Filters":[{"kind":"regex","Pattern":"\\p{L}+","Future":900719925474099312345}]`), 1)
 	path := filepath.Join(t.TempDir(), "tasks.json")
 	os.WriteFile(path, b, 0600)
-	p, err := readLegacyImport(path, l)
+	p, err := appcore.ReadLegacyImport(path, l)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.issues[0] == nil {
+	if p.Issues[0] == nil {
 		t.Fatal("unknown semantics not visible")
 	}
-	l, err = l.appendImport(p)
+	l, err = l.AppendImport(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := taskconfig.Encode(l.tasks)
+	encoded, err := taskconfig.Encode(l.Tasks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +123,7 @@ func TestLegacyImportPreservesUnknownAndRegex(t *testing.T) {
 	}
 }
 func TestLegacyImportRejectsWholeBadOrDuplicateDocument(t *testing.T) {
-	l, _ := loadSavedTasks(t.TempDir())
+	l, _ := appcore.LoadSavedTasks(t.TempDir())
 	b := legacyFixture(t, manualFixture(t))
 	var document []map[string]any
 	json.Unmarshal(b, &document)
@@ -137,7 +138,7 @@ func TestLegacyImportRejectsWholeBadOrDuplicateDocument(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "tasks.json")
 			os.WriteFile(path, tc.body, 0600)
-			if p, err := readLegacyImport(path, l); err == nil || p != nil {
+			if p, err := appcore.ReadLegacyImport(path, l); err == nil || p != nil {
 				t.Fatal("accepted invalid file")
 			}
 			after, _ := os.ReadFile(path)
@@ -148,40 +149,40 @@ func TestLegacyImportRejectsWholeBadOrDuplicateDocument(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "tasks.json")
 	os.WriteFile(path, b, 0600)
-	p, err := readLegacyImport(path, l)
+	p, err := appcore.ReadLegacyImport(path, l)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.tasks = append(p.tasks, p.tasks[0])
-	if l.checkImport(p) == nil {
+	p.Tasks = append(p.Tasks, p.Tasks[0])
+	if l.CheckImport(p) == nil {
 		t.Fatal("duplicate IDs accepted")
 	}
-	if len(l.tasks) != 0 {
+	if len(l.Tasks) != 0 {
 		t.Fatal("rejected input altered library")
 	}
 }
 func TestLegacyImportCancelAndFailedSaveKeepLibrary(t *testing.T) {
 	data := t.TempDir()
-	l, _ := loadSavedTasks(data)
+	l, _ := appcore.LoadSavedTasks(data)
 	path := filepath.Join(t.TempDir(), "tasks.json")
 	os.WriteFile(path, legacyFixture(t, manualFixture(t)), 0600)
-	p, err := readLegacyImport(path, l)
+	p, err := appcore.ReadLegacyImport(path, l)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a := application{tasks: l, importPreview: p, importPrevious: manualReady, manual: manualSession{phase: manualImporting}}
 	a.cancelImport()
-	if a.importPreview != nil || a.manual.phase != manualReady || len(a.tasks.tasks) != 0 {
+	if a.importPreview != nil || a.manual.phase != manualReady || len(a.tasks.Tasks) != 0 {
 		t.Fatal("cancel mutated tasks")
 	}
 	// External creation conflicts with the missing snapshot and is never overwritten.
 	disk := []byte("broken existing content")
-	os.WriteFile(filepath.Join(data, savedTaskFile), disk, 0600)
-	if next, err := l.appendImport(p); err == nil || next != nil {
+	os.WriteFile(filepath.Join(data, appcore.SavedTaskFile), disk, 0600)
+	if next, err := l.AppendImport(p); err == nil || next != nil {
 		t.Fatal("write failure hidden")
 	}
-	got, _ := os.ReadFile(filepath.Join(data, savedTaskFile))
-	if !bytes.Equal(got, disk) || len(l.tasks) != 0 {
+	got, _ := os.ReadFile(filepath.Join(data, appcore.SavedTaskFile))
+	if !bytes.Equal(got, disk) || len(l.Tasks) != 0 {
 		t.Fatal("failed save damaged old library")
 	}
 	for _, tag := range []string{"en", "ja", "zh-Hans", "zh-Hant"} {
@@ -198,7 +199,7 @@ func TestLegacyImportCancelAndFailedSaveKeepLibrary(t *testing.T) {
 }
 
 func TestCancelImportHonorsPendingQuit(t *testing.T) {
-	a := &application{importPreview: &legacyImport{}, importPrevious: manualReady, manual: manualSession{phase: manualImporting, quitPending: true}}
+	a := &application{importPreview: &appcore.LegacyImport{}, importPrevious: manualReady, manual: manualSession{phase: manualImporting, quitPending: true}}
 	quits := 0
 	a.lifecycle.ready(&recordedWindow{}, func() { quits++ }, nil)
 	a.cancelImport()

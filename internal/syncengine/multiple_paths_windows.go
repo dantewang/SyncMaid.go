@@ -54,6 +54,7 @@ func (p *MultiplePlan) takeTargetRoots(id taskconfig.ID) *TransferRoots {
 func (p *MultiplePlan) close(ctx context.Context) error {
 	return CloseProtected(ctx, p)
 }
+
 // Usable targets additionally require pinned object/ancestor identity checks.
 func ObviousPathOverlap(a, b string) bool {
 	if !filepath.IsAbs(a) || !filepath.IsAbs(b) {

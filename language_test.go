@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"testing"
 	"unicode"
@@ -96,7 +97,7 @@ func TestLanguageEditorAndHistoryRegions(t *testing.T) {
 			d := syncengine.ManualDestination{ID: taskconfig.NewID(), Name: "完成", Path: `C:\目標`, Filters: syncengine.AllFileRules(), Collision: taskconfig.Suffix}
 			a := &application{locale: choice.tag, manual: manualSession{
 				name: "Settings", source: `C:\源`, targets: []syncengine.ManualDestination{d}, targetID: d.ID, targetName: d.Name, target: d.Path,
-				kind: taskconfig.Moving, filterEditor: filterEditor{Mode: filterGrouped, Groups: []filterDraftGroup{{}}},
+				kind: taskconfig.Moving, filterEditor: appcore.FilterEditor{Mode: appcore.FilterGrouped, Groups: []appcore.FilterDraftGroup{{}}},
 				trigger: taskconfig.Trigger{Kind: "scheduled"}, cronText: "*/5 * * * *", cronNext: "2026-11-15 10:00:00 CST",
 			}}
 			a.cards.editor = true
@@ -111,8 +112,8 @@ func TestLanguageEditorAndHistoryRegions(t *testing.T) {
 			if a.manual.name != "Settings" || a.manual.source != `C:\源` || a.manual.targetName != "完成" || a.manual.cronText != "*/5 * * * *" {
 				t.Fatal("user fields changed")
 			}
-			r := runRecord{ID: taskconfig.NewID(), TaskID: taskconfig.NewID(), Name: "完成", Outcome: "stopped", Goals: []runGoal{{ID: d.ID, Name: d.Name, State: syncengine.DestinationCanceled}}}
-			a.historyView = runHistoryData{Version: 1, Recent: []runRecord{r}}
+			r := appcore.RunRecord{ID: taskconfig.NewID(), TaskID: taskconfig.NewID(), Name: "完成", Outcome: "stopped", Goals: []appcore.RunGoal{{ID: d.ID, Name: d.Name, State: syncengine.DestinationCanceled}}}
+			a.historyView = appcore.RunHistoryData{Version: 1, Recent: []appcore.RunRecord{r}}
 			a.historyOpen = true
 			view = ui.NewTester(a.view, 1000, 1400)
 			for _, key := range []string{"近期运行记录", "已停止"} {

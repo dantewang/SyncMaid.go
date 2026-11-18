@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 	"syncmaid/internal/taskconfig"
 )
 
-func migrationFixture(t *testing.T, move bool) (*savedTaskLibrary, taskconfig.Task, syncengine.ManualRequest, string) {
+func migrationFixture(t *testing.T, move bool) (*appcore.SavedTaskLibrary, taskconfig.Task, syncengine.ManualRequest, string) {
 	t.Helper()
 	q, paths := multiFixture(t)
 	kind := taskconfig.Sync
@@ -34,15 +35,15 @@ func migrationFixture(t *testing.T, move bool) (*savedTaskLibrary, taskconfig.Ta
 		task.Destinations = append(task.Destinations, taskconfig.Destination{ID: d.ID, Name: d.Name, Target: taskconfig.Target{Kind: "local", Path: d.Path}, Strategy: strategy, Filters: rules, CollisionPolicy: taskconfig.Skip, DeleteMode: taskconfig.Recycle})
 	}
 	data := t.TempDir()
-	l, err := loadSavedTasks(data)
+	l, err := appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	snap, err := l.snapshot.Save([]taskconfig.Task{task})
+	snap, err := l.Snapshot.Save([]taskconfig.Task{task})
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err = savedLibrary(snap)
+	l, err = appcore.SavedLibrary(snap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +71,7 @@ func TestRegexMigrationSyncSaveReloadAndInvalidation(t *testing.T) {
 	l, task, p, data := migrationFixture(t, false)
 	manualWrite(t, filepath.Join(p.Source, "a.txt"), "txt")
 	manualWrite(t, filepath.Join(p.Source, "b.bin"), "bin")
-	q, err := l.request(task)
+	q, err := l.Request(task)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,17 +80,17 @@ func TestRegexMigrationSyncSaveReloadAndInvalidation(t *testing.T) {
 		t.Fatal("Sync target isolation", results, err)
 	}
 	absentMoveFile(t, filepath.Join(p.Target, "a.txt"))
-	l, err = l.saveRegexConfirmation(migrationReview(t, task, `\.txt$`))
+	l, err = l.SaveRegexConfirmation(migrationReview(t, task, `\.txt$`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Saving a confirmation has no execution side effect.
 	absentMoveFile(t, filepath.Join(p.Target, "a.txt"))
-	l, err = loadSavedTasks(data)
+	l, err = appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	q, err = l.request(task)
+	q, err = l.Request(task)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,15 +102,15 @@ func TestRegexMigrationSyncSaveReloadAndInvalidation(t *testing.T) {
 	// Renaming the bound task invalidates every old receipt, not just edits to
 	// the pattern itself. The saved legacy rules are never changed to Go syntax.
 	task.Name = "changed"
-	snap, err := l.snapshot.Save([]taskconfig.Task{task})
+	snap, err := l.Snapshot.Save([]taskconfig.Task{task})
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err = savedLibrary(snap)
+	l, err = appcore.SavedLibrary(snap)
 	if err != nil {
 		t.Fatal(err)
 	}
-	q, _ = l.request(task)
+	q, _ = l.Request(task)
 	q = syncengine.PrepareReviewedRequest(q)
 	if !errors.Is(q.Destinations[0].FilterError, filefilter.ErrStaleReview) {
 		t.Fatal(q.Destinations[0].FilterError)
@@ -120,17 +121,17 @@ func TestRegexMigrationPartialMoveCannotReachCatchall(t *testing.T) {
 	l, task, p, _ := migrationFixture(t, true)
 	pattern := "second legacy"
 	task.Destinations[0].Filters = append(task.Destinations[0].Filters, taskconfig.Rule{Kind: "regex", Pattern: &pattern})
-	snap, err := l.snapshot.Save([]taskconfig.Task{task})
+	snap, err := l.Snapshot.Save([]taskconfig.Task{task})
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, _ = savedLibrary(snap)
-	l, err = l.saveRegexConfirmation(migrationReview(t, task, `\.txt$`))
+	l, _ = appcore.SavedLibrary(snap)
+	l, err = l.SaveRegexConfirmation(migrationReview(t, task, `\.txt$`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	manualWrite(t, filepath.Join(p.Source, "a.txt"), "keep")
-	q, _ := l.request(task)
+	q, _ := l.Request(task)
 	if _, err := runMultiple(context.Background(), q, nil); !errors.Is(err, filefilter.ErrNeedsReview) {
 		t.Fatal(err)
 	}
@@ -158,15 +159,15 @@ func TestRegexMigrationUnknownProfileAndSaveConflictFailClosed(t *testing.T) {
 	} {
 		r := saved
 		change(&r)
-		snap, err := l.snapshot.SaveConfirmations(l.tasks, []filefilter.RegexConfirmation{r})
+		snap, err := l.Snapshot.SaveConfirmations(l.Tasks, []filefilter.RegexConfirmation{r})
 		if err != nil {
 			t.Fatal(err)
 		}
-		l, err = savedLibrary(snap)
+		l, err = appcore.SavedLibrary(snap)
 		if err != nil {
 			t.Fatal(err)
 		}
-		q, _ := l.request(task)
+		q, _ := l.Request(task)
 		q = syncengine.PrepareReviewedRequest(q)
 		if q.Destinations[0].FilterError == nil {
 			t.Fatal("invalid confirmation authorized target")
@@ -177,27 +178,27 @@ func TestRegexMigrationUnknownProfileAndSaveConflictFailClosed(t *testing.T) {
 	}
 	// Existing external-edit protection also protects the one confirmation save.
 	data := t.TempDir()
-	copy, err := loadSavedTasks(data)
+	copy, err := appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	snap, err := copy.snapshot.Save(l.tasks)
+	snap, err := copy.Snapshot.Save(l.Tasks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	copy, _ = savedLibrary(snap)
-	path := filepath.Join(data, savedTaskFile)
+	copy, _ = appcore.SavedLibrary(snap)
+	path := filepath.Join(data, appcore.SavedTaskFile)
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	external := append(before, '\n')
 	os.WriteFile(path, external, 0600)
-	if next, err := copy.saveRegexConfirmation(review); err == nil || next != nil {
+	if next, err := copy.SaveRegexConfirmation(review); err == nil || next != nil {
 		t.Fatal("conflict swallowed")
 	}
 	after, _ := os.ReadFile(path)
-	if string(after) != string(external) || len(copy.reviews) != 0 {
+	if string(after) != string(external) || len(copy.Reviews) != 0 {
 		t.Fatal("failed confirmation changed state")
 	}
 }
@@ -224,7 +225,7 @@ func TestRegexMigrationEditingClearsPreviewAndCancelDoesNotSave(t *testing.T) {
 		t.Fatal("editing retained preview authority")
 	}
 	a.closeRegexMigration()
-	if a.regexSession != nil || len(a.tasks.reviews) != 0 || a.manual.busy() {
+	if a.regexSession != nil || len(a.tasks.Reviews) != 0 || a.manual.busy() {
 		t.Fatal("cancel saved or stayed busy")
 	}
 }
@@ -233,18 +234,18 @@ func TestRegexMigrationAutomaticRequestUsesSameGate(t *testing.T) {
 	l, task, p, _ := migrationFixture(t, false)
 	seconds := int32(10)
 	task.Trigger = taskconfig.Trigger{Kind: "watch", SettleSeconds: &seconds}
-	snap, err := l.snapshot.Save([]taskconfig.Task{task})
+	snap, err := l.Snapshot.Save([]taskconfig.Task{task})
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err = savedLibrary(snap)
+	l, err = appcore.SavedLibrary(snap)
 	if err != nil {
 		t.Fatal(err)
 	}
 	manualWrite(t, filepath.Join(p.Source, "a.txt"), "keep")
 	// This is the same immutable request factory used by drainWatches; neither
 	// it nor the executor creates a confirmation on an automatic request.
-	q, err := l.request(task)
+	q, err := l.Request(task)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +253,7 @@ func TestRegexMigrationAutomaticRequestUsesSameGate(t *testing.T) {
 		t.Fatal("automatic request bypassed review")
 	}
 	absentMoveFile(t, filepath.Join(p.Target, "a.txt"))
-	if len(l.reviews) != 0 {
+	if len(l.Reviews) != 0 {
 		t.Fatal("automatic execution confirmed a rule")
 	}
 }

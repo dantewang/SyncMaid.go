@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"github.com/robfig/cron/v3"
 	"reflect"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/taskconfig"
 	"time"
 )
@@ -104,7 +104,7 @@ func (a *application) syncWatches() {
 		a.watches = map[taskconfig.ID]*watchedTask{}
 	}
 	keep := map[taskconfig.ID]bool{}
-	for _, t := range a.tasks.tasks {
+	for _, t := range a.tasks.Tasks {
 		if len(t.Destinations) == 0 || (t.Trigger.Kind != "watch" && t.Trigger.Kind != "scheduled") {
 			continue
 		}
@@ -118,13 +118,13 @@ func (a *application) syncWatches() {
 		}
 		w := &watchedTask{task: t, status: messagef("正在建立源监视")}
 		a.watches[t.ID] = w
-		if _, e := multipleRequestFromSaved(t); e != nil {
+		if _, e := appcore.MultipleRequestFromSaved(t); e != nil {
 			w.ticket.phase = watchFailed
 			w.status = messagef("触发失败: %s", e.Error())
 			continue
 		}
 		if t.Trigger.Kind == "scheduled" {
-			schedule, _, e := parseScheduled(*t.Trigger.CronExpression, time.Now())
+			schedule, _, e := appcore.ParseScheduled(*t.Trigger.CronExpression, time.Now())
 			if e != nil {
 				w.ticket.phase = watchFailed
 				w.status = messagef("触发失败: %s", e.Error())
@@ -148,7 +148,7 @@ func (a *application) syncWatches() {
 			a.watchWorkers.Add(1)
 			go func() {
 				defer a.watchWorkers.Done()
-				serveSourceWatch(ctx, t.SourcePath, func(e error) {
+				appcore.ServeSourceWatch(ctx, t.SourcePath, func(e error) {
 					post(func() {
 						if !a.liveWatch(w) {
 							return
@@ -170,7 +170,7 @@ func (a *application) syncWatches() {
 							a.watchChanged(w)
 						}
 					})
-				})
+				}, serveNativeWatch)
 			}()
 		}
 	}
@@ -219,7 +219,7 @@ func (a *application) drainWatches() {
 	if a.watchPhase != watchesServing || a.manual.quitPending || a.manual.busy() || a.tasks == nil || a.taskError != nil || a.window == nil {
 		return
 	}
-	for _, t := range a.tasks.tasks {
+	for _, t := range a.tasks.Tasks {
 		w := a.watches[t.ID]
 		if w == nil || w.ticket.phase != watchPending {
 			continue
@@ -230,7 +230,7 @@ func (a *application) drainWatches() {
 		} else {
 			w.status = messagef("正在自动运行")
 		}
-		q, e := a.tasks.request(t)
+		q, e := a.tasks.Request(t)
 		if e != nil {
 			w.status = messagef("触发失败: %s", e.Error())
 			continue
@@ -238,20 +238,4 @@ func (a *application) drainWatches() {
 		a.startTaskRun(t.ID, t.Name, q, true)
 		return
 	}
-}
-
-func validateApplicationTrigger(t taskconfig.Trigger) error {
-	if t.HasUnknownFields() {
-		return fmt.Errorf("不支持此触发配置")
-	}
-	if t.Kind == "manual" && t.SettleSeconds == nil && t.CronExpression == nil {
-		return nil
-	}
-	if t.Kind == "watch" && t.SettleSeconds != nil && t.CronExpression == nil {
-		return nil
-	}
-	if t.Kind == "scheduled" && t.CronExpression != nil && t.SettleSeconds == nil {
-		return nil
-	}
-	return fmt.Errorf("不支持或不完整的触发配置")
 }

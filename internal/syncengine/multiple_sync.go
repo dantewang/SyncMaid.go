@@ -37,6 +37,7 @@ func (q ManualTaskRequest) WithReviewedRegex(t *taskconfig.Task, reviews map[tas
 	q.regexReviews = reviews
 	return q
 }
+
 type DestinationState string
 
 const (

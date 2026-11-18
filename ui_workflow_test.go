@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 func emptyTaskApplication(t *testing.T) (*application, string) {
 	t.Helper()
 	data := t.TempDir()
-	l, err := loadSavedTasks(data)
+	l, err := appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +34,7 @@ func TestTaskSheetSavesZeroDestinationsWithoutRuntimePreflight(t *testing.T) {
 		t.Fatal("new task manufactured a destination")
 	}
 	q := a.manual.draftRequest()
-	l, id, err := a.tasks.saveMultiple("", a.manual.name, q)
+	l, id, err := saveMultiple(a.tasks, "", a.manual.name, q)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,15 +44,15 @@ func TestTaskSheetSavesZeroDestinationsWithoutRuntimePreflight(t *testing.T) {
 	if a.cards.editor || a.manual.dirty {
 		t.Fatal("save did not close sheet")
 	}
-	reloaded, err := loadSavedTasks(data)
+	reloaded, err := appcore.LoadSavedTasks(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := reloaded.find(id)
+	record, err := reloaded.Find(id)
 	if err != nil || len(record.Destinations) != 0 || record.SourcePath != q.Source {
 		t.Fatal(record, err)
 	}
-	if _, err := multipleRequestFromSaved(record); err != nil {
+	if _, err := appcore.MultipleRequestFromSaved(record); err != nil {
 		t.Fatal("empty task unavailable", err)
 	}
 	for _, kind := range []taskconfig.TaskKind{taskconfig.Sync, taskconfig.Moving} {
@@ -69,7 +70,7 @@ func TestTaskSheetSavesZeroDestinationsWithoutRuntimePreflight(t *testing.T) {
 		t.Fatal(a.manual.message)
 	}
 	record.Trigger = taskconfig.Trigger{Kind: "watch"}
-	a.tasks.tasks[0] = record
+	a.tasks.Tasks[0] = record
 	a.syncWatches()
 	if len(a.watches) != 0 {
 		t.Fatal("empty task subscribed to source")
@@ -90,7 +91,7 @@ func TestTaskSheetCancelXEscapeAndStayOpenOnBlankClicks(t *testing.T) {
 			case "escape":
 				view.Key(0, ui.KeyEscape)
 			}
-			if a.cards.editor || a.manual.dirty || len(a.tasks.tasks) != 0 {
+			if a.cards.editor || a.manual.dirty || len(a.tasks.Tasks) != 0 {
 				t.Fatal("cancel retained draft or saved it")
 			}
 		})
@@ -117,7 +118,7 @@ func TestTaskSheetCancelXEscapeAndStayOpenOnBlankClicks(t *testing.T) {
 func TestDestinationCancelIsRowScopedAndCopyIsIndependent(t *testing.T) {
 	a, _ := emptyTaskApplication(t)
 	q, _ := multiFixture(t)
-	l, id, err := a.tasks.saveMultiple("", "Task", q)
+	l, id, err := saveMultiple(a.tasks, "", "Task", q)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func TestDestinationCancelIsRowScopedAndCopyIsIndependent(t *testing.T) {
 	a.manual.targetName = "discard me"
 	a.manual.edited()
 	a.cancelDestination(original.ID)
-	if a.manual.targets[0].Name != original.Name || l.tasks[0].Destinations[0].Name != original.Name {
+	if a.manual.targets[0].Name != original.Name || l.Tasks[0].Destinations[0].Name != original.Name {
 		t.Fatal("cancel polluted original")
 	}
 	a.addManualTarget()
@@ -164,7 +165,7 @@ func TestDestinationCancelIsRowScopedAndCopyIsIndependent(t *testing.T) {
 	}
 	a.manual.selectTarget(copyID)
 	a.removeManualTarget()
-	if len(a.manual.targets) != 2 || len(l.tasks[0].Destinations) != 2 {
+	if len(a.manual.targets) != 2 || len(l.Tasks[0].Destinations) != 2 {
 		t.Fatal("delete mutated stored snapshot")
 	}
 	if a.cards.targetHidden != a.manual.targetID {
@@ -224,7 +225,7 @@ func TestConfigurationRefusalKeepsEditorWritable(t *testing.T) {
 	a.cards.editor = true
 	q := a.manual.draftRequest()
 	q.Destinations = []syncengine.ManualDestination{{ID: taskconfig.NewID(), Name: "overlap", Path: q.Source, Filters: syncengine.AllFileRules()}}
-	_, id, err := a.tasks.prepareMultiple("", a.manual.name, q)
+	_, id, err := a.tasks.PrepareMultiple("", a.manual.name, q)
 	if err == nil {
 		t.Fatal("overlap accepted")
 	}
@@ -238,7 +239,7 @@ func TestConfigurationRefusalKeepsEditorWritable(t *testing.T) {
 func TestAcceptOneDestinationDoesNotConsumeAnotherRowsInvalidDraft(t *testing.T) {
 	a, _ := emptyTaskApplication(t)
 	q, _ := multiFixture(t)
-	l, id, err := a.tasks.saveMultiple("", "Rows", q)
+	l, id, err := saveMultiple(a.tasks, "", "Rows", q)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +249,7 @@ func TestAcceptOneDestinationDoesNotConsumeAnotherRowsInvalidDraft(t *testing.T)
 	first, other := a.manual.targets[0], a.manual.targets[1]
 	a.manual.beginDestinationEdit(first.ID, &first)
 	a.manual.beginDestinationEdit(other.ID, &other)
-	a.manual.filterDrafts[other.ID] = filterEditor{Error: "invalid input in other row"}
+	a.manual.filterDrafts[other.ID] = appcore.FilterEditor{Error: "invalid input in other row"}
 	if !a.acceptDestination(first.ID) {
 		t.Fatal("another row blocked independent accept")
 	}
@@ -265,26 +266,26 @@ func TestExplicitTaskDeletionDoesNotRequireRegexExecutionPermission(t *testing.T
 	a, _ := emptyTaskApplication(t)
 	q := manualFixture(t)
 	manualWrite(t, filepath.Join(q.Source, "keep.txt"), "unchanged")
-	l, id, err := a.tasks.save("", "Regex task", q)
+	l, id, err := saveTask(a.tasks, "", "Regex task", q)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tasks, err := l.snapshot.Tasks()
+	tasks, err := l.Snapshot.Tasks()
 	if err != nil {
 		t.Fatal(err)
 	}
 	pattern := ".*"
 	tasks[0].Destinations[0].Filters = []taskconfig.Rule{{Kind: "regex", Pattern: &pattern}}
-	snapshot, err := l.snapshot.Save(tasks)
+	snapshot, err := l.Snapshot.Save(tasks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err = savedLibrary(snapshot)
+	l, err = appcore.SavedLibrary(snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err = l.remove(id)
-	if err != nil || len(l.tasks) != 0 {
+	l, err = l.Remove(id)
+	if err != nil || len(l.Tasks) != 0 {
 		t.Fatal("explicit configuration deletion required filter execution", err)
 	}
 	manualRead(t, filepath.Join(q.Source, "keep.txt"), "unchanged")
@@ -292,7 +293,7 @@ func TestExplicitTaskDeletionDoesNotRequireRegexExecutionPermission(t *testing.T
 
 func TestEmptyTaskCardDoesNotDisplayOldTargetSuccessAsCurrentState(t *testing.T) {
 	a, _ := emptyTaskApplication(t)
-	l, id, err := a.tasks.saveMultiple("", a.manual.name, a.manual.draftRequest())
+	l, id, err := saveMultiple(a.tasks, "", a.manual.name, a.manual.draftRequest())
 	if err != nil {
 		t.Fatal(err)
 	}

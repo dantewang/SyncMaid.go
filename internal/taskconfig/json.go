@@ -126,6 +126,7 @@ func checkSurrogates(data []byte) error {
 	}
 	return nil
 }
+
 type jsonFieldSpec struct {
 	name      string
 	index     int

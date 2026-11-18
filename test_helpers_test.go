@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syncmaid/internal/appcore"
 	"testing"
 
 	"syncmaid/internal/syncengine"
@@ -95,29 +96,29 @@ func absentMoveFile(t *testing.T, path string) {
 }
 
 func acceptMirror(context.Context, syncengine.MirrorPreview) error { return nil }
-func noRecycle(string) error                                     { return errors.New("unexpected recycle") }
+func noRecycle(string) error                                       { return errors.New("unexpected recycle") }
 
-func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q syncengine.ManualTaskRequest) (*savedTaskLibrary, taskconfig.ID, error) {
-	tasks, id, err := l.prepareMultiple(id, name, q)
+func saveMultiple(l *appcore.SavedTaskLibrary, id taskconfig.ID, name string, q syncengine.ManualTaskRequest) (*appcore.SavedTaskLibrary, taskconfig.ID, error) {
+	tasks, id, err := l.PrepareMultiple(id, name, q)
 	if err != nil {
 		return nil, id, err
 	}
-	next, err := l.snapshot.Save(tasks)
+	next, err := l.Snapshot.Save(tasks)
 	if err != nil {
 		return nil, id, fmt.Errorf("保存任务: %w", err)
 	}
-	library, err := savedLibrary(next)
+	library, err := appcore.SavedLibrary(next)
 	return library, id, err
 }
 
-func (l *savedTaskLibrary) save(id taskconfig.ID, name string, q syncengine.ManualRequest) (*savedTaskLibrary, taskconfig.ID, error) {
+func saveTask(l *appcore.SavedTaskLibrary, id taskconfig.ID, name string, q syncengine.ManualRequest) (*appcore.SavedTaskLibrary, taskconfig.ID, error) {
 	d := syncengine.ManualDestination{ID: taskconfig.NewID(), Name: "目标", Path: q.Target, Filters: syncengine.AllFileRules()}
 	if id != "" {
-		t, err := l.find(id)
+		t, err := l.Find(id)
 		if err != nil {
 			return nil, id, err
 		}
-		old, err := multipleRequestFromSaved(t)
+		old, err := appcore.MultipleRequestFromSaved(t)
 		if err != nil {
 			return nil, id, err
 		}
@@ -131,11 +132,11 @@ func (l *savedTaskLibrary) save(id taskconfig.ID, name string, q syncengine.Manu
 		}
 		d.Filters = old.Destinations[0].Filters
 	}
-	return l.saveMultiple(id, name, syncengine.ManualTaskRequest{Source: q.Source, Destinations: []syncengine.ManualDestination{d}})
+	return saveMultiple(l, id, name, syncengine.ManualTaskRequest{Source: q.Source, Destinations: []syncengine.ManualDestination{d}})
 }
 
 func requestFromSaved(t taskconfig.Task) (syncengine.ManualRequest, error) {
-	q, err := multipleRequestFromSaved(t)
+	q, err := appcore.MultipleRequestFromSaved(t)
 	if err != nil {
 		return syncengine.ManualRequest{}, err
 	}

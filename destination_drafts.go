@@ -1,46 +1,10 @@
 package main
 
 import (
-	"errors"
 	"strings"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 )
-
-// Configuration checks do not grant filesystem access; runs verify real roots.
-func validateTaskDraft(q syncengine.ManualTaskRequest) error {
-	if strings.TrimSpace(q.Source) == "" {
-		return errors.New("源文件夹不能为空")
-	}
-	for _, d := range q.Destinations {
-		if strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.Path) == "" {
-			return errors.New("目标名称与文件夹不能为空")
-		}
-	}
-	return nil
-}
-
-func validateEditedTaskLayout(edit taskconfig.Task, tasks []taskconfig.Task) error {
-	if _, err := taskconfig.Validate([]taskconfig.Task{edit}); err != nil {
-		return err
-	}
-	for _, other := range tasks {
-		if other.ID == edit.ID {
-			continue
-		}
-		if syncengine.ObviousPathOverlap(edit.SourcePath, other.SourcePath) {
-			return errors.New("源文件夹与其他任务重叠")
-		}
-		for _, d := range edit.Destinations {
-			for _, existing := range other.Destinations {
-				if syncengine.ObviousPathOverlap(d.Target.Path, existing.Target.Path) {
-					return errors.New("目标文件夹与其他任务重叠")
-				}
-			}
-		}
-	}
-	return nil
-}
 
 func cloneManualDestination(d syncengine.ManualDestination) syncengine.ManualDestination {
 	d.Filters = append([]taskconfig.Rule(nil), d.Filters...)

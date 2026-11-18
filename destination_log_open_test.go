@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syncmaid/internal/appcore"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -13,7 +14,7 @@ import (
 
 func TestDestinationLogOpenUsesShellPathAndKeepsHistoryError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, runHistoryFile)
+	path := filepath.Join(dir, appcore.RunHistoryFile)
 	if err := os.WriteFile(path, []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}

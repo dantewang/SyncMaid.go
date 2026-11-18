@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 
 	"github.com/egoist/mygo"
@@ -13,11 +14,11 @@ func (a *application) selectedTaskIssue() error {
 	if a.manual.id == "" {
 		return nil
 	}
-	t, err := a.tasks.find(a.manual.id)
+	t, err := a.tasks.Find(a.manual.id)
 	if err != nil {
 		return err
 	}
-	_, err = multipleRequestFromSaved(t)
+	_, err = appcore.MultipleRequestFromSaved(t)
 	return err
 }
 func (a *application) newManual() {
@@ -31,7 +32,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
 		return
 	}
-	t, err := a.tasks.find(id)
+	t, err := a.tasks.Find(id)
 	if err != nil {
 		a.manual.message = messagef("错误: %s", err.Error())
 		return
@@ -55,7 +56,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 		s.cronText = *t.Trigger.CronExpression
 		s.refreshCron()
 	}
-	s.request, err = a.tasks.request(t)
+	s.request, err = a.tasks.Request(t)
 	if err != nil {
 		s.message = messagef("此任务不可运行或编辑: %s", err.Error())
 	} else {
@@ -83,15 +84,15 @@ func (a *application) reloadTasks() {
 	s.message = messagef("正在载入 Go 专用任务文件…")
 	data := a.installation.Data
 	go func() {
-		library, err := loadSavedTasks(data)
-		history := loadRunHistory(data)
+		library, err := appcore.LoadSavedTasks(data)
+		history := appcore.LoadRunHistory(data)
 		a.window.Update(func() {
 			s.phase = manualDraft
 			a.taskError = err
 			a.history = history
-			a.historyError = history.err
-			if history.err == nil {
-				a.historyView = history.data
+			a.historyError = history.Err
+			if history.Err == nil {
+				a.historyView = history.Data
 			}
 			if err != nil {
 				s.message = messagef("载入失败，已阻止写入: %s", err.Error())
@@ -100,18 +101,18 @@ func (a *application) reloadTasks() {
 				a.restoreRunResults()
 				switch {
 				case keepDraft:
-					if _, e := library.find(s.id); s.id != "" && e != nil {
+					if _, e := library.Find(s.id); s.id != "" && e != nil {
 						s.id = ""
 					}
 					s.message = messagef("已重新载入；未保存编辑仍在，请核对任务列表后再保存。")
 				case id != "":
-					if _, e := library.find(id); e == nil {
+					if _, e := library.Find(id); e == nil {
 						a.selectManual(id)
 					} else {
 						a.newManual()
 					}
-				case len(library.tasks) > 0:
-					a.selectManual(library.tasks[0].ID)
+				case len(library.Tasks) > 0:
+					a.selectManual(library.Tasks[0].ID)
 				default:
 					a.newManual()
 				}
@@ -149,22 +150,22 @@ func (a *application) createManual() {
 	s.phase = manualSaving
 	s.message = messagef("检查路径并保存任务…")
 	go func() {
-		tasks, nextID, validationErr := library.prepareMultiple(id, name, q)
+		tasks, nextID, validationErr := library.PrepareMultiple(id, name, q)
 		var writeErr error
-		var next *savedTaskLibrary
+		var next *appcore.SavedTaskLibrary
 		if validationErr == nil {
 			id = nextID
-			snapshot, err := library.snapshot.Save(tasks)
+			snapshot, err := library.Snapshot.Save(tasks)
 			writeErr = err
 			if err == nil {
-				next, writeErr = savedLibrary(snapshot)
+				next, writeErr = appcore.SavedLibrary(snapshot)
 			}
 		}
 		a.window.Update(func() { a.finishTaskSave(next, id, validationErr, writeErr) })
 	}()
 }
 
-func (a *application) finishTaskSave(next *savedTaskLibrary, id taskconfig.ID, validationErr, writeErr error) {
+func (a *application) finishTaskSave(next *appcore.SavedTaskLibrary, id taskconfig.ID, validationErr, writeErr error) {
 	s := &a.manual
 	s.phase = manualDraft
 	switch {
@@ -247,7 +248,7 @@ func (a *application) deleteManual(id taskconfig.ID) {
 	s.phase = manualSaving
 	s.message = messagef("正在删除任务记录…")
 	go func() {
-		next, err := library.remove(id)
+		next, err := library.Remove(id)
 		a.window.Update(func() {
 			s.phase = manualDraft
 			if err != nil {
@@ -258,8 +259,8 @@ func (a *application) deleteManual(id taskconfig.ID) {
 				a.tasks = next
 				delete(a.results, id)
 				s.dirty = false
-				if len(next.tasks) > 0 {
-					a.selectManual(next.tasks[0].ID)
+				if len(next.Tasks) > 0 {
+					a.selectManual(next.Tasks[0].ID)
 				} else {
 					a.newManual()
 				}

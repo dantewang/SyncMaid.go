@@ -1,7 +1,8 @@
-package main
+package appcore
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"syncmaid/internal/syncengine"
 	"time"
@@ -10,8 +11,55 @@ import (
 	"syncmaid/internal/taskstore"
 )
 
+func TaskConfigurationDeletionIssue(t taskconfig.Task) error {
+	if _, err := MultipleRequestFromSaved(t); err != nil {
+		return err
+	}
+	for _, d := range t.Destinations {
+		if syncengine.RulesHaveUnknownFields(d.Filters) {
+			return fmt.Errorf("%s 含未支持字段，不能删除其配置", d.Name)
+		}
+	}
+	return nil
+}
+
+// Configuration checks do not grant filesystem access; runs verify real roots.
+func ValidateTaskDraft(q syncengine.ManualTaskRequest) error {
+	if strings.TrimSpace(q.Source) == "" {
+		return errors.New("源文件夹不能为空")
+	}
+	for _, d := range q.Destinations {
+		if strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.Path) == "" {
+			return errors.New("目标名称与文件夹不能为空")
+		}
+	}
+	return nil
+}
+
+func ValidateEditedTaskLayout(edit taskconfig.Task, tasks []taskconfig.Task) error {
+	if _, err := taskconfig.Validate([]taskconfig.Task{edit}); err != nil {
+		return err
+	}
+	for _, other := range tasks {
+		if other.ID == edit.ID {
+			continue
+		}
+		if syncengine.ObviousPathOverlap(edit.SourcePath, other.SourcePath) {
+			return errors.New("源文件夹与其他任务重叠")
+		}
+		for _, d := range edit.Destinations {
+			for _, existing := range other.Destinations {
+				if syncengine.ObviousPathOverlap(d.Target.Path, existing.Target.Path) {
+					return errors.New("目标文件夹与其他任务重叠")
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // Editing/running only accepts the implemented subset, never downgrades others.
-func multipleRequestFromSaved(t taskconfig.Task) (syncengine.ManualTaskRequest, error) {
+func MultipleRequestFromSaved(t taskconfig.Task) (syncengine.ManualTaskRequest, error) {
 	if t.HasUnknownFields() || t.Trigger.HasUnknownFields() {
 		return syncengine.ManualTaskRequest{}, errors.New("任务含未支持字段")
 	}
@@ -21,7 +69,7 @@ func multipleRequestFromSaved(t taskconfig.Task) (syncengine.ManualTaskRequest, 
 	if strings.TrimSpace(t.Name) == "" {
 		return syncengine.ManualTaskRequest{}, errors.New("任务名称为空")
 	}
-	if e := validateApplicationTrigger(t.Trigger); e != nil {
+	if e := ValidateApplicationTrigger(t.Trigger); e != nil {
 		return syncengine.ManualTaskRequest{}, e
 	}
 	q := syncengine.ManualTaskRequest{Kind: t.Kind, Trigger: t.Trigger, Source: t.SourcePath}
@@ -48,17 +96,17 @@ func multipleRequestFromSaved(t taskconfig.Task) (syncengine.ManualTaskRequest, 
 	return q, nil
 }
 
-func (l *savedTaskLibrary) prepareMultiple(id taskconfig.ID, name string, q syncengine.ManualTaskRequest) ([]taskconfig.Task, taskconfig.ID, error) {
-	if l == nil || l.snapshot == nil {
+func (l *SavedTaskLibrary) PrepareMultiple(id taskconfig.ID, name string, q syncengine.ManualTaskRequest) ([]taskconfig.Task, taskconfig.ID, error) {
+	if l == nil || l.Snapshot == nil {
 		return nil, id, taskstore.ErrBlocked
 	}
 	if strings.TrimSpace(name) == "" {
 		return nil, id, errors.New("需要任务名称")
 	}
-	if err := validateTaskDraft(q); err != nil {
+	if err := ValidateTaskDraft(q); err != nil {
 		return nil, id, err
 	}
-	tasks, err := l.snapshot.Tasks()
+	tasks, err := l.Snapshot.Tasks()
 	if err != nil {
 		return nil, id, err
 	}
@@ -78,7 +126,7 @@ func (l *savedTaskLibrary) prepareMultiple(id taskconfig.ID, name string, q sync
 		if index < 0 {
 			return nil, id, errors.New("任务已不存在，请新建")
 		}
-		if _, err = multipleRequestFromSaved(task); err != nil {
+		if _, err = MultipleRequestFromSaved(task); err != nil {
 			return nil, id, err
 		}
 	} else {
@@ -131,10 +179,10 @@ func (l *savedTaskLibrary) prepareMultiple(id taskconfig.ID, name string, q sync
 			}
 		}
 		if !syncengine.SameFilterRules(d.Filters, edit.Filters) {
-			if ok && projectNativeFilter(d.Filters).Mode == filterReadOnly {
+			if ok && ProjectNativeFilter(d.Filters).Mode == FilterReadOnly {
 				return nil, id, errors.New("只读过滤规则不能改写")
 			}
-			if form := projectNativeFilter(edit.Filters); form.Mode == filterReadOnly {
+			if form := ProjectNativeFilter(edit.Filters); form.Mode == FilterReadOnly {
 				return nil, id, errors.New("编辑器不能保存此复杂或不支持的过滤规则")
 			}
 			d.Filters = edit.Filters
@@ -153,11 +201,11 @@ func (l *savedTaskLibrary) prepareMultiple(id taskconfig.ID, name string, q sync
 	if trigger.Kind != "manual" && trigger.Kind != "watch" && trigger.Kind != "scheduled" {
 		return nil, id, errors.New("不支持此触发方式")
 	}
-	if e := validateApplicationTrigger(trigger); e != nil {
+	if e := ValidateApplicationTrigger(trigger); e != nil {
 		return nil, id, e
 	}
 	if trigger.Kind == "scheduled" {
-		if _, _, e := parseScheduled(*trigger.CronExpression, time.Now()); e != nil && !errors.Is(e, errNoScheduledFuture) {
+		if _, _, e := ParseScheduled(*trigger.CronExpression, time.Now()); e != nil && !errors.Is(e, ErrNoScheduledFuture) {
 			return nil, id, e
 		}
 	}
@@ -170,7 +218,7 @@ func (l *savedTaskLibrary) prepareMultiple(id taskconfig.ID, name string, q sync
 	} else {
 		tasks[index] = task
 	}
-	if err := validateEditedTaskLayout(task, tasks); err != nil {
+	if err := ValidateEditedTaskLayout(task, tasks); err != nil {
 		return nil, id, err
 	}
 	return tasks, id, nil
