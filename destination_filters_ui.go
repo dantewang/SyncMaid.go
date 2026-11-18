@@ -38,12 +38,8 @@ func (s *manualSession) filterDraftError() error {
 	}
 	return nil
 }
-func (a *application) filterEdited() {
+func (a *application) commitFilterDraft(rules []taskconfig.Rule, err error) {
 	s := &a.manual
-	if !a.targetEditAllowed() || a.selectedMirror() || s.filterEditor.Mode == filterReadOnly {
-		return
-	}
-	rules, err := s.filterEditor.rules()
 	s.filterEditor.Error = ""
 	if err != nil {
 		s.filterEditor.Error = err.Error()
@@ -57,6 +53,14 @@ func (a *application) filterEdited() {
 	}
 	s.keepFilterDraft()
 	s.edited()
+}
+func (a *application) filterEdited() {
+	s := &a.manual
+	if !a.targetEditAllowed() || a.selectedMirror() || s.filterEditor.Mode == filterReadOnly {
+		return
+	}
+	rules, err := s.filterEditor.rules()
+	a.commitFilterDraft(rules, err)
 }
 func (a *application) setFilterMode(mode filterMode) {
 	if !a.targetEditAllowed() || a.selectedMirror() || a.manual.filterEditor.Mode == filterReadOnly || a.manual.filterEditor.Mode == mode {

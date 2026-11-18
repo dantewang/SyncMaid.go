@@ -63,10 +63,6 @@ func initialDestinationResults(q manualTaskRequest) multipleResult {
 // Each target runs in configuration order. A failure is recorded, not turned
 // into success or a reason to skip healthy targets. Cancellation stops the rest.
 // Events are value copies; the final map is handed over only after work ends.
-func runMultiple(ctx context.Context, q manualTaskRequest, notify func(destinationResult)) (results multipleResult, err error) {
-	return runMultipleConfirmed(ctx, q, notify, nil)
-}
-
 func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(destinationResult), confirm mirrorConfirmation) (results multipleResult, err error) {
 	if len(q.Destinations) == 0 {
 		return multipleResult{}, nil

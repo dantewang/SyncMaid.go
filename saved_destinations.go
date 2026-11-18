@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -174,17 +173,4 @@ func (l *savedTaskLibrary) prepareMultiple(id taskconfig.ID, name string, q manu
 		return nil, id, err
 	}
 	return tasks, id, nil
-}
-
-func (l *savedTaskLibrary) saveMultiple(id taskconfig.ID, name string, q manualTaskRequest) (*savedTaskLibrary, taskconfig.ID, error) {
-	tasks, id, err := l.prepareMultiple(id, name, q)
-	if err != nil {
-		return nil, id, err
-	}
-	next, err := l.snapshot.Save(tasks)
-	if err != nil {
-		return nil, id, fmt.Errorf("保存任务: %w", err)
-	}
-	library, err := savedLibrary(next)
-	return library, id, err
 }

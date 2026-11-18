@@ -102,19 +102,6 @@ func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess 
 	return r, nil
 }
 
-func validateManual(ctx context.Context, q manualRequest) (result manualRequest, err error) {
-	r, err := openTransferRoots(ctx, q)
-	if err != nil {
-		return result, err
-	}
-	defer func() { err = errors.Join(err, protectedTransferIO(ctx, r.Close)) }()
-	return manualRequest{Source: r.source.path, Target: r.target.path}, nil
-}
-
-func runManual(ctx context.Context, q manualRequest, notify func(transferProgress)) (p transferProgress, err error) {
-	return runManualWith(ctx, q, notify, transferIO{copy: copyChecked, publish: publishTransfer})
-}
-
 // Only the two fallible transfer boundaries are injectable; tests still use real files.
 type transferIO struct {
 	collision    taskconfig.CollisionPolicy
@@ -133,9 +120,6 @@ const (
 
 var errTransferPublicationUnknown = errors.New("发布结果无法确认，已保留文件对象，请检查目标及临时文件")
 
-func runManualWith(ctx context.Context, q manualRequest, notify func(transferProgress), ops transferIO) (p transferProgress, err error) {
-	return runManualWithFilters(ctx, q, notify, ops, []taskconfig.Rule{{Kind: "all"}})
-}
 func runManualFiltered(ctx context.Context, q manualRequest, rules []taskconfig.Rule, notify func(transferProgress)) (transferProgress, error) {
 	return runManualWithFilters(ctx, q, notify, transferIO{copy: copyChecked, publish: publishTransfer}, rules)
 }

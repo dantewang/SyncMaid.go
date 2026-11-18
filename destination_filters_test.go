@@ -22,8 +22,19 @@ func editorRules(t *testing.T, e filterEditor) []taskconfig.Rule {
 	return rules
 }
 
+func notRule(r taskconfig.Rule) taskconfig.Rule {
+	return taskconfig.Rule{Kind: "not", Rule: &r}
+}
+
 func TestDestinationIncludeExcludeSelection(t *testing.T) {
-	rules := editorRules(t, filterEditor{Mode: filterCustom, IncludePaths: "中文", IncludeExtensions: "txt", IncludeGlobs: "images/*.jpg", ExcludePaths: "中文/私密", ExcludeExtensions: "bin", ExcludeGlobs: "**/skip.*"})
+	rules := editorRules(t, filterEditor{
+		Mode:     filterGrouped,
+		MatchAll: true,
+		Groups: []filterDraftGroup{
+			{Rows: []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt"), taskconfig.WildcardFilter("images/*.jpg")}},
+			{All: true, Rows: []taskconfig.Rule{notRule(taskconfig.PathFilter("中文/私密")), notRule(taskconfig.ExtensionFilter("bin")), notRule(taskconfig.WildcardFilter("**/skip.*"))}},
+		},
+	})
 	m, err := filefilter.Compile(rules)
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +47,10 @@ func TestDestinationIncludeExcludeSelection(t *testing.T) {
 			t.Fatal(c, got, err)
 		}
 	}
-	allExcept := editorRules(t, filterEditor{Mode: filterCustom, ExcludeExtensions: "tmp"})
+	allExcept := editorRules(t, filterEditor{
+		Mode:   filterGrouped,
+		Groups: []filterDraftGroup{{All: true, Rows: []taskconfig.Rule{{Kind: "all"}, notRule(taskconfig.ExtensionFilter("tmp"))}}},
+	})
 	m, err = filefilter.Compile(allExcept)
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +64,10 @@ func TestDestinationIncludeExcludeSelection(t *testing.T) {
 }
 
 func TestFilterProjectionKeepsOnePassExtensionAndReadOnlyShapes(t *testing.T) {
-	rules := editorRules(t, filterEditor{Mode: filterCustom, IncludeExtensions: "*.*.jpg"})
+	rules := editorRules(t, filterEditor{
+		Mode:   filterGrouped,
+		Groups: []filterDraftGroup{{Rows: []taskconfig.Rule{taskconfig.ExtensionFilter("*.*.jpg")}}},
+	})
 	b, err := json.Marshal(rules)
 	if err != nil {
 		t.Fatal(err)
@@ -59,11 +76,12 @@ func TestFilterProjectionKeepsOnePassExtensionAndReadOnlyShapes(t *testing.T) {
 	if err = json.Unmarshal(b, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	e := projectFilterEditor(decoded)
-	if e.Mode != filterCustom {
+	e := projectNativeFilter(decoded)
+	if e.Mode != filterGrouped {
 		t.Fatal(e)
 	}
-	e.ExcludePaths = "ignored"
+	e.MatchAll = true
+	e.Groups = append(e.Groups, filterDraftGroup{All: true, Rows: []taskconfig.Rule{notRule(taskconfig.PathFilter("ignored"))}})
 	again := editorRules(t, e)
 	m, err := filefilter.Compile(again)
 	if err != nil {
@@ -77,14 +95,12 @@ func TestFilterProjectionKeepsOnePassExtensionAndReadOnlyShapes(t *testing.T) {
 			t.Fatal(c, yes, err)
 		}
 	}
-	for _, rules := range [][]taskconfig.Rule{{taskconfig.ExtensionFilter("txt")}, {{Kind: "regex", Pattern: filterText("a+")}}} {
-		e := projectFilterEditor(rules)
+	deep := filterGroup("allOf", []taskconfig.Rule{filterGroup("anyOf", []taskconfig.Rule{filterGroup("allOf", []taskconfig.Rule{taskconfig.ExtensionFilter("txt")})})})
+	for _, rules := range [][]taskconfig.Rule{{deep}, {{Kind: "regex", Pattern: filterText("a+")}}} {
+		e := projectNativeFilter(rules)
 		if e.Mode != filterReadOnly || e.Reason == "" {
 			t.Fatal(e)
 		}
-	}
-	if _, err := (filterEditor{Mode: filterCustom, IncludeExtensions: "."}).rules(); err == nil {
-		t.Fatal("empty normalized extension accepted")
 	}
 }
 func filterText(s string) *string { return &s }
@@ -104,8 +120,18 @@ func TestFilteredTransfersOnlyChangeMatchedFiles(t *testing.T) {
 	manualWrite(t, filepath.Join(first.Target, "中文/update.txt"), "old")
 	manualWrite(t, filepath.Join(first.Target, "other.bin"), "keep-filtered-old")
 	manualWrite(t, filepath.Join(q.Destinations[1].Path, "new.txt"), "keep-other-target-txt")
-	q.Destinations[0].Filters = editorRules(t, filterEditor{Mode: filterCustom, IncludePaths: "中文", IncludeExtensions: "txt", ExcludeExtensions: "bin", ExcludeGlobs: "**/skip.txt"})
-	q.Destinations[1].Filters = editorRules(t, filterEditor{Mode: filterCustom, IncludeExtensions: "bin"})
+	q.Destinations[0].Filters = editorRules(t, filterEditor{
+		Mode:     filterGrouped,
+		MatchAll: true,
+		Groups: []filterDraftGroup{
+			{Rows: []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")}},
+			{All: true, Rows: []taskconfig.Rule{notRule(taskconfig.ExtensionFilter("bin")), notRule(taskconfig.WildcardFilter("**/skip.txt"))}},
+		},
+	})
+	q.Destinations[1].Filters = editorRules(t, filterEditor{
+		Mode:   filterGrouped,
+		Groups: []filterDraftGroup{{Rows: []taskconfig.Rule{taskconfig.ExtensionFilter("bin")}}},
+	})
 	r, err := runMultiple(context.Background(), q, nil)
 	if err != nil {
 		t.Fatal(r, err)
@@ -140,12 +166,16 @@ func TestFilteredCompileFailureDoesNotWriteAndHealthyTargetContinues(t *testing.
 }
 
 func TestNoMatchIsNotEmptySourceAndNeverDeletes(t *testing.T) {
-	for _, mode := range []filterMode{filterNone, filterCustom} {
+	for _, mode := range []filterMode{filterNone, filterGrouped} {
 		q, first := multiFixture(t)
 		q.Destinations = q.Destinations[:1]
 		manualWrite(t, filepath.Join(first.Source, "a.txt"), "input")
 		manualWrite(t, filepath.Join(first.Target, "a.txt"), "unchanged")
-		q.Destinations[0].Filters = editorRules(t, filterEditor{Mode: mode, IncludeExtensions: "absent"})
+		editor := filterEditor{Mode: mode}
+		if mode == filterGrouped {
+			editor.Groups = []filterDraftGroup{{Rows: []taskconfig.Rule{taskconfig.ExtensionFilter("absent")}}}
+		}
+		q.Destinations[0].Filters = editorRules(t, editor)
 		r, err := runMultiple(context.Background(), q, nil)
 		result := r[q.Destinations[0].ID]
 		if err != nil || result.State != destinationNoMatches || result.Progress.Total != 0 || result.Progress.SourceFiles != 1 || result.Progress.SourceEmpty {
@@ -180,9 +210,10 @@ func TestFilterDraftBindingErrorAndReload(t *testing.T) {
 	a := &application{tasks: l}
 	a.selectManual(id)
 	first, second := a.manual.targets[0].ID, a.manual.targets[1].ID
-	a.setFilterMode(filterCustom)
-	a.manual.filterEditor.IncludeExtensions = "."
-	a.filterEdited()
+	a.setFilterMode(filterGrouped)
+	a.manual.filterEditor.Groups[0].Kind = 1
+	a.manual.filterEditor.Groups[0].Input = "."
+	a.addFilterRule(0)
 	if a.manual.filterDraftError() == nil {
 		t.Fatal("invalid draft accepted")
 	}
@@ -191,16 +222,18 @@ func TestFilterDraftBindingErrorAndReload(t *testing.T) {
 		t.Fatal("invalid draft wrote or blocked disk unnecessarily")
 	}
 	a.manual.selectTarget(second)
-	a.setFilterMode(filterCustom)
-	a.manual.filterEditor.IncludeGlobs = "**/*.bin"
-	a.filterEdited()
+	a.setFilterMode(filterGrouped)
+	a.manual.filterEditor.Groups[0].Kind = 2
+	a.manual.filterEditor.Groups[0].Input = "**/*.bin"
+	a.addFilterRule(0)
 	a.moveManualTarget(second, -1)
 	a.manual.selectTarget(first)
-	if a.manual.filterEditor.IncludeExtensions != "." || a.manual.filterEditor.Error == "" {
+	if a.manual.filterEditor.Groups[0].Input != "." || a.manual.filterEditor.Error == "" {
 		t.Fatal("invalid draft lost on switch")
 	}
-	a.manual.filterEditor.IncludeExtensions = "txt"
-	a.filterEdited()
+	a.manual.filterEditor.Error = ""
+	a.manual.filterEditor.Groups[0].Input = "txt"
+	a.addFilterRule(0)
 	l, _, err = l.saveMultiple(id, "Filters", a.manual.draftRequest())
 	if err != nil {
 		t.Fatal(err)
@@ -214,7 +247,9 @@ func TestFilterDraftBindingErrorAndReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Destinations[0].ID != second || projectFilterEditor(request.Destinations[0].Filters).IncludeGlobs != "**/*.bin" || request.Destinations[1].ID != first || projectFilterEditor(request.Destinations[1].Filters).IncludeExtensions != "txt" {
+	firstProj := projectNativeFilter(request.Destinations[0].Filters)
+	secondProj := projectNativeFilter(request.Destinations[1].Filters)
+	if request.Destinations[0].ID != second || *firstProj.Groups[0].Rows[0].Pattern != "**/*.bin" || request.Destinations[1].ID != first || *secondProj.Groups[0].Rows[0].Extension != "txt" {
 		t.Fatal(request)
 	}
 	a.manual.phase = manualRunning
@@ -257,7 +292,7 @@ func TestReadOnlyUnknownFiltersPreservedAndIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	form := projectFilterEditor(request.Destinations[0].Filters)
+	form := projectNativeFilter(request.Destinations[0].Filters)
 	if form.Mode != filterReadOnly || form.RunError == "" {
 		t.Fatal(form)
 	}

@@ -34,8 +34,8 @@ func TestMoveRoutingAndFlattenCollisions(t *testing.T) {
 		manualWrite(t, filepath.Join(p.Source, filepath.FromSlash(name)), value)
 	}
 	q.Destinations[0].Flatten = true
-	q.Destinations[0].Filters = editorRules(t, filterEditor{Mode: filterCustom, IncludeExtensions: "txt"})
-	q.Destinations[1].Filters = editorRules(t, filterEditor{Mode: filterCustom, IncludeExtensions: "txt\nbin"})
+	q.Destinations[0].Filters = []taskconfig.Rule{taskconfig.ExtensionFilter("txt")}
+	q.Destinations[1].Filters = []taskconfig.Rule{taskconfig.ExtensionFilter("txt"), taskconfig.ExtensionFilter("bin")}
 	r, e := runMultiple(context.Background(), q, nil)
 	if e != nil {
 		t.Fatal(r, e)
@@ -93,7 +93,7 @@ func TestMoveFailedOwnerDoesNotStopHealthyRoute(t *testing.T) {
 	manualWrite(t, filepath.Join(p.Source, "a.txt"), "keep")
 	manualWrite(t, filepath.Join(p.Source, "b.bin"), "move")
 	q.Destinations[0].Path = filepath.Join(t.TempDir(), "missing")
-	q.Destinations[0].Filters = editorRules(t, filterEditor{Mode: filterCustom, IncludeExtensions: "txt"})
+	q.Destinations[0].Filters = []taskconfig.Rule{taskconfig.ExtensionFilter("txt")}
 	r, e := runMultiple(context.Background(), q, nil)
 	if e == nil || r[q.Destinations[1].ID].Progress.Moved != 1 {
 		t.Fatal(r, e)

@@ -115,18 +115,3 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 	}
 	return p, nil
 }
-
-func validateMultiple(ctx context.Context, q manualTaskRequest) (err error) {
-	p, err := openMultiplePlan(ctx, q)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, protectedTransferIO(ctx, p.Close)) }()
-	var failures []error
-	for _, d := range q.Destinations {
-		if e := p.failures[d.ID]; e != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", d.Name, e))
-		}
-	}
-	return errors.Join(failures...)
-}

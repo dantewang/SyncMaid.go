@@ -67,13 +67,3 @@ func (a *application) triggerView(c *ui.Context, locked bool) {
 		ui.Text(c, a.tr("触发设置错误: ")+a.tr(s.triggerError))
 	}
 }
-func (a *application) watchView(c *ui.Context) {
-	ui.Text(c, a.render(a.watchActivity)).FontSize(12)
-	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, a.tr("暂停自动触发")).Disabled(a.watchPhase != watchesServing).OnClick(func() { a.stopWatches(watchesPaused) })
-		ui.Button(c, a.tr("恢复自动触发")).Disabled(a.watchPhase != watchesPaused).OnClick(a.resumeWatches)
-	})
-	if a.watchPhase == watchesPaused {
-		ui.Text(c, a.tr("自动触发已暂停"))
-	}
-}

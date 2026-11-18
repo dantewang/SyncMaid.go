@@ -35,7 +35,7 @@ func (e filterEditor) groupRules() ([]taskconfig.Rule, error) {
 
 func filterLeaf(r taskconfig.Rule) bool {
 	if r.Kind == "not" {
-		if r.HasUnknownFields() || r.Rule == nil || r.Rules != nil || r.Prefix != nil || r.Pattern != nil || r.Extension != nil {
+		if r.HasUnknownFields() || r.Rule == nil || r.PayloadCount() != 1 {
 			return false
 		}
 		r = *r.Rule
@@ -47,9 +47,9 @@ func projectFilterGroup(r taskconfig.Rule) (filterDraftGroup, bool) {
 		return filterDraftGroup{Rows: []taskconfig.Rule{r.Clone()}}, true
 	}
 	// De Morgan preserves even the empty excluded-any group (true).
-	if r.Kind == "not" && !r.HasUnknownFields() && r.Rule != nil && r.Rules == nil && r.Prefix == nil && r.Extension == nil && r.Pattern == nil {
+	if r.Kind == "not" && !r.HasUnknownFields() && r.Rule != nil && r.PayloadCount() == 1 {
 		inner := *r.Rule
-		if inner.Kind == "anyOf" && !inner.HasUnknownFields() && inner.Rules != nil && inner.Rule == nil && inner.Prefix == nil && inner.Extension == nil && inner.Pattern == nil {
+		if inner.Kind == "anyOf" && !inner.HasUnknownFields() && inner.Rules != nil && inner.PayloadCount() == 1 {
 			g := filterDraftGroup{All: true}
 			if len(*inner.Rules) == 0 {
 				g.Rows = []taskconfig.Rule{{Kind: "all"}}
@@ -65,7 +65,7 @@ func projectFilterGroup(r taskconfig.Rule) (filterDraftGroup, bool) {
 			return g, true
 		}
 	}
-	if r.HasUnknownFields() || r.Rules == nil || r.Rule != nil || r.Prefix != nil || r.Pattern != nil || r.Extension != nil || (r.Kind != "allOf" && r.Kind != "anyOf") {
+	if r.HasUnknownFields() || r.Rules == nil || r.PayloadCount() != 1 || (r.Kind != "allOf" && r.Kind != "anyOf") {
 		return filterDraftGroup{}, false
 	}
 	g := filterDraftGroup{All: r.Kind == "allOf"}
@@ -134,13 +134,17 @@ func (a *application) addFilterRule(group int) {
 	}
 	if r.Prefix != nil && *r.Prefix == "" || r.Extension != nil && *r.Extension == "" || r.Pattern != nil && *r.Pattern == "" {
 		e.Error = "过滤规则不能为空"
-		return
-	}
-	if _, err := filefilter.Compile([]taskconfig.Rule{r}); err != nil {
-		e.Error = err.Error()
+		a.manual.keepFilterDraft()
 		return
 	}
 	g.Rows = append(g.Rows, r)
+	rules, err := e.groupRules()
+	if err != nil {
+		g.Rows = g.Rows[:len(g.Rows)-1]
+		e.Error = err.Error()
+		a.manual.keepFilterDraft()
+		return
+	}
 	g.Input = ""
-	a.filterEdited()
+	a.commitFilterDraft(rules, nil)
 }

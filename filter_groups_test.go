@@ -18,7 +18,14 @@ func TestNativeFilterProjectionKeepsMeaningAndOriginal(t *testing.T) {
 		{filterGroup("allOf", []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")})},
 		{filterGroup("anyOf", nil)}, {filterGroup("allOf", nil)},
 		{{Kind: "not", Rule: filterRulePtr(filterGroup("anyOf", nil))}},
-		editorRules(t, filterEditor{Mode: filterCustom, IncludePaths: "中文", IncludeExtensions: "txt", ExcludeExtensions: "tmp"}),
+		editorRules(t, filterEditor{
+			Mode:     filterGrouped,
+			MatchAll: true,
+			Groups: []filterDraftGroup{
+				{Rows: []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")}},
+				{All: true, Rows: []taskconfig.Rule{{Kind: "not", Rule: filterRulePtr(taskconfig.ExtensionFilter("tmp"))}}},
+			},
+		}),
 	}
 	for _, rs := range cases {
 		before, _ := json.Marshal(rs)

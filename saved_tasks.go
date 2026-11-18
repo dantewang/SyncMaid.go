@@ -65,43 +65,6 @@ func (l *savedTaskLibrary) find(id taskconfig.ID) (taskconfig.Task, error) {
 	return taskconfig.Task{}, errors.New("未找到此任务，请重新载入或新建")
 }
 
-// The single-target accessor remains for callers that explicitly require a pair.
-func requestFromSaved(t taskconfig.Task) (manualRequest, error) {
-	q, err := multipleRequestFromSaved(t)
-	if err != nil {
-		return manualRequest{}, err
-	}
-	if len(q.Destinations) != 1 {
-		return manualRequest{}, errors.New("需要单目标任务")
-	}
-	if destinationStrategy(q.Destinations[0]) != taskconfig.AddOnly || !isAllFileRules(q.Destinations[0].Filters) {
-		return manualRequest{}, errors.New("无过滤的单目标接口不能忽略现有过滤规则")
-	}
-	return manualRequest{Source: q.Source, Target: q.Destinations[0].Path}, nil
-}
-func (l *savedTaskLibrary) save(id taskconfig.ID, name string, q manualRequest) (*savedTaskLibrary, taskconfig.ID, error) {
-	d := manualDestination{ID: taskconfig.NewID(), Name: "目标", Path: q.Target, Filters: allFileRules()}
-	if id != "" {
-		t, err := l.find(id)
-		if err != nil {
-			return nil, id, err
-		}
-		old, err := multipleRequestFromSaved(t)
-		if err != nil {
-			return nil, id, err
-		}
-		if len(old.Destinations) != 1 {
-			return nil, id, errors.New("单目标保存不能缩减多目标任务")
-		}
-		d.ID = old.Destinations[0].ID
-		d.Name = old.Destinations[0].Name
-		if destinationStrategy(old.Destinations[0]) != taskconfig.AddOnly || !isAllFileRules(old.Destinations[0].Filters) {
-			return nil, id, errors.New("无过滤的单目标保存接口不能覆盖过滤规则")
-		}
-		d.Filters = old.Destinations[0].Filters
-	}
-	return l.saveMultiple(id, name, manualTaskRequest{Source: q.Source, Destinations: []manualDestination{d}})
-}
 func (l *savedTaskLibrary) remove(id taskconfig.ID) (*savedTaskLibrary, error) {
 	if l == nil || l.snapshot == nil {
 		return nil, taskstore.ErrBlocked
