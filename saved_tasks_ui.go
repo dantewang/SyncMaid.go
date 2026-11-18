@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"syncmaid/internal/syncengine"
 
 	"github.com/egoist/mygo"
 	"syncmaid/internal/taskconfig"
@@ -38,7 +39,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 	a.sourcePreview.invalidate()
 	s := manualSession{onEdit: a.manualEdited, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
 	for _, d := range t.Destinations {
-		s.targets = append(s.targets, cloneManualDestination(manualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy}))
+		s.targets = append(s.targets, cloneManualDestination(syncengine.ManualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy}))
 	}
 	if len(s.targets) > 0 {
 		d := s.targets[0]

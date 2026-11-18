@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/syncengine"
 	"testing"
 
 	"syncmaid/internal/winutil"
@@ -48,12 +49,12 @@ func TestCommonCloseAndBusyQuit(t *testing.T) {
 		quits := 0
 		canceled := false
 		reply := make(chan error, 1)
-		a := &application{commonValue: winutil.CommonSettings{CloseToTray: hide}, manual: manualSession{phase: manualRunning, cancel: func() { canceled = true }, mirrorReply: reply, mirrorPreview: &mirrorPreview{}}}
+		a := &application{commonValue: winutil.CommonSettings{CloseToTray: hide}, manual: manualSession{phase: manualRunning, cancel: func() { canceled = true }, mirrorReply: reply, mirrorPreview: &syncengine.MirrorPreview{}}}
 		a.lifecycle.ready(w, func() { quits++ }, nil)
 		a.closeWindow()
 		select {
 		case err := <-reply:
-			if !errors.Is(err, errMirrorDeclined) {
+			if !errors.Is(err, syncengine.ErrMirrorDeclined) {
 				t.Fatalf("close did not reject Mirror: %v", err)
 			}
 		default:

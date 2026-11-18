@@ -3,11 +3,12 @@ package main
 import (
 	"errors"
 	"strings"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 )
 
 // Configuration checks do not grant filesystem access; runs verify real roots.
-func validateTaskDraft(q manualTaskRequest) error {
+func validateTaskDraft(q syncengine.ManualTaskRequest) error {
 	if strings.TrimSpace(q.Source) == "" {
 		return errors.New("源文件夹不能为空")
 	}
@@ -27,12 +28,12 @@ func validateEditedTaskLayout(edit taskconfig.Task, tasks []taskconfig.Task) err
 		if other.ID == edit.ID {
 			continue
 		}
-		if obviousPathOverlap(edit.SourcePath, other.SourcePath) {
+		if syncengine.ObviousPathOverlap(edit.SourcePath, other.SourcePath) {
 			return errors.New("源文件夹与其他任务重叠")
 		}
 		for _, d := range edit.Destinations {
 			for _, existing := range other.Destinations {
-				if obviousPathOverlap(d.Target.Path, existing.Target.Path) {
+				if syncengine.ObviousPathOverlap(d.Target.Path, existing.Target.Path) {
 					return errors.New("目标文件夹与其他任务重叠")
 				}
 			}
@@ -41,7 +42,7 @@ func validateEditedTaskLayout(edit taskconfig.Task, tasks []taskconfig.Task) err
 	return nil
 }
 
-func cloneManualDestination(d manualDestination) manualDestination {
+func cloneManualDestination(d syncengine.ManualDestination) syncengine.ManualDestination {
 	d.Filters = append([]taskconfig.Rule(nil), d.Filters...)
 	for i := range d.Filters {
 		d.Filters[i] = d.Filters[i].Clone()
@@ -51,10 +52,10 @@ func cloneManualDestination(d manualDestination) manualDestination {
 
 type destinationEditState struct {
 	isNew    bool
-	original manualDestination
+	original syncengine.ManualDestination
 }
 
-func (s *manualSession) beginDestinationEdit(id taskconfig.ID, original *manualDestination) {
+func (s *manualSession) beginDestinationEdit(id taskconfig.ID, original *syncengine.ManualDestination) {
 	if s.destinationEdits == nil {
 		s.destinationEdits = map[taskconfig.ID]destinationEditState{}
 	}
@@ -87,18 +88,18 @@ func (a *application) acceptDestination(id taskconfig.ID) bool {
 			s.message = messagef("目标名称与文件夹不能为空")
 			return false
 		}
-		if obviousPathOverlap(s.source, d.Path) {
-			s.message = messagef("错误: %s", errTransferOverlap.Error())
+		if syncengine.ObviousPathOverlap(s.source, d.Path) {
+			s.message = messagef("错误: %s", syncengine.ErrTransferOverlap.Error())
 			return false
 		}
 		for _, other := range s.targets {
-			if other.ID != id && obviousPathOverlap(other.Path, d.Path) {
-				s.message = messagef("错误: %s", errTransferOverlap.Error())
+			if other.ID != id && syncengine.ObviousPathOverlap(other.Path, d.Path) {
+				s.message = messagef("错误: %s", syncengine.ErrTransferOverlap.Error())
 				return false
 			}
 		}
 		delete(s.destinationEdits, id)
-		if manualKind(s.kind) == taskconfig.Moving && isAllFileRules(d.Filters) {
+		if syncengine.ManualKind(s.kind) == taskconfig.Moving && syncengine.IsAllFileRules(d.Filters) {
 			for i, item := range s.targets {
 				if item.ID == id {
 					s.targets = append(s.targets[:i], s.targets[i+1:]...)
@@ -119,7 +120,7 @@ func (s *manualSession) canMoveTarget(i, delta int) bool {
 	if i < 0 || i >= len(s.targets) || j < 0 || j >= len(s.targets) {
 		return false
 	}
-	return manualKind(s.kind) != taskconfig.Moving || (!isAllFileRules(s.targets[i].Filters) && !isAllFileRules(s.targets[j].Filters))
+	return syncengine.ManualKind(s.kind) != taskconfig.Moving || (!syncengine.IsAllFileRules(s.targets[i].Filters) && !syncengine.IsAllFileRules(s.targets[j].Filters))
 }
 
 func (a *application) acceptOpenDestinations() bool {

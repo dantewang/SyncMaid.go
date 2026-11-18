@@ -1,10 +1,9 @@
-package main
+package syncengine
 
 import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,55 +11,6 @@ import (
 
 	"golang.org/x/sys/windows"
 )
-
-func manualFixture(t *testing.T) manualRequest {
-	t.Helper()
-	base := t.TempDir()
-	s, d := filepath.Join(base, "source"), filepath.Join(base, "target")
-	for _, p := range []string{s, d} {
-		if e := os.Mkdir(p, 0700); e != nil {
-			t.Fatal(e)
-		}
-	}
-	return manualRequest{s, d}
-}
-func manualWrite(t *testing.T, path, contents string) {
-	t.Helper()
-	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
-		t.Fatal(e)
-	}
-	if e := os.WriteFile(path, []byte(contents), 0600); e != nil {
-		t.Fatal(e)
-	}
-}
-func manualRead(t *testing.T, path, want string) {
-	t.Helper()
-	b, e := os.ReadFile(path)
-	if e != nil || string(b) != want {
-		t.Fatalf("%s got %q %v want %q", path, b, e, want)
-	}
-}
-func noTransferTemps(t *testing.T, root string) {
-	t.Helper()
-	e := filepath.WalkDir(root, func(p string, d os.DirEntry, e error) error {
-		if e != nil {
-			return e
-		}
-		if strings.HasPrefix(d.Name(), ".syncmaid-") {
-			t.Errorf("leaked temp %s", p)
-		}
-		return nil
-	})
-	if e != nil {
-		t.Fatal(e)
-	}
-}
-func manualJunction(t *testing.T, path, target string) {
-	t.Helper()
-	if b, e := exec.Command("cmd", "/c", "mklink", "/J", path, target).CombinedOutput(); e != nil {
-		t.Skipf("junction fixture unavailable: %v %s", e, b)
-	}
-}
 
 func TestManualAddOnlyUpdatesAndKeepsExtra(t *testing.T) {
 	q := manualFixture(t)
@@ -125,18 +75,18 @@ func TestManualFailureAndCancellationPreserveDestination(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			sentinel := errors.New("injected transfer failure")
-			ops := transferIO{copy: copyChecked, publish: publishTransfer}
+			ops := TransferIO{Copy: CopyChecked, Publish: PublishTransfer}
 			switch failure {
 			case "partial-copy":
-				ops.copy = func(ctx context.Context, s, d *os.File, p func(int64)) error {
+				ops.Copy = func(ctx context.Context, s, d *os.File, p func(int64)) error {
 					_, e := d.Write([]byte("partial"))
 					return errors.Join(sentinel, e)
 				}
 			case "publish":
-				ops.publish = func(*os.File, windows.Handle, string, bool) error { return sentinel }
+				ops.Publish = func(*os.File, windows.Handle, string, bool) error { return sentinel }
 			case "cancel-before-publish":
-				ops.copy = func(ctx context.Context, s, d *os.File, p func(int64)) error {
-					e := copyChecked(ctx, s, d, p)
+				ops.Copy = func(ctx context.Context, s, d *os.File, p func(int64)) error {
+					e := CopyChecked(ctx, s, d, p)
 					cancel()
 					return e
 				}
@@ -148,7 +98,7 @@ func TestManualFailureAndCancellationPreserveDestination(t *testing.T) {
 			}
 			manualRead(t, filepath.Join(q.Target, "f"), "original")
 			if failure == "publish" {
-				if !errors.Is(e, errTransferPublicationUnknown) {
+				if !errors.Is(e, ErrTransferPublicationUnknown) {
 					t.Fatal(e)
 				}
 				files, err := filepath.Glob(filepath.Join(q.Target, ".syncmaid-*.tmp"))
@@ -168,7 +118,7 @@ func TestManualCancelMidCopyCleansTemp(t *testing.T) {
 	manualWrite(t, filepath.Join(q.Target, "f"), "old")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	p, e := runManual(ctx, q, func(p transferProgress) {
+	p, e := runManual(ctx, q, func(p TransferProgress) {
 		if p.Bytes > 0 {
 			cancel()
 		}
@@ -185,14 +135,14 @@ func TestManualOverlapAndAliases(t *testing.T) {
 	if e := os.Mkdir(nested, 0700); e != nil {
 		t.Fatal(e)
 	}
-	for _, r := range []manualRequest{{q.Source, q.Source}, {q.Source, nested}, {nested, q.Source}, {"relative", q.Target}} {
+	for _, r := range []ManualRequest{{q.Source, q.Source}, {q.Source, nested}, {nested, q.Source}, {"relative", q.Target}} {
 		if _, e := validateManual(context.Background(), r); e == nil {
 			t.Fatal("overlap accepted", r)
 		}
 	}
 	alias := filepath.Join(filepath.Dir(q.Source), "alias")
 	manualJunction(t, alias, q.Source)
-	if _, e := validateManual(context.Background(), manualRequest{q.Source, alias}); e == nil {
+	if _, e := validateManual(context.Background(), ManualRequest{q.Source, alias}); e == nil {
 		t.Fatal("alias accepted")
 	}
 }
@@ -202,7 +152,7 @@ func TestManualScanFailureAndChangedSourceBlockWrites(t *testing.T) {
 	manualWrite(t, filepath.Join(q.Target, "a"), "old")
 	// Source changes after enumeration, before any file open.
 	changed := false
-	p, e := runManual(context.Background(), q, func(p transferProgress) {
+	p, e := runManual(context.Background(), q, func(p TransferProgress) {
 		if p.Stage == "同步中" && !changed {
 			changed = true
 			manualWrite(t, filepath.Join(q.Source, "a"), "changed size")
@@ -229,7 +179,7 @@ func TestManualReplacedSourceDirectoryAndTargetReparse(t *testing.T) {
 			outside := t.TempDir()
 			manualWrite(t, filepath.Join(outside, "f"), "outside-original")
 			changed := false
-			_, e := runManual(context.Background(), q, func(p transferProgress) {
+			_, e := runManual(context.Background(), q, func(p TransferProgress) {
 				if p.Stage != "同步中" || changed {
 					return
 				}
@@ -269,7 +219,7 @@ func TestManualPinsOpenFilesAndDirectory(t *testing.T) {
 	s, d := filepath.Join(q.Source, "sub", "f"), filepath.Join(q.Target, "sub", "f")
 	manualWrite(t, s, "new-content")
 	manualWrite(t, d, "old")
-	ops := transferIO{publish: publishTransfer, copy: func(ctx context.Context, source, temp *os.File, p func(int64)) error {
+	ops := TransferIO{Publish: PublishTransfer, Copy: func(ctx context.Context, source, temp *os.File, p func(int64)) error {
 		if e := os.WriteFile(s, []byte("bad"), 0600); e == nil {
 			t.Fatal("open source was writable")
 		}
@@ -279,7 +229,7 @@ func TestManualPinsOpenFilesAndDirectory(t *testing.T) {
 		if e := os.Rename(filepath.Dir(s), filepath.Join(q.Source, "moved")); e == nil {
 			t.Fatal("pinned source parent was renamed")
 		}
-		return copyChecked(ctx, source, temp, p)
+		return CopyChecked(ctx, source, temp, p)
 	}}
 	if _, e := runManualWith(context.Background(), q, nil, ops); e != nil {
 		t.Fatal(e)
@@ -300,36 +250,14 @@ func TestManualHardLinkRefused(t *testing.T) {
 	noTransferTemps(t, q.Target)
 }
 
-func TestManualSessionStopAndQuit(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	a := &application{manual: manualSession{phase: manualRunning, cancel: cancel}}
-	a.manual.edited()
-	if a.manual.phase != manualRunning {
-		t.Fatal("edit bypassed running guard")
-	}
-	a.requestQuit()
-	if !a.manual.quitPending || a.manual.phase != manualStopping || ctx.Err() != context.Canceled {
-		t.Fatal(a.manual.phase, ctx.Err())
-	}
-	// Closing to tray retains a running worker; only Exit cancels it.
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
-	b := &application{manual: manualSession{phase: manualRunning, cancel: cancel2}}
-	b.lifecycle.ready(&recordedWindow{}, func() {}, func() {})
-	if !b.lifecycle.closeRequested() || ctx2.Err() != nil || b.manual.phase != manualRunning {
-		t.Fatal("hide canceled work")
-	}
-}
-
 func TestManualInterruptibleCancellationCleansTemp(t *testing.T) {
 	q := manualFixture(t)
 	manualWrite(t, filepath.Join(q.Source, "f"), strings.Repeat("x", 1<<20))
 	manualWrite(t, filepath.Join(q.Target, "f"), "old")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	e := interruptibleIO(ctx, func(ctx context.Context) error {
-		_, e := runManual(ctx, q, func(p transferProgress) {
+	e := InterruptibleIO(ctx, func(ctx context.Context) error {
+		_, e := runManual(ctx, q, func(p TransferProgress) {
 			if p.Bytes > 0 {
 				cancel()
 			}
@@ -348,7 +276,7 @@ func TestManualCleanupDisablesIOInterruption(t *testing.T) {
 	ctx = context.WithValue(ctx, transferIOKey{}, g)
 	cancel()
 	sentinel := errors.New("cleanup fault")
-	e := protectedTransferIO(ctx, func() error {
+	e := ProtectedTransferIO(ctx, func() error {
 		if g.enabled {
 			t.Fatal("cleanup interruption enabled")
 		}

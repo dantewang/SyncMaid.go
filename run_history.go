@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"syncmaid/internal/syncengine"
 	"time"
 	"unicode/utf8"
 
@@ -39,9 +40,9 @@ type runGoal struct {
 	Started, Ended time.Time
 	ID             taskconfig.ID
 	Name           string
-	State          destinationState
+	State          syncengine.DestinationState
 	Error          string
-	Counts         transferProgress
+	Counts         syncengine.TransferProgress
 }
 type runRecord struct {
 	ID, TaskID     taskconfig.ID
@@ -72,8 +73,8 @@ func historyText(s string, n int) string {
 	}
 	return s
 }
-func newRunRecord(id taskconfig.ID, name string, q manualTaskRequest, automatic bool, now time.Time) (runRecord, error) {
-	r := runRecord{ID: taskconfig.NewID(), TaskID: id, Name: historyText(name, 256), Kind: manualKind(q.Kind), Origin: originManual, Started: now, Outcome: outcomeRunning}
+func newRunRecord(id taskconfig.ID, name string, q syncengine.ManualTaskRequest, automatic bool, now time.Time) (runRecord, error) {
+	r := runRecord{ID: taskconfig.NewID(), TaskID: id, Name: historyText(name, 256), Kind: syncengine.ManualKind(q.Kind), Origin: originManual, Started: now, Outcome: outcomeRunning}
 	if automatic {
 		r.Origin = triggerOrigin(q.Trigger.Kind)
 	}
@@ -81,11 +82,11 @@ func newRunRecord(id taskconfig.ID, name string, q manualTaskRequest, automatic 
 		return r, fmt.Errorf("运行记录每次最多支持%d个目标，文件执行不受影响", historyGoalLimit)
 	}
 	for _, d := range q.Destinations {
-		r.Goals = append(r.Goals, runGoal{ID: d.ID, Name: historyText(d.Name, 256), State: destinationWaiting})
+		r.Goals = append(r.Goals, runGoal{ID: d.ID, Name: historyText(d.Name, 256), State: syncengine.DestinationWaiting})
 	}
 	return r, nil
 }
-func finishRunRecord(r runRecord, results multipleResult, err error, now time.Time) runRecord {
+func finishRunRecord(r runRecord, results syncengine.MultipleResult, err error, now time.Time) runRecord {
 	r.Ended = now
 	r.Outcome = outcomeSucceeded
 	if errors.Is(err, context.Canceled) {
@@ -100,7 +101,7 @@ func finishRunRecord(r runRecord, results multipleResult, err error, now time.Ti
 	for i, g := range r.Goals {
 		result, ok := results[g.ID]
 		if !ok {
-			g.State = destinationInterrupted
+			g.State = syncengine.DestinationInterrupted
 			g.Error = "没有记录此目标的最终状态，请核对文件"
 			if r.Outcome == outcomeSucceeded {
 				r.Outcome = outcomeFailed
@@ -114,7 +115,7 @@ func finishRunRecord(r runRecord, results multipleResult, err error, now time.Ti
 			g.Counts = result.Progress
 			g.Counts.Path = ""
 			g.Counts.Stage = "" // Counts only, never a per-file trace.
-			if result.State == destinationFailed && r.Outcome == outcomeSucceeded {
+			if result.State == syncengine.DestinationFailed && r.Outcome == outcomeSucceeded {
 				r.Outcome = outcomeFailed
 			}
 		}
@@ -124,7 +125,7 @@ func finishRunRecord(r runRecord, results multipleResult, err error, now time.Ti
 }
 
 // Diagnostic errors never replace the work result or cause work to run again.
-func executeRecordedRun(h *runHistoryStore, start runRecord, startErr error, active []taskconfig.ID, work func() (multipleResult, error)) (runHistoryData, runRecord, multipleResult, error, error) {
+func executeRecordedRun(h *runHistoryStore, start runRecord, startErr error, active []taskconfig.ID, work func() (syncengine.MultipleResult, error)) (runHistoryData, runRecord, syncengine.MultipleResult, error, error) {
 	var historyErr error
 	if startErr == nil && h != nil {
 		historyErr = h.put(start, active)
@@ -158,12 +159,12 @@ func historyResult(r runRecord) savedTaskResult {
 	if r.Error != "" {
 		message = messagef("%s · %s", message, r.Error)
 	}
-	results := multipleResult{}
-	var progress transferProgress
+	results := syncengine.MultipleResult{}
+	var progress syncengine.TransferProgress
 	for _, g := range r.Goals {
-		result := destinationResult{ID: g.ID, Name: g.Name, Started: g.Started, Ended: g.Ended, State: g.State, Progress: g.Counts, Error: g.Error}
+		result := syncengine.DestinationResult{ID: g.ID, Name: g.Name, Started: g.Started, Ended: g.Ended, State: g.State, Progress: g.Counts, Error: g.Error}
 		if r.Outcome == outcomeRunning {
-			result.State = destinationInterrupted
+			result.State = syncengine.DestinationInterrupted
 			result.Error = "上次未记录结束，计数不是最终结果，请核对文件"
 		}
 		results[g.ID] = result

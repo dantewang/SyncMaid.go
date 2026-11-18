@@ -109,8 +109,8 @@ func (a *application) filtersView(c *ui.Context, locked bool) {
 		if a.tasks != nil {
 			if bundle, ok := a.tasks.restored[a.manual.id][a.manual.targetID]; ok {
 				ui.Text(c, a.tr("已有正则确认记录；执行仍会检查全部规则、绑定及版本。"))
-				if bundle.err != nil {
-					ui.Text(c, a.tr("确认无效，需重新预览：")+bundle.err.Error())
+				if bundle.Err != nil {
+					ui.Text(c, a.tr("确认无效，需重新预览：")+bundle.Err.Error())
 				}
 				return
 			}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/fileinventory"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
 )
@@ -74,7 +75,7 @@ func TestSourcePreviewRequiresCurrentRegexConfirmation(t *testing.T) {
 	absentMoveFile(t, filepath.Join(p.Target, "a.txt"))
 }
 
-func previewFixture(t *testing.T) manualTaskRequest {
+func previewFixture(t *testing.T) syncengine.ManualTaskRequest {
 	t.Helper()
 	root := t.TempDir()
 	for _, p := range []string{"中文/a.txt", "photo.jpg", "notes.txt"} {
@@ -86,9 +87,9 @@ func previewFixture(t *testing.T) manualTaskRequest {
 			t.Fatal(err)
 		}
 	}
-	return manualTaskRequest{Source: root, Kind: taskconfig.Sync, Destinations: []manualDestination{
+	return syncengine.ManualTaskRequest{Source: root, Kind: taskconfig.Sync, Destinations: []syncengine.ManualDestination{
 		{ID: taskconfig.NewID(), Name: "Text", Path: filepath.Join(root, "missing-target"), Strategy: taskconfig.AddOnly, Filters: []taskconfig.Rule{taskconfig.ExtensionFilter("txt")}},
-		{ID: taskconfig.NewID(), Name: "Rest", Path: filepath.Join(root, "also-missing"), Strategy: taskconfig.AddOnly, Filters: allFileRules()},
+		{ID: taskconfig.NewID(), Name: "Rest", Path: filepath.Join(root, "also-missing"), Strategy: taskconfig.AddOnly, Filters: syncengine.AllFileRules()},
 	}}
 }
 func TestSourcePreviewSyncAndMoveAreReadOnlyAndBounded(t *testing.T) {
@@ -170,7 +171,7 @@ func TestSourcePreviewEmptyMissingCanceledAndInvalidRules(t *testing.T) {
 	}
 }
 func TestSourcePreviewDraftIsolationAndLateResult(t *testing.T) {
-	a := &application{manual: manualSession{source: "unchanged", targetID: "one", targets: []manualDestination{{ID: "one", Filters: []taskconfig.Rule{taskconfig.ExtensionFilter("txt")}}}}}
+	a := &application{manual: manualSession{source: "unchanged", targetID: "one", targets: []syncengine.ManualDestination{{ID: "one", Filters: []taskconfig.Rule{taskconfig.ExtensionFilter("txt")}}}}}
 	q, e := a.previewDraft()
 	if e != nil {
 		t.Fatal(e)

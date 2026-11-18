@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -9,22 +9,22 @@ import (
 	"time"
 )
 
-func transferNeeded(sourceSize int64, sourceTime time.Time, targetSize int64, targetTime time.Time) bool {
+func TransferNeeded(sourceSize int64, sourceTime time.Time, targetSize int64, targetTime time.Time) bool {
 	return sourceSize != targetSize || sourceTime.Unix() != targetTime.Unix()
 }
-func copyChecked(ctx context.Context, source, temp *os.File, progress func(int64)) error {
+func CopyChecked(ctx context.Context, source, temp *os.File, progress func(int64)) error {
 	return copyWithVerify(ctx, source, temp, true, progress)
 }
 
-func copyUnverified(ctx context.Context, source, temp *os.File, progress func(int64)) error {
+func CopyUnverified(ctx context.Context, source, temp *os.File, progress func(int64)) error {
 	return copyWithVerify(ctx, source, temp, false, progress)
 }
 
-func transferCopier(verifyContents bool) func(context.Context, *os.File, *os.File, func(int64)) error {
+func TransferCopier(verifyContents bool) func(context.Context, *os.File, *os.File, func(int64)) error {
 	if verifyContents {
-		return copyChecked
+		return CopyChecked
 	}
-	return copyUnverified
+	return CopyUnverified
 }
 
 func copyWithVerify(ctx context.Context, source, temp *os.File, verifyContents bool, progress func(int64)) error {
@@ -34,7 +34,7 @@ func copyWithVerify(ctx context.Context, source, temp *os.File, verifyContents b
 	}
 	buffer := make([]byte, 256<<10)
 	if !verifyContents {
-		written, err := copyTransfer(ctx, temp, source, buffer, progress)
+		written, err := CopyTransfer(ctx, temp, source, buffer, progress)
 		if err != nil {
 			return err
 		}
@@ -47,7 +47,7 @@ func copyWithVerify(ctx context.Context, source, temp *os.File, verifyContents b
 		return ctx.Err()
 	}
 	h := sha256.New()
-	written, err := copyTransfer(ctx, io.MultiWriter(temp, h), source, buffer, progress)
+	written, err := CopyTransfer(ctx, io.MultiWriter(temp, h), source, buffer, progress)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func copyWithVerify(ctx context.Context, source, temp *os.File, verifyContents b
 		return err
 	}
 	actual := sha256.New()
-	if _, err := copyTransfer(ctx, actual, temp, buffer, nil); err != nil {
+	if _, err := CopyTransfer(ctx, actual, temp, buffer, nil); err != nil {
 		return err
 	}
 	if string(h.Sum(nil)) != string(actual.Sum(nil)) {
@@ -70,7 +70,7 @@ func copyWithVerify(ctx context.Context, source, temp *os.File, verifyContents b
 	return ctx.Err()
 }
 
-func copyTransfer(ctx context.Context, dst io.Writer, src io.Reader, buffer []byte, progress func(int64)) (total int64, err error) {
+func CopyTransfer(ctx context.Context, dst io.Writer, src io.Reader, buffer []byte, progress func(int64)) (total int64, err error) {
 	for {
 		if err = ctx.Err(); err != nil {
 			return total, err

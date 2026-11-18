@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/egoist/mygo/ui"
 	"strings"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
 )
@@ -84,7 +85,7 @@ func TestCardOverviewLanguagesAndIndependentResults(t *testing.T) {
 	}
 	task, _ := l.find(id)
 	did := task.Destinations[0].ID
-	a := &application{tasks: l, results: map[taskconfig.ID]savedTaskResult{id: {message: messagef("全部目标同步完成"), destinations: multipleResult{did: {Name: "Destination", State: destinationSucceeded}}}}}
+	a := &application{tasks: l, results: map[taskconfig.ID]savedTaskResult{id: {message: messagef("全部目标同步完成"), destinations: syncengine.MultipleResult{did: {Name: "Destination", State: syncengine.DestinationSucceeded}}}}}
 	for _, choice := range languageChoices {
 		a.locale = choice.tag
 		tt := ui.NewTester(a.view, 1400, 1600)
@@ -123,7 +124,7 @@ func TestCardCollapseDoesNotMutateDraftOrResults(t *testing.T) {
 }
 
 func TestPorcelainOverlayCannotHideMirrorOrStop(t *testing.T) {
-	a := &application{locale: "zh-Hans", historyOpen: true, cards: taskCardLayout{editor: true}, manual: manualSession{phase: manualRunning, mirrorPreview: &mirrorPreview{Name: "Synthetic", Paths: []string{"synthetic.txt"}, Mode: taskconfig.Permanent}}}
+	a := &application{locale: "zh-Hans", historyOpen: true, cards: taskCardLayout{editor: true}, manual: manualSession{phase: manualRunning, mirrorPreview: &syncengine.MirrorPreview{Name: "Synthetic", Paths: []string{"synthetic.txt"}, Mode: taskconfig.Permanent}}}
 	tt := ui.NewTester(a.view, 940, 620)
 	if !tt.HasText(a.tr("确认本次移除")) || !tt.HasText(a.tr("停止")) {
 		t.Fatal("navigation hid safety actions", tt.Texts())

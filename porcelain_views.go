@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"time"
 )
@@ -339,7 +340,7 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task, now time.Time, 
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 			ui.Row(c).FillWidth().MinHeight(68).Gap(8).Padding(10, 16, 10, 16).Children(func() {
 				mark := destinationHealthColor(r, ok)
-				if ok && r.State == destinationSkipped && result.outcome == "failed" {
+				if ok && r.State == syncengine.DestinationSkipped && result.outcome == "failed" {
 					mark = porcelain.Danger
 				}
 				ui.Box(c).Size(7, 7).Background(mark)

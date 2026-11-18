@@ -2,12 +2,13 @@ package main
 
 import (
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 )
 
 func (a *application) setManualKind(kind taskconfig.TaskKind) {
 	s := &a.manual
-	if !a.targetEditAllowed() || len(s.targets) != 0 || manualKind(s.kind) == kind {
+	if !a.targetEditAllowed() || len(s.targets) != 0 || syncengine.ManualKind(s.kind) == kind {
 		return
 	}
 	s.kind = kind
@@ -26,14 +27,14 @@ func (a *application) manualKindView(c *ui.Context, locked bool) {
 		if kind == taskconfig.Moving {
 			glyph = "move"
 		}
-		porcelainChoice(c, glyph, a.tr(key), a.tr(description), manualKind(s.kind) == kind, locked || len(s.targets) != 0, func() { a.setManualKind(kind) }).MinHeight(94)
+		porcelainChoice(c, glyph, a.tr(key), a.tr(description), syncengine.ManualKind(s.kind) == kind, locked || len(s.targets) != 0, func() { a.setManualKind(kind) }).MinHeight(94)
 	}
-	if manualKind(s.kind) == taskconfig.Moving {
+	if syncengine.ManualKind(s.kind) == taskconfig.Moving {
 		ui.Text(c, a.tr("首个匹配目标拥有文件；不覆盖目标，失败不转投后续目标。已保存任务不能切换类型。"))
 	}
 }
 func (a *application) setMoveFlatten(flatten bool) {
-	if !a.targetEditAllowed() || manualKind(a.manual.kind) != taskconfig.Moving {
+	if !a.targetEditAllowed() || syncengine.ManualKind(a.manual.kind) != taskconfig.Moving {
 		return
 	}
 	for i := range a.manual.targets {
@@ -61,7 +62,7 @@ func (a *application) moveOptionsView(c *ui.Context, locked bool) {
 }
 
 func (a *application) setMoveCollision(policy taskconfig.CollisionPolicy) {
-	if !a.targetEditAllowed() || manualKind(a.manual.kind) != taskconfig.Moving {
+	if !a.targetEditAllowed() || syncengine.ManualKind(a.manual.kind) != taskconfig.Moving {
 		return
 	}
 	if policy != taskconfig.Skip && policy != taskconfig.Suffix {

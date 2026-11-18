@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"syncmaid/internal/taskconfig"
 )
 
-func mirrorFixture(t *testing.T) (manualRequest, manualDestination) {
+func mirrorFixture(t *testing.T) (ManualRequest, ManualDestination) {
 	q, p := multiFixture(t)
 	manualWrite(t, filepath.Join(p.Source, "keep.txt"), "source")
 	manualWrite(t, filepath.Join(p.Target, "extra.txt"), "extra")
@@ -20,22 +20,22 @@ func mirrorFixture(t *testing.T) (manualRequest, manualDestination) {
 	d.DeleteMode = taskconfig.Permanent
 	return p, d
 }
-func acceptMirror(context.Context, mirrorPreview) error { return nil }
+func acceptMirror(context.Context, MirrorPreview) error { return nil }
 func noRecycle(string) error                            { return errors.New("unexpected recycle") }
 func TestMirrorPermanentAndDeclined(t *testing.T) {
 	for _, accept := range []bool{false, true} {
 		p, d := mirrorFixture(t)
 		called := 0
-		progress, err := runMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v mirrorPreview) error {
+		progress, err := RunMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v MirrorPreview) error {
 			called++
 			if v.DestinationID != d.ID || len(v.Paths) != 1 || v.Paths[0] != "extra.txt" || v.Mode != taskconfig.Permanent {
 				t.Fatal(v)
 			}
 			if !accept {
-				return errMirrorDeclined
+				return ErrMirrorDeclined
 			}
 			return nil
-		}, runManualFiltered, noRecycle)
+		}, RunManualFiltered, noRecycle)
 		if called != 1 {
 			t.Fatal(called)
 		}
@@ -48,7 +48,7 @@ func TestMirrorPermanentAndDeclined(t *testing.T) {
 				t.Fatal(e)
 			}
 		} else {
-			if !errors.Is(err, errMirrorDeclined) {
+			if !errors.Is(err, ErrMirrorDeclined) {
 				t.Fatal(err)
 			}
 			manualRead(t, filepath.Join(p.Target, "extra.txt"), "extra")
@@ -69,13 +69,13 @@ func TestMirrorUnsafeSourceAndCopyFailureNeverConfirm(t *testing.T) {
 			case "link":
 				manualJunction(t, filepath.Join(p.Source, "link"), t.TempDir())
 			}
-			copy := mirrorCopy(runManualFiltered)
+			copy := MirrorCopy(RunManualFiltered)
 			if kind == "copy" {
-				copy = func(context.Context, manualRequest, []taskconfig.Rule, func(transferProgress)) (transferProgress, error) {
-					return transferProgress{}, errors.New("injected copy failure")
+				copy = func(context.Context, ManualRequest, []taskconfig.Rule, func(TransferProgress)) (TransferProgress, error) {
+					return TransferProgress{}, errors.New("injected copy failure")
 				}
 			}
-			_, err := runMirrorWith(context.Background(), p, d, nil, func(context.Context, mirrorPreview) error { t.Fatal("unsafe confirmation"); return nil }, copy, noRecycle)
+			_, err := RunMirrorWith(context.Background(), p, d, nil, func(context.Context, MirrorPreview) error { t.Fatal("unsafe confirmation"); return nil }, copy, noRecycle)
 			if err == nil {
 				t.Fatal("unsafe success")
 			}
@@ -89,7 +89,7 @@ func TestMirrorExpiredPreviewAndCancellation(t *testing.T) {
 			p, d := mirrorFixture(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			confirm := mirrorConfirmation(func(context.Context, mirrorPreview) error {
+			confirm := MirrorConfirmation(func(context.Context, MirrorPreview) error {
 				switch kind {
 				case "source-reappeared":
 					manualWrite(t, filepath.Join(p.Source, "extra.txt"), "reappeared")
@@ -112,7 +112,7 @@ func TestMirrorExpiredPreviewAndCancellation(t *testing.T) {
 			if kind == "nil" {
 				confirm = nil
 			}
-			progress, err := runMirrorWith(ctx, p, d, nil, confirm, runManualFiltered, noRecycle)
+			progress, err := RunMirrorWith(ctx, p, d, nil, confirm, RunManualFiltered, noRecycle)
 			if err == nil || progress.Removed != 0 {
 				t.Fatal(progress, err)
 			}
@@ -128,7 +128,7 @@ func TestMirrorRecycleFailureNeverFallsBack(t *testing.T) {
 	p, d := mirrorFixture(t)
 	d.DeleteMode = taskconfig.Recycle
 	sentinel := errors.New("injected shell refusal")
-	progress, err := runMirrorWith(context.Background(), p, d, nil, acceptMirror, runManualFiltered, func(string) error { return sentinel })
+	progress, err := RunMirrorWith(context.Background(), p, d, nil, acceptMirror, RunManualFiltered, func(string) error { return sentinel })
 	if !errors.Is(err, sentinel) || progress.Removed != 0 {
 		t.Fatal(progress, err)
 	}
@@ -141,7 +141,7 @@ func TestMirrorStopsAfterCommittedRemoval(t *testing.T) {
 	manualWrite(t, filepath.Join(p.Target, "z.txt"), "remaining")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	pgr, err := runMirrorWith(ctx, p, d, nil, acceptMirror, runManualFiltered, func(path string) error {
+	pgr, err := RunMirrorWith(ctx, p, d, nil, acceptMirror, RunManualFiltered, func(path string) error {
 		// Inject the shell boundary, not a claim of real recycling.
 		e := os.Remove(path)
 		cancel()
@@ -153,19 +153,9 @@ func TestMirrorStopsAfterCommittedRemoval(t *testing.T) {
 	manualRead(t, filepath.Join(p.Target, "z.txt"), "remaining")
 }
 
-func TestMirrorConfirmationReplyIsSingleUse(t *testing.T) {
-	reply := make(chan error, 1)
-	a := application{manual: manualSession{mirrorReply: reply, mirrorPreview: &mirrorPreview{}}}
-	a.answerMirror(false)
-	a.answerMirror(true)
-	if !errors.Is(<-reply, errMirrorDeclined) || a.manual.mirrorReply != nil || a.manual.mirrorPreview != nil {
-		t.Fatal("stale confirmation retained")
-	}
-}
-
 func TestMirrorPreviewCannotExpandPlan(t *testing.T) {
 	p, d := mirrorFixture(t)
-	progress, e := runMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v mirrorPreview) error { v.Paths[0] = "keep.txt"; return nil }, runManualFiltered, noRecycle)
+	progress, e := RunMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v MirrorPreview) error { v.Paths[0] = "keep.txt"; return nil }, RunManualFiltered, noRecycle)
 	if e != nil || progress.Removed != 1 {
 		t.Fatal(progress, e)
 	}
@@ -176,49 +166,13 @@ func TestMirrorPreviewCannotExpandPlan(t *testing.T) {
 }
 
 func TestMirrorShellPathBoundary(t *testing.T) {
-	p, e := mirrorShellPath(`\\?\D:\fixture\中文.txt`)
+	p, e := MirrorShellPath(`\\?\D:\fixture\中文.txt`)
 	if e != nil || p != `D:\fixture\中文.txt` {
 		t.Fatal(p, e)
 	}
 	for _, s := range []string{`\\?\UNC\server\share\file`, `\\?\D:\` + strings.Repeat("中", 260)} {
-		if _, e := mirrorShellPath(s); e == nil {
+		if _, e := MirrorShellPath(s); e == nil {
 			t.Fatal("unsupported shell path accepted", s)
 		}
-	}
-}
-func TestMirrorFailureIsolatedAndPersistence(t *testing.T) {
-	q, p := multiFixture(t)
-	q.Destinations[0].Strategy = taskconfig.Mirror
-	q.Destinations[0].DeleteMode = taskconfig.Permanent
-	manualWrite(t, filepath.Join(p.Source, "f.txt"), "input")
-	manualWrite(t, filepath.Join(p.Target, "extra.txt"), "keep")
-	r, err := runMultipleConfirmed(context.Background(), q, nil, func(context.Context, mirrorPreview) error { return errMirrorDeclined })
-	if !errors.Is(err, errMirrorDeclined) || r[q.Destinations[0].ID].State != destinationFailed || r[q.Destinations[1].ID].State != destinationSucceeded {
-		t.Fatal(r, err)
-	}
-	data := t.TempDir()
-	l, e := loadSavedTasks(data)
-	if e != nil {
-		t.Fatal(e)
-	}
-	l, id, e := l.saveMultiple("", "Mirror", q)
-	if e != nil {
-		t.Fatal(e)
-	}
-	l, e = loadSavedTasks(data)
-	if e != nil {
-		t.Fatal(e)
-	}
-	record, e := l.find(id)
-	if e != nil {
-		t.Fatal(e)
-	}
-	saved, e := multipleRequestFromSaved(record)
-	if e != nil || saved.Destinations[0].Strategy != taskconfig.Mirror || saved.Destinations[0].DeleteMode != taskconfig.Permanent {
-		t.Fatal(saved, e)
-	}
-	q.Destinations[0].Filters = []taskconfig.Rule{}
-	if _, _, e = l.saveMultiple(id, "invalid", q); e == nil {
-		t.Fatal("filtered mirror saved")
 	}
 }

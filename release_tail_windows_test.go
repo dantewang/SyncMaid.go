@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/syncengine"
 	"testing"
 	"time"
 
@@ -69,14 +70,14 @@ func TestReleaseTailCrossTaskAliasAndAllowedChain(t *testing.T) {
 	alias := filepath.Join(root, "alias")
 	manualJunction(t, alias, source)
 	task, peer := taskconfig.NewID(), taskconfig.NewID()
-	q := manualTaskRequest{Source: source, Destinations: []manualDestination{{Path: target}}}
+	q := syncengine.ManualTaskRequest{Source: source, Destinations: []syncengine.ManualDestination{{Path: target}}}
 	tasks := []taskconfig.Task{{ID: task}, {ID: peer, SourcePath: target,
 		Destinations: []taskconfig.Destination{{Target: taskconfig.Target{Path: third}}}}}
-	if err := validateCrossTaskPaths(context.Background(), task, q, tasks); err != nil {
+	if err := syncengine.ValidateCrossTaskPaths(context.Background(), task, q, tasks); err != nil {
 		t.Fatal(err)
 	}
 	tasks[1].SourcePath = alias
-	if err := validateCrossTaskPaths(context.Background(), task, q, tasks); err == nil {
+	if err := syncengine.ValidateCrossTaskPaths(context.Background(), task, q, tasks); err == nil {
 		t.Fatal("accepted alias overlap")
 	}
 }
@@ -93,7 +94,7 @@ func TestReleaseTailMirrorPreservesEmptyDirectoryTime(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := runMirrorWith(context.Background(), p, d, nil, acceptMirror, runManualFiltered, noRecycle); err != nil {
+	if _, err := syncengine.RunMirrorWith(context.Background(), p, d, nil, acceptMirror, syncengine.RunManualFiltered, noRecycle); err != nil {
 		t.Fatal(err)
 	}
 	for _, dir := range []string{filepath.Join(p.Target, "empty"), filepath.Join(p.Target, "empty", "child")} {

@@ -3,16 +3,12 @@ package main
 import (
 	"errors"
 	"syncmaid/internal/filefilter"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 )
 
-type reviewBundle struct {
-	reviews []filefilter.ReviewedRegex
-	err     error
-}
-
 func (l *savedTaskLibrary) restoreReviews() {
-	l.restored = map[taskconfig.ID]map[taskconfig.ID]reviewBundle{}
+	l.restored = map[taskconfig.ID]map[taskconfig.ID]syncengine.ReviewBundle{}
 	seen := map[filefilter.RegexOrigin]bool{}
 	for _, saved := range l.reviews {
 		origin := saved.Origin
@@ -22,31 +18,30 @@ func (l *savedTaskLibrary) restoreReviews() {
 		} // Deleted tasks never grant another task permission.
 		byTarget := l.restored[t.ID]
 		if byTarget == nil {
-			byTarget = map[taskconfig.ID]reviewBundle{}
+			byTarget = map[taskconfig.ID]syncengine.ReviewBundle{}
 			l.restored[t.ID] = byTarget
 		}
 		bundle := byTarget[origin.DestinationID]
 		if seen[origin] {
-			bundle.err = filefilter.ErrStaleReview
+			bundle.Err = filefilter.ErrStaleReview
 		} else {
 			review, restoreErr := filefilter.RestoreConfirmation(t, saved)
-			bundle.err = errors.Join(bundle.err, restoreErr)
+			bundle.Err = errors.Join(bundle.Err, restoreErr)
 			if restoreErr == nil {
-				bundle.reviews = append(bundle.reviews, review)
+				bundle.Reviews = append(bundle.Reviews, review)
 			}
 		}
 		seen[origin] = true
 		byTarget[origin.DestinationID] = bundle
 	}
 }
-func (l *savedTaskLibrary) request(t taskconfig.Task) (manualTaskRequest, error) {
+func (l *savedTaskLibrary) request(t taskconfig.Task) (syncengine.ManualTaskRequest, error) {
 	q, err := multipleRequestFromSaved(t)
 	if err != nil {
 		return q, err
 	}
 	if bundles := l.restored[t.ID]; len(bundles) > 0 {
-		q.regexTask = &t
-		q.regexReviews = bundles
+		q = q.WithReviewedRegex(&t, bundles)
 	}
 	return q, nil
 }
@@ -80,36 +75,4 @@ func (l *savedTaskLibrary) saveRegexConfirmation(review filefilter.ReviewedRegex
 		return nil, err
 	}
 	return savedLibrary(snapshot)
-}
-func prepareReviewedRequest(q manualTaskRequest) manualTaskRequest {
-	if q.regexTask == nil {
-		return q
-	}
-	q.Destinations = append([]manualDestination(nil), q.Destinations...)
-	if manualKind(q.Kind) == taskconfig.Moving {
-		reviews := map[taskconfig.ID][]filefilter.ReviewedRegex{}
-		var err error
-		for id, bundle := range q.regexReviews {
-			reviews[id] = bundle.reviews
-			err = errors.Join(err, bundle.err)
-		}
-		var matchers []*filefilter.Matcher
-		if err == nil {
-			matchers, err = filefilter.CompileReviewedMove(*q.regexTask, reviews)
-		}
-		for i := range q.Destinations {
-			q.Destinations[i].filterError = err
-			if err == nil {
-				q.Destinations[i].matcher = matchers[i]
-			}
-		}
-	} else {
-		for i, d := range q.Destinations {
-			bundle := q.regexReviews[d.ID]
-			m, err := filefilter.CompileReviewedTarget(*q.regexTask, d.ID, bundle.reviews)
-			q.Destinations[i].matcher = m
-			q.Destinations[i].filterError = errors.Join(bundle.err, err)
-		}
-	}
-	return q
 }

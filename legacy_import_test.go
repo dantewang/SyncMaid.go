@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syncmaid/internal/syncengine"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -15,7 +16,7 @@ import (
 	"syncmaid/internal/taskconfig"
 )
 
-func legacyFixture(t *testing.T, q manualRequest) []byte {
+func legacyFixture(t *testing.T, q syncengine.ManualRequest) []byte {
 	t.Helper()
 	obj := []map[string]any{{"Name": "Imported fixture", "SourcePath": q.Source, "Trigger": map[string]any{"kind": "watch", "SettleSeconds": 10}, "Kind": "Sync", "Destinations": []map[string]any{{"Name": "Destination", "Target": map[string]any{"kind": "local", "Path": q.Target}, "Strategy": "AddOnly", "Filters": []map[string]any{{"kind": "all"}}}}}}
 	b, err := json.Marshal(obj)
@@ -79,7 +80,7 @@ func TestLegacyImportAppendSnapshotAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = runMultipleConfirmed(context.Background(), q2, nil, nil)
+	_, err = syncengine.RunMultipleConfirmed(context.Background(), q2, nil, nil, nil)
 	if err != nil {
 		t.Fatal("manual imported task cannot run", err)
 	}

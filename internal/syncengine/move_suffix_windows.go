@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"bytes"
@@ -32,32 +32,32 @@ func transferObjectName(f *os.File) ([]byte, error) {
 	return nil, errors.New("临时文件实际名称超出支持长度")
 }
 
-func publishMoveSuffix(ctx context.Context, temp *os.File, parent windows.Handle, name string, publish func(*os.File, windows.Handle, string, bool) error) (transferPublication, error) {
+func publishMoveSuffix(ctx context.Context, temp *os.File, parent windows.Handle, name string, publish func(*os.File, windows.Handle, string, bool) error) (TransferPublication, error) {
 	staged, e := transferObjectName(temp)
 	if e != nil {
-		return transferStaged, e
+		return TransferStaged, e
 	}
-	return tryMoveNames(ctx, name, func(candidate string) (transferPublication, error) {
-		state := transferStaged
-		e := protectedTransferIO(ctx, func() error {
+	return tryMoveNames(ctx, name, func(candidate string) (TransferPublication, error) {
+		state := TransferStaged
+		e := ProtectedTransferIO(ctx, func() error {
 			if e := ctx.Err(); e != nil {
 				return e
 			}
-			state = transferPublishUnknown
+			state = TransferPublishUnknown
 			e := publish(temp, parent, candidate, false)
 			if e == nil {
-				state = transferPublished
+				state = TransferPublished
 				return nil
 			}
 			if errors.Is(e, windows.ERROR_ALREADY_EXISTS) || errors.Is(e, windows.ERROR_FILE_EXISTS) {
 				actual, queryErr := transferObjectName(temp)
 				if queryErr == nil && bytes.Equal(staged, actual) {
-					state = transferStaged
+					state = TransferStaged
 					return fmt.Errorf("%w: %w", errMoveNameOccupied, e)
 				}
 				e = errors.Join(e, queryErr)
 			}
-			return fmt.Errorf("%w: %w", errTransferPublicationUnknown, e)
+			return fmt.Errorf("%w: %w", ErrTransferPublicationUnknown, e)
 		})
 		return state, e
 	})

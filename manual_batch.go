@@ -1,6 +1,9 @@
 package main
 
-import "syncmaid/internal/taskconfig"
+import (
+	"syncmaid/internal/syncengine"
+	"syncmaid/internal/taskconfig"
+)
 
 type batchPhase uint8
 
@@ -37,7 +40,7 @@ func (a *application) startBatch() {
 	a.advanceBatch()
 }
 func (a *application) advanceBatch() { a.advanceBatchUsing(a.startTaskRun) }
-func (a *application) advanceBatchUsing(start func(taskconfig.ID, string, manualTaskRequest, bool)) {
+func (a *application) advanceBatchUsing(start func(taskconfig.ID, string, syncengine.ManualTaskRequest, bool)) {
 	if a.batch.phase != batchServing || a.manual.busy() || a.hasModalOpen() {
 		return
 	}
@@ -69,9 +72,9 @@ func (a *application) advanceBatchUsing(start func(taskconfig.ID, string, manual
 		if a.results == nil {
 			a.results = map[taskconfig.ID]savedTaskResult{}
 		}
-		goals := multipleResult{}
+		goals := syncengine.MultipleResult{}
 		for _, d := range t.Destinations {
-			goals[d.ID] = destinationResult{ID: d.ID, Name: d.Name, State: destinationFailed, Error: err.Error()}
+			goals[d.ID] = syncengine.DestinationResult{ID: d.ID, Name: d.Name, State: syncengine.DestinationFailed, Error: err.Error()}
 		}
 		a.results[id] = savedTaskResult{outcome: "failed", message: messagef("准备失败，任务未执行: %s", err.Error()), destinations: goals}
 	}

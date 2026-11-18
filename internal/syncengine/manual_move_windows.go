@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -12,12 +12,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func scanMoveFiles(ctx context.Context, root *winutil.DirectoryObject) ([]fileinventory.File, map[string]mirrorStamp, error) {
+func scanMoveFiles(ctx context.Context, root *winutil.DirectoryObject) ([]fileinventory.File, map[string]MirrorStamp, error) {
 	inventory, err := fileinventory.Scan(ctx, root.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 	if err != nil {
 		return nil, nil, err
 	}
-	stamps := map[string]mirrorStamp{}
+	stamps := map[string]MirrorStamp{}
 	for _, entry := range inventory.Files() {
 		if err = ctx.Err(); err != nil {
 			return nil, nil, err
@@ -32,7 +32,7 @@ func scanMoveFiles(ctx context.Context, root *winutil.DirectoryObject) ([]filein
 			return nil, nil, e
 		}
 		if stamp.Size != entry.Size || stamp.Modified.Nanoseconds() != entry.Modified.UnixNano() {
-			return nil, nil, errMirrorChanged
+			return nil, nil, ErrMirrorChanged
 		}
 		stamps[entry.Path] = stamp
 	}
@@ -48,6 +48,6 @@ func scanMoveFiles(ctx context.Context, root *winutil.DirectoryObject) ([]filein
 	}
 	return files, stamps, nil
 }
-func moveFile(ctx context.Context, roots *transferRoots, f fileinventory.File, target string, expected mirrorStamp, collision taskconfig.CollisionPolicy, verifyContents bool, progress func(int64)) (bool, error) {
-	return transferFileTo(ctx, roots, f, target, &expected, transferIO{copy: transferCopier(verifyContents), publish: publishTransfer, collision: collision}, progress)
+func moveFile(ctx context.Context, roots *TransferRoots, f fileinventory.File, target string, expected MirrorStamp, collision taskconfig.CollisionPolicy, verifyContents bool, progress func(int64)) (bool, error) {
+	return transferFileTo(ctx, roots, f, target, &expected, TransferIO{Copy: TransferCopier(verifyContents), Publish: PublishTransfer, Collision: collision}, progress)
 }

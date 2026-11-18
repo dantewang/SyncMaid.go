@@ -1,6 +1,7 @@
 package main
 
 import (
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
 )
@@ -27,7 +28,7 @@ func TestBatchOrderGateFailureAndSingleOwner(t *testing.T) {
 	// The click owns an independent order, even if the caller reuses its slice.
 	ids[0] = "changed"
 	var ran []taskconfig.ID
-	start := func(id taskconfig.ID, _ string, q manualTaskRequest, automatic bool) {
+	start := func(id taskconfig.ID, _ string, q syncengine.ManualTaskRequest, automatic bool) {
 		if automatic {
 			t.Fatal("batch used automatic execution")
 		}
@@ -68,7 +69,7 @@ func TestBatchStopAndDirtyPreviewGuards(t *testing.T) {
 	a.manual.phase = manualFinished
 	a.batch.begin([]taskconfig.ID{"x"})
 	a.manual.dirty = true
-	a.advanceBatchUsing(func(taskconfig.ID, string, manualTaskRequest, bool) { t.Fatal("dirty batch dispatched") })
+	a.advanceBatchUsing(func(taskconfig.ID, string, syncengine.ManualTaskRequest, bool) { t.Fatal("dirty batch dispatched") })
 	if a.batch.phase != batchIdle {
 		t.Fatal("dirty batch retained")
 	}
@@ -90,7 +91,7 @@ func TestBatchRejectsPreviewsAndAutomaticEntry(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, block := range []func(*application){func(a *application) { a.manual.dirty = true }, func(a *application) { a.importPreview = &legacyImport{} }, func(a *application) { a.regexSession = &regexSession{} }, func(a *application) { a.manual.mirrorPreview = &mirrorPreview{} }} {
+	for _, block := range []func(*application){func(a *application) { a.manual.dirty = true }, func(a *application) { a.importPreview = &legacyImport{} }, func(a *application) { a.regexSession = &regexSession{} }, func(a *application) { a.manual.mirrorPreview = &syncengine.MirrorPreview{} }} {
 		a := &application{tasks: l, manual: manualSession{phase: manualReady}}
 		block(a)
 		a.startBatch()
@@ -99,7 +100,7 @@ func TestBatchRejectsPreviewsAndAutomaticEntry(t *testing.T) {
 		}
 	}
 	a := &application{batch: manualBatch{phase: batchServing}, manual: manualSession{phase: manualFinished}}
-	a.startTaskRun("automatic", "Automatic", manualTaskRequest{}, true)
+	a.startTaskRun("automatic", "Automatic", syncengine.ManualTaskRequest{}, true)
 	if a.manual.phase != manualFinished || a.cards.running != "" {
 		t.Fatal("automatic entry bypassed batch")
 	}

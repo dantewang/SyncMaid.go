@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"path/filepath"
+	"syncmaid/internal/syncengine"
 
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/taskconfig"
@@ -15,7 +16,7 @@ const savedTaskFile = "tasks-go.json"
 // A library is immutable once handed to the UI; workers return a new library.
 type savedTaskLibrary struct {
 	reviews  []filefilter.RegexConfirmation
-	restored map[taskconfig.ID]map[taskconfig.ID]reviewBundle
+	restored map[taskconfig.ID]map[taskconfig.ID]syncengine.ReviewBundle
 	snapshot *taskstore.Snapshot
 	tasks    []taskconfig.Task
 }

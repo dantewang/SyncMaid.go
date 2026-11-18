@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
 )
@@ -170,7 +171,7 @@ func TestWatchMoveSelfEventsNeedOnlyOneQuietFollowup(t *testing.T) {
 	q, p := moveFixture(t)
 	manualWrite(t, filepath.Join(p.Source, "once.txt"), "move once")
 	ticket := watchTicket{}
-	_, e := runMultiple(context.Background(), q, func(r destinationResult) {
+	_, e := runMultiple(context.Background(), q, func(r syncengine.DestinationResult) {
 		if r.Progress.Moved > 0 {
 			ticket.change()
 		}
@@ -179,7 +180,7 @@ func TestWatchMoveSelfEventsNeedOnlyOneQuietFollowup(t *testing.T) {
 		t.Fatal(ticket, e)
 	}
 	ticket.invalidate(watchArmed)
-	results, e := runMultiple(context.Background(), q, func(r destinationResult) {
+	results, e := runMultiple(context.Background(), q, func(r syncengine.DestinationResult) {
 		if r.Progress.Moved > 0 {
 			ticket.change()
 		}

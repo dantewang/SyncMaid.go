@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/syncengine"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -55,7 +56,7 @@ func TestTaskSheetSavesZeroDestinationsWithoutRuntimePreflight(t *testing.T) {
 	}
 	for _, kind := range []taskconfig.TaskKind{taskconfig.Sync, taskconfig.Moving} {
 		q.Kind = kind
-		results, err := runMultiple(context.Background(), q, func(destinationResult) { t.Fatal("empty task emitted file progress") })
+		results, err := runMultiple(context.Background(), q, func(syncengine.DestinationResult) { t.Fatal("empty task emitted file progress") })
 		if err != nil || len(results) != 0 {
 			t.Fatal(results, err)
 		}
@@ -222,7 +223,7 @@ func TestConfigurationRefusalKeepsEditorWritable(t *testing.T) {
 	a, _ := emptyTaskApplication(t)
 	a.cards.editor = true
 	q := a.manual.draftRequest()
-	q.Destinations = []manualDestination{{ID: taskconfig.NewID(), Name: "overlap", Path: q.Source, Filters: allFileRules()}}
+	q.Destinations = []syncengine.ManualDestination{{ID: taskconfig.NewID(), Name: "overlap", Path: q.Source, Filters: syncengine.AllFileRules()}}
 	_, id, err := a.tasks.prepareMultiple("", a.manual.name, q)
 	if err == nil {
 		t.Fatal("overlap accepted")
@@ -298,7 +299,7 @@ func TestEmptyTaskCardDoesNotDisplayOldTargetSuccessAsCurrentState(t *testing.T)
 	a.tasks = l
 	a.manual.dirty = false
 	a.selectManual(id)
-	a.results = map[taskconfig.ID]savedTaskResult{id: {message: messagef("全部目标同步完成"), destinations: multipleResult{taskconfig.NewID(): {State: destinationSucceeded}}}}
+	a.results = map[taskconfig.ID]savedTaskResult{id: {message: messagef("全部目标同步完成"), destinations: syncengine.MultipleResult{taskconfig.NewID(): {State: syncengine.DestinationSucceeded}}}}
 	view := ui.NewTester(a.view, 760, 620)
 	if !view.HasText(a.tr("尚未添加目标")) || view.HasText(a.tr("全部已同步")) {
 		t.Fatal("past results masked empty task state")

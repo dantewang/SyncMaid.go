@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -12,16 +12,16 @@ import (
 	"syncmaid/internal/winutil"
 )
 
-type multiplePlan struct {
+type MultiplePlan struct {
 	source          *winutil.DirectoryObject
 	sourceAncestors []*winutil.DirectoryObject
-	roots           []*transferRoots
-	targetRoots     map[taskconfig.ID]*transferRoots
-	requests        map[taskconfig.ID]manualRequest
+	roots           []*TransferRoots
+	targetRoots     map[taskconfig.ID]*TransferRoots
+	requests        map[taskconfig.ID]ManualRequest
 	failures        map[taskconfig.ID]error
 }
 
-func (p *multiplePlan) Close() (err error) {
+func (p *MultiplePlan) Close() (err error) {
 	for _, r := range p.roots {
 		if r != nil {
 			err = errors.Join(err, r.Close())
@@ -36,7 +36,7 @@ func (p *multiplePlan) Close() (err error) {
 	return
 }
 
-func (p *multiplePlan) takeTargetRoots(id taskconfig.ID) *transferRoots {
+func (p *MultiplePlan) takeTargetRoots(id taskconfig.ID) *TransferRoots {
 	r := p.targetRoots[id]
 	if r == nil {
 		return nil
@@ -51,11 +51,11 @@ func (p *multiplePlan) takeTargetRoots(id taskconfig.ID) *transferRoots {
 	return r
 }
 
-func (p *multiplePlan) close(ctx context.Context) error {
-	return closeProtected(ctx, p)
+func (p *MultiplePlan) close(ctx context.Context) error {
+	return CloseProtected(ctx, p)
 }
 // Usable targets additionally require pinned object/ancestor identity checks.
-func obviousPathOverlap(a, b string) bool {
+func ObviousPathOverlap(a, b string) bool {
 	if !filepath.IsAbs(a) || !filepath.IsAbs(b) {
 		return false
 	}
@@ -63,7 +63,7 @@ func obviousPathOverlap(a, b string) bool {
 	b = strings.ToUpper(filepath.Clean(b))
 	return a == b || strings.HasPrefix(a, strings.TrimRight(b, `\`)+`\`) || strings.HasPrefix(b, strings.TrimRight(a, `\`)+`\`)
 }
-func targetObjectsOverlap(a, b *transferRoots) bool {
+func targetObjectsOverlap(a, b *TransferRoots) bool {
 	if a.target.Key == b.target.Key {
 		return true
 	}
@@ -80,16 +80,16 @@ func targetObjectsOverlap(a, b *transferRoots) bool {
 	return false
 }
 
-func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multiplePlan, err error) {
+func OpenMultiplePlan(ctx context.Context, q ManualTaskRequest) (plan *MultiplePlan, err error) {
 	if !filepath.IsAbs(q.Source) {
 		return nil, errors.New("源文件夹：请选择现有文件夹的绝对路径")
 	}
 	if len(q.Destinations) == 0 {
 		return nil, errors.New("请添加至少一个目标文件夹")
 	}
-	p := &multiplePlan{
-		targetRoots: map[taskconfig.ID]*transferRoots{},
-		requests:    map[taskconfig.ID]manualRequest{},
+	p := &MultiplePlan{
+		targetRoots: map[taskconfig.ID]*TransferRoots{},
+		requests:    map[taskconfig.ID]ManualRequest{},
 		failures:    map[taskconfig.ID]error{},
 	}
 	defer func() {
@@ -115,12 +115,12 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 			return nil, errors.New("目标 ID 缺失或重复")
 		}
 		seen[d.ID] = true
-		if obviousPathOverlap(q.Source, d.Path) || obviousPathOverlap(p.source.Path, d.Path) {
-			return nil, fmt.Errorf("%w: %s", errTransferOverlap, d.Name)
+		if ObviousPathOverlap(q.Source, d.Path) || ObviousPathOverlap(p.source.Path, d.Path) {
+			return nil, fmt.Errorf("%w: %s", ErrTransferOverlap, d.Name)
 		}
 		for _, other := range q.Destinations[:i] {
-			if obviousPathOverlap(other.Path, d.Path) {
-				return nil, fmt.Errorf("%w: %s / %s", errTransferOverlap, other.Name, d.Name)
+			if ObviousPathOverlap(other.Path, d.Path) {
+				return nil, fmt.Errorf("%w: %s / %s", ErrTransferOverlap, other.Name, d.Name)
 			}
 		}
 		if err = ctx.Err(); err != nil {
@@ -130,7 +130,7 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 		// failure, while still checking its identity before any target writes.
 		r, e := openDestinationRoots(ctx, p.source, p.sourceAncestors, d.Path, windows.FILE_READ_ATTRIBUTES)
 		if e != nil {
-			if errors.Is(e, errTransferOverlap) {
+			if errors.Is(e, ErrTransferOverlap) {
 				return nil, e
 			}
 			p.failures[d.ID] = e
@@ -140,11 +140,11 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 		p.targetRoots[d.ID] = r
 		for _, other := range p.roots[:len(p.roots)-1] {
 			if targetObjectsOverlap(r, other) {
-				return nil, fmt.Errorf("%w: 目标目录相同或互相包含（包括别名）", errTransferOverlap)
+				return nil, fmt.Errorf("%w: 目标目录相同或互相包含（包括别名）", ErrTransferOverlap)
 			}
 		}
 		// Keep every validated object and ancestor pinned for the entire job.
-		p.requests[d.ID] = manualRequest{Source: r.source.Path, Target: r.target.Path}
+		p.requests[d.ID] = ManualRequest{Source: r.source.Path, Target: r.target.Path}
 	}
 	return p, nil
 }

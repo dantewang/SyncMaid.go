@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -9,11 +9,10 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
-	"syncmaid/internal/filefilter"
 	"syncmaid/internal/taskconfig"
 )
 
-func moveFixture(t *testing.T) (manualTaskRequest, manualRequest) {
+func moveFixture(t *testing.T) (ManualTaskRequest, ManualRequest) {
 	q, p := multiFixture(t)
 	q.Kind = taskconfig.Moving
 	for i := range q.Destinations {
@@ -76,7 +75,7 @@ func TestMoveStopPreservesRemainingFiles(t *testing.T) {
 	manualWrite(t, filepath.Join(p.Source, "z.txt"), "remaining")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r, e := runMultiple(ctx, q, func(r destinationResult) {
+	r, e := runMultiple(ctx, q, func(r DestinationResult) {
 		if r.Progress.Moved == 1 {
 			cancel()
 		}
@@ -143,7 +142,7 @@ func TestMoveTransferFailuresKeepSource(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			_, p := moveFixture(t)
 			manualWrite(t, filepath.Join(p.Source, "f.txt"), "original")
-			roots, e := openTransferRoots(context.Background(), p)
+			roots, e := OpenTransferRoots(context.Background(), p)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -154,23 +153,23 @@ func TestMoveTransferFailuresKeepSource(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			ops := transferIO{copy: copyChecked, publish: publishTransfer}
+			ops := TransferIO{Copy: CopyChecked, Publish: PublishTransfer}
 			switch kind {
 			case "copy":
-				ops.copy = func(_ context.Context, _, temp *os.File, _ func(int64)) error {
+				ops.Copy = func(_ context.Context, _, temp *os.File, _ func(int64)) error {
 					_, _ = temp.Write([]byte("partial"))
 					return errors.New("injected copy failure")
 				}
 			case "publish":
-				ops.publish = func(*os.File, windows.Handle, string, bool) error { return errors.New("injected publication failure") }
+				ops.Publish = func(*os.File, windows.Handle, string, bool) error { return errors.New("injected publication failure") }
 			case "cancel":
-				ops.publish = func(f *os.File, h windows.Handle, name string, replace bool) error {
-					e := publishTransfer(f, h, name, replace)
+				ops.Publish = func(f *os.File, h windows.Handle, name string, replace bool) error {
+					e := PublishTransfer(f, h, name, replace)
 					cancel()
 					return e
 				}
 			case "source-delete":
-				ops.sourceDelete = func(*os.File) error { return windows.ERROR_ACCESS_DENIED }
+				ops.SourceDelete = func(*os.File) error { return windows.ERROR_ACCESS_DENIED }
 			case "source-replaced":
 				if e := os.Remove(filepath.Join(p.Source, "f.txt")); e != nil {
 					t.Fatal(e)
@@ -200,49 +199,5 @@ func TestMoveTransferFailuresKeepSource(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-func TestMovePersistenceAndGuards(t *testing.T) {
-	data := t.TempDir()
-	l, e := loadSavedTasks(data)
-	if e != nil {
-		t.Fatal(e)
-	}
-	q, _ := moveFixture(t)
-	q.Destinations[0].Flatten = true
-	l, id, e := l.saveMultiple("", "Move", q)
-	if e != nil {
-		t.Fatal(e)
-	}
-	l, e = loadSavedTasks(data)
-	if e != nil {
-		t.Fatal(e)
-	}
-	a := application{tasks: l}
-	a.selectManual(id)
-	if a.manual.kind != taskconfig.Moving || !a.manual.targets[0].Flatten {
-		t.Fatal(a.manual)
-	}
-	a.setManualKind(taskconfig.Sync)
-	if a.manual.kind != taskconfig.Moving {
-		t.Fatal("saved kind changed")
-	}
-	a.manual.phase = manualRunning
-	a.setMoveFlatten(false)
-	if !a.manual.targets[0].Flatten {
-		t.Fatal("running edit")
-	}
-	task, _ := l.find(id)
-	task.Destinations[0].CollisionPolicy = taskconfig.CollisionPolicy("Future")
-	if _, e := multipleRequestFromSaved(task); e == nil {
-		t.Fatal("unsupported collision policy ignored")
-	}
-	q.Kind = taskconfig.Sync
-	if _, _, e = l.saveMultiple(id, "wrong kind", q); e == nil {
-		t.Fatal("kind downgraded")
-	}
-	_, _, e = prepareMoveRoutes(context.Background(), nil, []manualDestination{{ID: taskconfig.NewID(), Strategy: taskconfig.Move, Filters: []taskconfig.Rule{{Kind: "regex", Pattern: filterText("a")}}}})
-	if !errors.Is(e, filefilter.ErrUnsupportedRegex) {
-		t.Fatal(e)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/fileinventory"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -77,12 +78,12 @@ func sourceExtensions(files []fileinventory.File) []previewExtension {
 
 // Preview reads only the source. These counts say which rules claim a file,
 // not whether a target needs updating, and never authorize a file operation.
-func scanSourcePreview(ctx context.Context, q manualTaskRequest) (*routePreview, error) {
-	q.Destinations = append([]manualDestination(nil), q.Destinations...)
+func scanSourcePreview(ctx context.Context, q syncengine.ManualTaskRequest) (*routePreview, error) {
+	q.Destinations = append([]syncengine.ManualDestination(nil), q.Destinations...)
 	for i := range q.Destinations {
-		q.Destinations[i].matcher = nil
+		q.Destinations[i].Matcher = nil
 	}
-	q = prepareReviewedRequest(q)
+	q = syncengine.PrepareReviewedRequest(q)
 	matchers := make([]*filefilter.Matcher, len(q.Destinations))
 	seen := map[taskconfig.ID]bool{}
 	for i, d := range q.Destinations {
@@ -90,10 +91,10 @@ func scanSourcePreview(ctx context.Context, q manualTaskRequest) (*routePreview,
 			return nil, fmt.Errorf("duplicate or missing destination ID")
 		}
 		seen[d.ID] = true
-		if d.filterError != nil {
-			return nil, fmt.Errorf("%s: %w", d.Name, d.filterError)
+		if d.FilterError != nil {
+			return nil, fmt.Errorf("%s: %w", d.Name, d.FilterError)
 		}
-		m := d.matcher
+		m := d.Matcher
 		var err error
 		if m == nil {
 			m, err = filefilter.Compile(d.Filters)
@@ -102,9 +103,9 @@ func scanSourcePreview(ctx context.Context, q manualTaskRequest) (*routePreview,
 			return nil, fmt.Errorf("%s: %w", d.Name, err)
 		}
 		matchers[i] = m
-		q.Destinations[i].matcher = m
+		q.Destinations[i].Matcher = m
 	}
-	if manualKind(q.Kind) != taskconfig.Sync && manualKind(q.Kind) != taskconfig.Moving {
+	if syncengine.ManualKind(q.Kind) != taskconfig.Sync && syncengine.ManualKind(q.Kind) != taskconfig.Moving {
 		return nil, fmt.Errorf("unsupported task kind")
 	}
 	inv, err := fileinventory.Scan(ctx, q.Source, fileinventory.Options{MaxEntries: 200_000, MaxDepth: 128})
@@ -117,9 +118,9 @@ func scanSourcePreview(ctx context.Context, q manualTaskRequest) (*routePreview,
 	for _, d := range q.Destinations {
 		result.Targets[d.ID] = previewSelection{}
 	}
-	moving := manualKind(q.Kind) == taskconfig.Moving
+	moving := syncengine.ManualKind(q.Kind) == taskconfig.Moving
 	if moving {
-		routes, unmatched, err := prepareMoveRoutes(ctx, files, q.Destinations)
+		routes, unmatched, err := syncengine.PrepareMoveRoutes(ctx, files, q.Destinations)
 		if err != nil {
 			return nil, err
 		}
@@ -228,17 +229,17 @@ func (s *sourcePreviewSession) finish(job *sourcePreviewJob, result *routePrevie
 		s.phase = previewFailed
 	}
 }
-func (a *application) previewDraft() (manualTaskRequest, error) {
+func (a *application) previewDraft() (syncengine.ManualTaskRequest, error) {
 	s := &a.manual
 	if a.tasks != nil && s.id != "" {
 		if err := a.selectedTaskIssue(); err != nil {
-			return manualTaskRequest{}, err
+			return syncengine.ManualTaskRequest{}, err
 		}
 	}
 	s.flushTarget()
 	s.keepFilterDraft()
 	if err := s.filterDraftError(); err != nil {
-		return manualTaskRequest{}, err
+		return syncengine.ManualTaskRequest{}, err
 	}
 	q := s.draftRequest()
 	for i := range q.Destinations {
@@ -248,24 +249,23 @@ func (a *application) previewDraft() (manualTaskRequest, error) {
 			rs[j] = r.Clone()
 		}
 		d.Filters = rs
-		d.matcher = nil
-		d.filterError = nil
+		d.Matcher = nil
+		d.FilterError = nil
 	}
 	// Editing invalidates whole-task confirmations. A preview cannot renew them.
-	if !s.dirty && samePreviewRequest(q, s.request) && (s.request.regexTask == nil || (s.name == s.request.regexTask.Name && s.id == s.request.regexTask.ID)) {
-		q.regexTask = s.request.regexTask
-		q.regexReviews = s.request.regexReviews
+	if !s.dirty && samePreviewRequest(q, s.request) {
+		q = q.WithPreservedRegex(s.request, s.id, s.name)
 	}
 	return q, nil
 }
 
-func samePreviewRequest(a, b manualTaskRequest) bool {
-	if a.Source != b.Source || manualKind(a.Kind) != manualKind(b.Kind) || !reflect.DeepEqual(a.Trigger, b.Trigger) || len(a.Destinations) != len(b.Destinations) {
+func samePreviewRequest(a, b syncengine.ManualTaskRequest) bool {
+	if a.Source != b.Source || syncengine.ManualKind(a.Kind) != syncengine.ManualKind(b.Kind) || !reflect.DeepEqual(a.Trigger, b.Trigger) || len(a.Destinations) != len(b.Destinations) {
 		return false
 	}
 	for i, d := range a.Destinations {
 		o := b.Destinations[i]
-		if d.ID != o.ID || d.Name != o.Name || d.Path != o.Path || d.Strategy != o.Strategy || d.DeleteMode != o.DeleteMode || d.Flatten != o.Flatten || d.Collision != o.Collision || !sameFilterRules(d.Filters, o.Filters) {
+		if d.ID != o.ID || d.Name != o.Name || d.Path != o.Path || d.Strategy != o.Strategy || d.DeleteMode != o.DeleteMode || d.Flatten != o.Flatten || d.Collision != o.Collision || !syncengine.SameFilterRules(d.Filters, o.Filters) {
 			return false
 		}
 	}

@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -67,12 +67,12 @@ func splitRelativePath(rel string) ([]string, error) {
 	return parts, nil
 }
 
-func closeProtected(ctx context.Context, closer io.Closer) error {
-	return protectedTransferIO(ctx, closer.Close)
+func CloseProtected(ctx context.Context, closer io.Closer) error {
+	return ProtectedTransferIO(ctx, closer.Close)
 }
 
-func closeFilesProtected(ctx context.Context, files []*os.File) error {
-	return protectedTransferIO(ctx, func() (e error) {
+func CloseFilesProtected(ctx context.Context, files []*os.File) error {
+	return ProtectedTransferIO(ctx, func() (e error) {
 		for i := len(files) - 1; i >= 0; i-- {
 			e = errors.Join(e, files[i].Close())
 		}
@@ -117,7 +117,7 @@ type transferRename struct {
 	Name    [1]uint16
 }
 
-func publishTransfer(f *os.File, parent windows.Handle, name string, replace bool) error {
+func PublishTransfer(f *os.File, parent windows.Handle, name string, replace bool) error {
 	wide, e := windows.UTF16FromString(name)
 	if e != nil {
 		return e
@@ -142,31 +142,31 @@ func discardTransfer(f *os.File) error {
 	return ntError(windows.NtSetInformationFile(windows.Handle(f.Fd()), &windows.IO_STATUS_BLOCK{}, &delete, 1, windows.FileDispositionInformation))
 }
 
-func publishTransferChecked(ctx context.Context, temp *os.File, parent windows.Handle, name string, replace bool, publication *transferPublication, publish func(*os.File, windows.Handle, string, bool) error) error {
-	return protectedTransferIO(ctx, func() error {
+func publishTransferChecked(ctx context.Context, temp *os.File, parent windows.Handle, name string, replace bool, publication *TransferPublication, publish func(*os.File, windows.Handle, string, bool) error) error {
+	return ProtectedTransferIO(ctx, func() error {
 		if e := ctx.Err(); e != nil {
 			return e
 		}
-		*publication = transferPublishUnknown
+		*publication = TransferPublishUnknown
 		if e := publish(temp, parent, name, replace); e != nil {
-			return fmt.Errorf("%w (临时名称 %q): %w", errTransferPublicationUnknown, temp.Name(), e)
+			return fmt.Errorf("%w (临时名称 %q): %w", ErrTransferPublicationUnknown, temp.Name(), e)
 		}
-		*publication = transferPublished
+		*publication = TransferPublished
 		return nil
 	})
 }
 
-func finalizeTempTransfer(ctx context.Context, temp *os.File, publication *transferPublication) error {
-	return protectedTransferIO(ctx, func() (e error) {
-		if *publication == transferStaged {
+func finalizeTempTransfer(ctx context.Context, temp *os.File, publication *TransferPublication) error {
+	return ProtectedTransferIO(ctx, func() (e error) {
+		if *publication == TransferStaged {
 			e = discardTransfer(temp)
 		}
 		return errors.Join(e, temp.Close())
 	})
 }
 
-func deleteVerifiedSource(ctx context.Context, source *os.File, expected mirrorStamp, fat bool, remove func(*os.File) error) error {
-	return protectedTransferIO(ctx, func() error {
+func deleteVerifiedSource(ctx context.Context, source *os.File, expected MirrorStamp, fat bool, remove func(*os.File) error) error {
+	return ProtectedTransferIO(ctx, func() error {
 		if e := ctx.Err(); e != nil {
 			return e
 		}

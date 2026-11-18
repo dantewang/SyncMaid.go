@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 )
 
 func (a *application) setDestinationMode(strategy taskconfig.Strategy, mode taskconfig.DeleteMode) {
-	if !a.targetEditAllowed() || manualKind(a.manual.kind) == taskconfig.Moving {
+	if !a.targetEditAllowed() || syncengine.ManualKind(a.manual.kind) == taskconfig.Moving {
 		return
 	}
 	for i := range a.manual.targets {
@@ -16,7 +17,7 @@ func (a *application) setDestinationMode(strategy taskconfig.Strategy, mode task
 		if d.ID != a.manual.targetID {
 			continue
 		}
-		if strategy == taskconfig.Mirror && !isAllFileRules(d.Filters) {
+		if strategy == taskconfig.Mirror && !syncengine.IsAllFileRules(d.Filters) {
 			a.manual.message = messagef("请先将此目标过滤设为全部文件，再选择Mirror。")
 			return
 		}
@@ -30,20 +31,20 @@ func (a *application) destinationModeView(c *ui.Context, locked bool) {
 	for _, d := range a.manual.targets {
 		if d.ID == a.manual.targetID {
 			ui.Text(c, a.tr("同步策略"))
-			porcelainChoice(c, "sync", a.tr("镜像"), a.tr("复制新增和更改的文件；多余文件须每次确认后移除。"), destinationStrategy(d) == taskconfig.Mirror, locked, func() { a.setDestinationMode(taskconfig.Mirror, destinationDeleteMode(d)) })
-			porcelainChoice(c, "＋", a.tr("仅添加"), a.tr("复制新增和更改的文件；从不删除目标中的文件。"), destinationStrategy(d) == taskconfig.AddOnly, locked, func() { a.setDestinationMode(taskconfig.AddOnly, destinationDeleteMode(d)) })
-			if destinationStrategy(d) == taskconfig.Mirror {
+			porcelainChoice(c, "sync", a.tr("镜像"), a.tr("复制新增和更改的文件；多余文件须每次确认后移除。"), syncengine.DestinationStrategy(d) == taskconfig.Mirror, locked, func() { a.setDestinationMode(taskconfig.Mirror, syncengine.DestinationDeleteMode(d)) })
+			porcelainChoice(c, "＋", a.tr("仅添加"), a.tr("复制新增和更改的文件；从不删除目标中的文件。"), syncengine.DestinationStrategy(d) == taskconfig.AddOnly, locked, func() { a.setDestinationMode(taskconfig.AddOnly, syncengine.DestinationDeleteMode(d)) })
+			if syncengine.DestinationStrategy(d) == taskconfig.Mirror {
 				ui.Text(c, a.tr("Mirror同步全部文件；每次移除多余文件前须确认。空源禁止删除，不清理空目录。"))
 				ui.Row(c).Gap(8).Children(func() {
-					ui.Button(c, a.tr("回收站")).Selected(destinationDeleteMode(d) == taskconfig.Recycle).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Recycle) })
-					ui.Button(c, a.tr("永久删除")).Selected(destinationDeleteMode(d) == taskconfig.Permanent).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Permanent) })
+					ui.Button(c, a.tr("回收站")).Selected(syncengine.DestinationDeleteMode(d) == taskconfig.Recycle).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Recycle) })
+					ui.Button(c, a.tr("永久删除")).Selected(syncengine.DestinationDeleteMode(d) == taskconfig.Permanent).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Permanent) })
 				})
 				return
 			}
 		}
 	}
 }
-func (a *application) confirmMirror(ctx context.Context, p mirrorPreview) error {
+func (a *application) confirmMirror(ctx context.Context, p syncengine.MirrorPreview) error {
 	reply := make(chan error, 1)
 	a.window.Update(func() {
 		if ctx.Err() == nil {
@@ -72,7 +73,7 @@ func (a *application) answerMirror(accept bool) {
 	}
 	var e error
 	if !accept {
-		e = errMirrorDeclined
+		e = syncengine.ErrMirrorDeclined
 	}
 	select {
 	case s.mirrorReply <- e:
@@ -108,7 +109,7 @@ func (a *application) mirrorPreviewView(c *ui.Context) {
 func (a *application) selectedMirror() bool {
 	for _, d := range a.manual.targets {
 		if d.ID == a.manual.targetID {
-			return destinationStrategy(d) == taskconfig.Mirror
+			return syncengine.DestinationStrategy(d) == taskconfig.Mirror
 		}
 	}
 	return false

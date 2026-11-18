@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -15,10 +15,10 @@ func TestMoveSuffixNames(t *testing.T) {
 	for _, c := range []struct{ name, want string }{
 		{"report.pdf", "report (2).pdf"}, {"archive.tar.gz", "archive.tar (2).gz"}, {"readme", "readme (2)"}, {"中文报告.txt", "中文报告 (2).txt"}, {".env", " (2).env"},
 	} {
-		if got := moveSuffixName(c.name, 2); got != c.want {
+		if got := MoveSuffixName(c.name, 2); got != c.want {
 			t.Fatal(c, got)
 		}
-		if moveSuffixName(c.name, 1) != c.name {
+		if MoveSuffixName(c.name, 1) != c.name {
 			t.Fatal("original name changed")
 		}
 	}
@@ -31,7 +31,7 @@ func TestMoveSuffixExistingNumbersAndStructure(t *testing.T) {
 			manualWrite(t, filepath.Join(p.Source, filepath.FromSlash(name)), "new-content")
 			parent, leaf := filepath.Split(filepath.FromSlash(name))
 			for n := 1; n <= 2; n++ {
-				manualWrite(t, filepath.Join(p.Target, parent, moveSuffixName(leaf, n)), "existing")
+				manualWrite(t, filepath.Join(p.Target, parent, MoveSuffixName(leaf, n)), "existing")
 			}
 			r, e := runMultiple(context.Background(), q, nil)
 			if e != nil || r[q.Destinations[0].ID].Progress.Moved != 1 {
@@ -39,9 +39,9 @@ func TestMoveSuffixExistingNumbersAndStructure(t *testing.T) {
 			}
 			absentMoveFile(t, filepath.Join(p.Source, filepath.FromSlash(name)))
 			for n := 1; n <= 2; n++ {
-				manualRead(t, filepath.Join(p.Target, parent, moveSuffixName(leaf, n)), "existing")
+				manualRead(t, filepath.Join(p.Target, parent, MoveSuffixName(leaf, n)), "existing")
 			}
-			manualRead(t, filepath.Join(p.Target, parent, moveSuffixName(leaf, 3)), "new-content")
+			manualRead(t, filepath.Join(p.Target, parent, MoveSuffixName(leaf, 3)), "new-content")
 		})
 	}
 }
@@ -63,7 +63,7 @@ func TestMoveSuffixFlattenInternalCollision(t *testing.T) {
 func TestMoveSuffixPublishRaceAndOneCopy(t *testing.T) {
 	_, p := moveFixture(t)
 	manualWrite(t, filepath.Join(p.Source, "f.txt"), "moving")
-	roots, e := openTransferRoots(context.Background(), p)
+	roots, e := OpenTransferRoots(context.Background(), p)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -73,10 +73,10 @@ func TestMoveSuffixPublishRaceAndOneCopy(t *testing.T) {
 		t.Fatal(e)
 	}
 	copies, attempts := 0, 0
-	ops := transferIO{collision: taskconfig.Suffix, copy: func(ctx context.Context, s, d *os.File, p func(int64)) error {
+	ops := TransferIO{Collision: taskconfig.Suffix, Copy: func(ctx context.Context, s, d *os.File, p func(int64)) error {
 		copies++
-		return copyChecked(ctx, s, d, p)
-	}, publish: func(f *os.File, h windows.Handle, name string, replace bool) error {
+		return CopyChecked(ctx, s, d, p)
+	}, Publish: func(f *os.File, h windows.Handle, name string, replace bool) error {
 		attempts++
 		if replace {
 			t.Fatal("overwrite attempted")
@@ -84,7 +84,7 @@ func TestMoveSuffixPublishRaceAndOneCopy(t *testing.T) {
 		if attempts == 1 {
 			manualWrite(t, filepath.Join(p.Target, name), "racing-writer")
 		}
-		return publishTransfer(f, h, name, replace)
+		return PublishTransfer(f, h, name, replace)
 	}}
 	stamp := stamps[files[0].Path]
 	published, e := transferFileTo(context.Background(), roots, files[0], "f.txt", &stamp, ops, nil)
@@ -100,7 +100,7 @@ func TestMoveSuffixCancellationBoundAndAmbiguousFailure(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			_, p := moveFixture(t)
 			manualWrite(t, filepath.Join(p.Source, "f.txt"), "keep-source")
-			roots, e := openTransferRoots(context.Background(), p)
+			roots, e := OpenTransferRoots(context.Background(), p)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -112,10 +112,10 @@ func TestMoveSuffixCancellationBoundAndAmbiguousFailure(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			attempts, copies := 0, 0
-			ops := transferIO{collision: taskconfig.Suffix, copy: func(ctx context.Context, s, d *os.File, p func(int64)) error {
+			ops := TransferIO{Collision: taskconfig.Suffix, Copy: func(ctx context.Context, s, d *os.File, p func(int64)) error {
 				copies++
-				return copyChecked(ctx, s, d, p)
-			}, publish: func(f *os.File, h windows.Handle, name string, replace bool) error {
+				return CopyChecked(ctx, s, d, p)
+			}, Publish: func(f *os.File, h windows.Handle, name string, replace bool) error {
 				attempts++
 				if replace {
 					t.Fatal("overwrite attempted")
@@ -131,7 +131,7 @@ func TestMoveSuffixCancellationBoundAndAmbiguousFailure(t *testing.T) {
 				default:
 					// Fault injection: a completed rename followed by an inconsistent error.
 					// This is not a claim that Windows has exhibited this behavior.
-					if e := publishTransfer(f, h, name, false); e != nil {
+					if e := PublishTransfer(f, h, name, false); e != nil {
 						return e
 					}
 					if kind == "renamed-collision" {
@@ -158,7 +158,7 @@ func TestMoveSuffixCancellationBoundAndAmbiguousFailure(t *testing.T) {
 					t.Fatal(attempts)
 				}
 			} else {
-				if !errors.Is(e, errTransferPublicationUnknown) || attempts != 1 {
+				if !errors.Is(e, ErrTransferPublicationUnknown) || attempts != 1 {
 					t.Fatal(attempts, e)
 				}
 				if kind != "error" {
@@ -168,52 +168,13 @@ func TestMoveSuffixCancellationBoundAndAmbiguousFailure(t *testing.T) {
 		})
 	}
 }
-func TestMoveSuffixPersistenceAndUI(t *testing.T) {
-	data := t.TempDir()
-	l, e := loadSavedTasks(data)
-	if e != nil {
-		t.Fatal(e)
-	}
-	q, _ := moveFixture(t)
-	l, id, e := l.saveMultiple("", "suffix", q)
-	if e != nil {
-		t.Fatal(e)
-	}
-	a := application{tasks: l}
-	a.selectManual(id)
-	a.setMoveCollision(taskconfig.Suffix)
-	l, _, e = l.saveMultiple(id, "suffix", a.manual.draftRequest())
-	if e != nil {
-		t.Fatal(e)
-	}
-	l, e = loadSavedTasks(data)
-	if e != nil {
-		t.Fatal(e)
-	}
-	task, _ := l.find(id)
-	request, e := multipleRequestFromSaved(task)
-	if e != nil || request.Destinations[0].Collision != taskconfig.Suffix {
-		t.Fatal(request, e)
-	}
-	a.manual.phase = manualRunning
-	a.setMoveCollision(taskconfig.Skip)
-	if a.manual.targets[0].Collision != taskconfig.Suffix {
-		t.Fatal("running edit")
-	}
-	task.Kind = taskconfig.Sync
-	task.Destinations[0].Strategy = taskconfig.AddOnly
-	if _, e = multipleRequestFromSaved(task); e == nil {
-		t.Fatal("Sync suffix silently accepted")
-	}
-}
-
 func TestSyncSuffixRejectedBeforeWrite(t *testing.T) {
 	q, p := multiFixture(t)
 	q.Destinations = q.Destinations[:1]
 	q.Destinations[0].Collision = taskconfig.Suffix
 	manualWrite(t, filepath.Join(p.Source, "keep.txt"), "source")
 	results, e := runMultiple(context.Background(), q, nil)
-	if e == nil || results[q.Destinations[0].ID].State != destinationFailed {
+	if e == nil || results[q.Destinations[0].ID].State != DestinationFailed {
 		t.Fatal(results, e)
 	}
 	manualRead(t, filepath.Join(p.Source, "keep.txt"), "source")

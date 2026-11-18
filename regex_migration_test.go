@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/syncengine"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -12,7 +13,7 @@ import (
 	"syncmaid/internal/taskconfig"
 )
 
-func migrationFixture(t *testing.T, move bool) (*savedTaskLibrary, taskconfig.Task, manualRequest, string) {
+func migrationFixture(t *testing.T, move bool) (*savedTaskLibrary, taskconfig.Task, syncengine.ManualRequest, string) {
 	t.Helper()
 	q, paths := multiFixture(t)
 	kind := taskconfig.Sync
@@ -25,7 +26,7 @@ func migrationFixture(t *testing.T, move bool) (*savedTaskLibrary, taskconfig.Ta
 		if move {
 			strategy = taskconfig.Move
 		}
-		rules := allFileRules()
+		rules := syncengine.AllFileRules()
 		if i == 0 {
 			pattern := "legacy"
 			rules = []taskconfig.Rule{{Kind: "regex", Pattern: &pattern}}
@@ -74,7 +75,7 @@ func TestRegexMigrationSyncSaveReloadAndInvalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	results, err := runMultiple(context.Background(), q, nil)
-	if err == nil || results[task.Destinations[0].ID].State != destinationFailed || results[task.Destinations[1].ID].State != destinationSucceeded {
+	if err == nil || results[task.Destinations[0].ID].State != syncengine.DestinationFailed || results[task.Destinations[1].ID].State != syncengine.DestinationSucceeded {
 		t.Fatal("Sync target isolation", results, err)
 	}
 	absentMoveFile(t, filepath.Join(p.Target, "a.txt"))
@@ -109,9 +110,9 @@ func TestRegexMigrationSyncSaveReloadAndInvalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	q, _ = l.request(task)
-	q = prepareReviewedRequest(q)
-	if !errors.Is(q.Destinations[0].filterError, filefilter.ErrStaleReview) {
-		t.Fatal(q.Destinations[0].filterError)
+	q = syncengine.PrepareReviewedRequest(q)
+	if !errors.Is(q.Destinations[0].FilterError, filefilter.ErrStaleReview) {
+		t.Fatal(q.Destinations[0].FilterError)
 	}
 }
 
@@ -166,11 +167,11 @@ func TestRegexMigrationUnknownProfileAndSaveConflictFailClosed(t *testing.T) {
 			t.Fatal(err)
 		}
 		q, _ := l.request(task)
-		q = prepareReviewedRequest(q)
-		if q.Destinations[0].filterError == nil {
+		q = syncengine.PrepareReviewedRequest(q)
+		if q.Destinations[0].FilterError == nil {
 			t.Fatal("invalid confirmation authorized target")
 		}
-		if q.Destinations[1].filterError != nil {
+		if q.Destinations[1].FilterError != nil {
 			t.Fatal("unrelated Sync target blocked")
 		}
 	}

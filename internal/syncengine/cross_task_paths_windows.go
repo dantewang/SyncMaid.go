@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 
 // Compare current object identities, not path spellings. Only peers in the
 // same role are compared, preserving target-to-source chains between tasks.
-func validateCrossTaskPaths(ctx context.Context, current taskconfig.ID, q manualTaskRequest, tasks []taskconfig.Task) error {
+func ValidateCrossTaskPaths(ctx context.Context, current taskconfig.ID, q ManualTaskRequest, tasks []taskconfig.Task) error {
 	if len(tasks) < 2 {
 		return nil
 	}
@@ -52,7 +52,7 @@ func validateCrossTaskPaths(ctx context.Context, current taskconfig.ID, q manual
 		if !filepath.IsAbs(a) || !filepath.IsAbs(b) {
 			return false, nil
 		}
-		if obviousPathOverlap(a, b) {
+		if ObviousPathOverlap(a, b) {
 			return true, nil
 		}
 		x, xerr := chain(a)

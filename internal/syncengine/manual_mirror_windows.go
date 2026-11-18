@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -9,14 +9,13 @@ import (
 	"strings"
 	"syncmaid/internal/windowsfs"
 
-	"github.com/egoist/mygo"
 	"golang.org/x/sys/windows"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
 	"syncmaid/internal/winutil"
 )
 
-type mirrorStamp struct {
+type MirrorStamp struct {
 	ID       windowsfs.Identity
 	Size     int64
 	Modified windows.Filetime
@@ -60,7 +59,7 @@ func openMirrorFile(root windows.Handle, rel string, access uint32) (f *os.File,
 	}
 	return
 }
-func mirrorFileStamp(f *os.File, fat bool) (s mirrorStamp, err error) {
+func mirrorFileStamp(f *os.File, fat bool) (s MirrorStamp, err error) {
 	h := windows.Handle(f.Fd())
 	if s.ID, err = windowsfs.FileIdentity(h, fat); err != nil {
 		return
@@ -80,7 +79,7 @@ func mirrorFileStamp(f *os.File, fat bool) (s mirrorStamp, err error) {
 func restoreMirrorDirectories(ctx context.Context, root *winutil.DirectoryObject, dirs []fileinventory.Directory) error {
 	for i := len(dirs) - 1; i >= 0; i-- {
 		d := dirs[i]
-		if err := protectedTransferIO(ctx, func() error {
+		if err := ProtectedTransferIO(ctx, func() error {
 			return restoreMirrorDirectory(ctx, root.Handle, d)
 		}); err != nil {
 			return fmt.Errorf("恢复目标目录 %s: %w", d.Path, err)
@@ -118,13 +117,13 @@ func restoreMirrorDirectory(ctx context.Context, root windows.Handle, d fileinve
 
 // The reusable copy service finishes first: any copy failure prevents planning
 // deletion. Confirmation authorizes exactly this local call's candidate list.
-func runMirror(ctx context.Context, q manualRequest, d manualDestination, notify func(transferProgress), confirm mirrorConfirmation) (p transferProgress, err error) {
-	return runMirrorWith(ctx, q, d, notify, confirm, runManualFiltered, recycleMirrorFile)
+func RunMirror(ctx context.Context, q ManualRequest, d ManualDestination, notify func(TransferProgress), confirm MirrorConfirmation, recycle func(string) error) (p TransferProgress, err error) {
+	return RunMirrorWith(ctx, q, d, notify, confirm, RunManualFiltered, recycle)
 }
 
 // Shell parsing rejects the NT extended prefix (0x80070057). Only convert
 // short local DOS paths; do not sacrifice extended-length I/O semantics.
-func mirrorShellPath(path string) (string, error) {
+func MirrorShellPath(path string) (string, error) {
 	if strings.HasPrefix(path, `\\?\`) {
 		path = strings.TrimPrefix(path, `\\?\`)
 		if len(path) < 3 || path[1] != ':' || path[2] != '\\' {
@@ -140,12 +139,17 @@ func mirrorShellPath(path string) (string, error) {
 	}
 	return path, nil
 }
-func recycleMirrorFile(path string) error {
-	path, e := mirrorShellPath(path)
-	if e != nil {
-		return e
+func RecycleWithShell(trash func(string) error) func(string) error {
+	return func(path string) error {
+		path, e := MirrorShellPath(path)
+		if e != nil {
+			return e
+		}
+		if trash == nil {
+			return errors.New("回收站接口不可用；未删除文件")
+		}
+		return trash(path)
 	}
-	return mygo.Shell.TrashItem(path)
 }
 
 func mirrorSourceExists(sourceRoot windows.Handle, rel string) (bool, error) {
@@ -159,11 +163,11 @@ func mirrorSourceExists(sourceRoot windows.Handle, rel string) (bool, error) {
 	return false, e
 }
 
-func collectMirrorCandidates(ctx context.Context, roots *transferRoots, targetFiles []fileinventory.File) ([]string, map[string]mirrorStamp, error) {
+func collectMirrorCandidates(ctx context.Context, roots *TransferRoots, targetFiles []fileinventory.File) ([]string, map[string]MirrorStamp, error) {
 	// Use the actual filesystem's case-insensitive lookup, not filter Unicode
 	// comparison, to distinguish destination extras from source spellings.
 	var paths []string
-	stamps := map[string]mirrorStamp{}
+	stamps := map[string]MirrorStamp{}
 	for _, entry := range targetFiles {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
@@ -178,7 +182,7 @@ func collectMirrorCandidates(ctx context.Context, roots *transferRoots, targetFi
 		f, close, e := openMirrorFile(roots.target.Handle, entry.Path, windows.GENERIC_READ)
 		if e != nil {
 			if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) {
-				return nil, nil, errMirrorChanged
+				return nil, nil, ErrMirrorChanged
 			}
 			return nil, nil, e
 		}
@@ -188,20 +192,20 @@ func collectMirrorCandidates(ctx context.Context, roots *transferRoots, targetFi
 			return nil, nil, e
 		}
 		if stamp.Size != entry.Size || stamp.Modified.Nanoseconds() != entry.Modified.UnixNano() {
-			return nil, nil, errMirrorChanged
+			return nil, nil, ErrMirrorChanged
 		}
 		paths = append(paths, entry.Path)
 		stamps[entry.Path] = stamp
 	}
 	return paths, stamps, nil
 }
-func removeMirrorCandidate(ctx context.Context, roots *transferRoots, rel string, expected mirrorStamp, mode taskconfig.DeleteMode, recycle func(string) error) error {
+func removeMirrorCandidate(ctx context.Context, roots *TransferRoots, rel string, expected MirrorStamp, mode taskconfig.DeleteMode, recycle func(string) error) error {
 	exists, e := mirrorSourceExists(roots.source.Handle, rel)
 	if e != nil {
 		return e
 	}
 	if exists {
-		return errMirrorChanged
+		return ErrMirrorChanged
 	}
 	f, close, e := openMirrorFile(roots.target.Handle, rel, windows.GENERIC_READ|windows.DELETE)
 	if e != nil {
@@ -209,19 +213,22 @@ func removeMirrorCandidate(ctx context.Context, roots *transferRoots, rel string
 	}
 	stamp, e := mirrorFileStamp(f, roots.target.Fat)
 	if e == nil && stamp != expected {
-		e = errMirrorChanged
+		e = ErrMirrorChanged
 	}
 	if e != nil {
 		return errors.Join(e, close())
 	}
 	// The shell accepts a path, not our handle. Pin parents while releasing
 	// the file, then recycle. The final external replacement race is not CAS.
-	e = protectedTransferIO(ctx, func() error {
+	e = ProtectedTransferIO(ctx, func() error {
 		if e := ctx.Err(); e != nil {
 			return e
 		}
 		if mode == taskconfig.Permanent {
 			return discardTransfer(f)
+		}
+		if recycle == nil {
+			return errors.New("回收站接口不可用；未删除文件")
 		}
 		if e := f.Close(); e != nil {
 			return e

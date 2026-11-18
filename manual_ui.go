@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"time"
 
@@ -38,22 +39,22 @@ type manualSession struct {
 	kind                    taskconfig.TaskKind
 	phase                   manualPhase
 	source, target          string
-	request                 manualTaskRequest
+	request                 syncengine.ManualTaskRequest
 	cancel                  context.CancelFunc
-	progress                transferProgress
+	progress                syncengine.TransferProgress
 	message                 localizedMessage
 	quitPending             bool
 	id                      taskconfig.ID
 	name                    string
-	targets                 []manualDestination
+	targets                 []syncengine.ManualDestination
 	targetID                taskconfig.ID
 	targetName              string
 	dirty                   bool
-	destinationResults      multipleResult
+	destinationResults      syncengine.MultipleResult
 	filterEditor            filterEditor
 	filterDrafts            map[taskconfig.ID]filterEditor
 	destinationEdits        map[taskconfig.ID]destinationEditState
-	mirrorPreview           *mirrorPreview
+	mirrorPreview           *syncengine.MirrorPreview
 	mirrorReply             chan error
 }
 
@@ -61,8 +62,8 @@ type savedTaskResult struct {
 	outcome        outcomeState
 	started, ended time.Time
 	message        localizedMessage
-	progress       transferProgress
-	destinations   multipleResult
+	progress       syncengine.TransferProgress
+	destinations   syncengine.MultipleResult
 }
 
 func (s *manualSession) busy() bool {
@@ -79,7 +80,7 @@ func (s *manualSession) edited() {
 	s.flushTarget()
 	s.dirty = true
 	s.message = messagef("编辑尚未保存；请保存或明确放弃编辑后再切换任务。")
-	s.progress = transferProgress{}
+	s.progress = syncengine.TransferProgress{}
 	s.destinationResults = nil
 }
 
@@ -104,7 +105,7 @@ func (a *application) taskEditorView(c *ui.Context) {
 				ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error())
 			}
 			if a.cards.destinations {
-				if manualKind(s.kind) == taskconfig.Moving {
+				if syncengine.ManualKind(s.kind) == taskconfig.Moving {
 					ui.Text(c, a.tr("按目标顺序首个匹配；失败不转投后续目标。")).TextColor(porcelain.TextMuted)
 				}
 				porcelainPath(c, s.source)
@@ -199,7 +200,7 @@ func (a *application) startManual() {
 	}
 	a.startTaskRun(s.id, s.name, s.request, false)
 }
-func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRequest, automatic bool) {
+func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.ManualTaskRequest, automatic bool) {
 	s := &a.manual
 	if s.busy() || a.sourcePreview.job != nil || (automatic && a.batch.phase == batchServing) {
 		return
@@ -239,8 +240,8 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 		s.message = messagef("正在运行…")
 	}
 	if showResult {
-		s.progress = transferProgress{}
-		s.destinationResults = initialDestinationResults(q)
+		s.progress = syncengine.TransferProgress{}
+		s.destinationResults = syncengine.InitialDestinationResults(q)
 	}
 	history := a.history
 	active := []taskconfig.ID(nil)
@@ -253,9 +254,9 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 	go func() {
 		last := time.Time{}
 		var lastID taskconfig.ID
-		var lastState destinationState
+		var lastState syncengine.DestinationState
 		var lastStage string
-		notify := func(r destinationResult) {
+		notify := func(r syncengine.DestinationResult) {
 			if r.ID == lastID && r.State == lastState && r.Progress.Stage == lastStage && time.Since(last) < 100*time.Millisecond {
 				return
 			}
@@ -269,19 +270,19 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 				}
 				s.destinationResults[r.ID] = r
 				s.progress = r.Progress
-				if r.State != destinationRunning {
+				if r.State != syncengine.DestinationRunning {
 					s.progress.Stage = string(r.State)
 				}
 			})
 		}
-		historyView, recordEnd, results, err, historyErr := executeRecordedRun(history, recordStart, recordStartErr, active, func() (multipleResult, error) {
-			var results multipleResult
-			err := interruptibleIO(ctx, func(ctx context.Context) error {
-				if err := validateCrossTaskPaths(ctx, id, q, taskSnapshot); err != nil {
+		historyView, recordEnd, results, err, historyErr := executeRecordedRun(history, recordStart, recordStartErr, active, func() (syncengine.MultipleResult, error) {
+			var results syncengine.MultipleResult
+			err := syncengine.InterruptibleIO(ctx, func(ctx context.Context) error {
+				if err := syncengine.ValidateCrossTaskPaths(ctx, id, q, taskSnapshot); err != nil {
 					return err
 				}
 				var e error
-				results, e = runMultipleConfirmed(ctx, q, notify, a.confirmMirror)
+				results, e = syncengine.RunMultipleConfirmed(ctx, q, notify, a.confirmMirror, syncengine.RecycleWithShell(mygo.Shell.TrashItem))
 				return e
 			})
 			return results, err

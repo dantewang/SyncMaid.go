@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 	"syncmaid/internal/taskconfig"
 )
 
-type manualDestination struct {
-	matcher        *filefilter.Matcher
-	filterError    error
+type ManualDestination struct {
+	Matcher        *filefilter.Matcher
+	FilterError    error
 	ID             taskconfig.ID
 	Name, Path     string
 	Filters        []taskconfig.Rule
@@ -23,41 +23,47 @@ type manualDestination struct {
 	Flatten        bool
 	Collision      taskconfig.CollisionPolicy
 }
-type manualTaskRequest struct {
+type ManualTaskRequest struct {
 	regexTask    *taskconfig.Task
-	regexReviews map[taskconfig.ID]reviewBundle
+	regexReviews map[taskconfig.ID]ReviewBundle
 	Trigger      taskconfig.Trigger
 	Kind         taskconfig.TaskKind
 	Source       string
-	Destinations []manualDestination
+	Destinations []ManualDestination
 }
-type destinationState string
+
+func (q ManualTaskRequest) WithReviewedRegex(t *taskconfig.Task, reviews map[taskconfig.ID]ReviewBundle) ManualTaskRequest {
+	q.regexTask = t
+	q.regexReviews = reviews
+	return q
+}
+type DestinationState string
 
 const (
-	destinationWaiting     destinationState = "未开始"
-	destinationRunning     destinationState = "运行中"
-	destinationSucceeded   destinationState = "完成"
-	destinationNoMatches   destinationState = "无匹配"
-	destinationFailed      destinationState = "失败"
-	destinationCanceled    destinationState = "已停止"
-	destinationSkipped     destinationState = "未执行"
-	destinationInterrupted destinationState = "中断/结果未知"
+	DestinationWaiting     DestinationState = "未开始"
+	DestinationRunning     DestinationState = "运行中"
+	DestinationSucceeded   DestinationState = "完成"
+	DestinationNoMatches   DestinationState = "无匹配"
+	DestinationFailed      DestinationState = "失败"
+	DestinationCanceled    DestinationState = "已停止"
+	DestinationSkipped     DestinationState = "未执行"
+	DestinationInterrupted DestinationState = "中断/结果未知"
 )
 
-type destinationResult struct {
+type DestinationResult struct {
 	Started, Ended time.Time
 	ID             taskconfig.ID
 	Name           string
-	State          destinationState
-	Progress       transferProgress
+	State          DestinationState
+	Progress       TransferProgress
 	Error          string
 }
-type multipleResult map[taskconfig.ID]destinationResult
+type MultipleResult map[taskconfig.ID]DestinationResult
 
-func initialDestinationResults(q manualTaskRequest) multipleResult {
-	r := make(multipleResult, len(q.Destinations))
+func InitialDestinationResults(q ManualTaskRequest) MultipleResult {
+	r := make(MultipleResult, len(q.Destinations))
 	for _, d := range q.Destinations {
-		r[d.ID] = destinationResult{ID: d.ID, Name: d.Name, State: destinationWaiting}
+		r[d.ID] = DestinationResult{ID: d.ID, Name: d.Name, State: DestinationWaiting}
 	}
 	return r
 }
@@ -65,20 +71,20 @@ func initialDestinationResults(q manualTaskRequest) multipleResult {
 // Each target runs in configuration order. A failure is recorded, not turned
 // into success or a reason to skip healthy targets. Cancellation stops the rest.
 // Events are value copies; the final map is handed over only after work ends.
-func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(destinationResult), confirm mirrorConfirmation) (results multipleResult, err error) {
+func RunMultipleConfirmed(ctx context.Context, q ManualTaskRequest, notify func(DestinationResult), confirm MirrorConfirmation, recycle func(string) error) (results MultipleResult, err error) {
 	if len(q.Destinations) == 0 {
-		return multipleResult{}, nil
+		return MultipleResult{}, nil
 	}
-	q = prepareReviewedRequest(q)
-	if manualKind(q.Kind) == taskconfig.Moving {
-		return runMove(ctx, q, notify)
+	q = PrepareReviewedRequest(q)
+	if ManualKind(q.Kind) == taskconfig.Moving {
+		return RunMove(ctx, q, notify)
 	}
-	results = initialDestinationResults(q)
-	plan, err := openMultiplePlan(ctx, q)
+	results = InitialDestinationResults(q)
+	plan, err := OpenMultiplePlan(ctx, q)
 	if err != nil {
 		for id, r := range results {
 			r.Ended = time.Now()
-			r.State = destinationSkipped
+			r.State = DestinationSkipped
 			r.Error = err.Error()
 			results[id] = r
 		}
@@ -95,33 +101,33 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 		r := results[d.ID]
 		if e := ctx.Err(); e != nil {
 			r.Ended = time.Now()
-			r.State = destinationSkipped
+			r.State = DestinationSkipped
 			r.Error = "已停止，未执行"
 			results[d.ID] = r
 			continue
 		}
 		if e := plan.failures[d.ID]; e != nil {
-			r.State = destinationFailed
+			r.State = DestinationFailed
 			r.Error = e.Error()
 			failures = append(failures, fmt.Errorf("%s: %w", d.Name, e))
 		} else {
 			r.Started = time.Now()
-			r.State = destinationRunning
+			r.State = DestinationRunning
 			results[d.ID] = r
 			if notify != nil {
 				notify(r)
 			}
-			progress := func(p transferProgress) {
+			progress := func(p TransferProgress) {
 				r.Progress = p
 				results[d.ID] = r
 				if notify != nil {
 					notify(r)
 				}
 			}
-			var p transferProgress
-			e := validateDestinationMode(d)
+			var p TransferProgress
+			e := ValidateDestinationMode(d)
 			if e == nil {
-				e = d.filterError
+				e = d.FilterError
 			}
 			if e == nil {
 				if !sourceScanned {
@@ -132,10 +138,10 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 					e = sourceScanErr
 				} else {
 					roots := plan.takeTargetRoots(d.ID)
-					if destinationStrategy(d) == taskconfig.Mirror {
-						p, e = runMirrorSession(ctx, plan.requests[d.ID], d, roots, sourceInv, progress, confirm, nil, recycleMirrorFile)
+					if DestinationStrategy(d) == taskconfig.Mirror {
+						p, e = RunMirrorSession(ctx, plan.requests[d.ID], d, roots, sourceInv, progress, confirm, nil, recycle)
 					} else {
-						p, e = runManualWithSession(ctx, plan.requests[d.ID], roots, sourceInv, progress, transferIO{copy: transferCopier(d.VerifyContents), publish: publishTransfer}, d.Filters, d.matcher)
+						p, e = RunManualWithSession(ctx, plan.requests[d.ID], roots, sourceInv, progress, TransferIO{Copy: TransferCopier(d.VerifyContents), Publish: PublishTransfer}, d.Filters, d.Matcher)
 					}
 					if roots != nil {
 						e = errors.Join(e, roots.close(ctx))
@@ -146,15 +152,15 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 			switch {
 			case e == nil:
 				if p.Total == 0 {
-					r.State = destinationNoMatches
+					r.State = DestinationNoMatches
 				} else {
-					r.State = destinationSucceeded
+					r.State = DestinationSucceeded
 				}
 			case errors.Is(e, context.Canceled) || ctx.Err() != nil:
-				r.State = destinationCanceled
+				r.State = DestinationCanceled
 				r.Error = e.Error()
 			default:
-				r.State = destinationFailed
+				r.State = DestinationFailed
 				r.Error = e.Error()
 			}
 			if e != nil {

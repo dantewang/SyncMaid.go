@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syncmaid/internal/syncengine"
 	"testing"
 	"unicode"
 
@@ -92,9 +93,9 @@ func TestLanguageCatalogKeysAndInterpolation(t *testing.T) {
 func TestLanguageEditorAndHistoryRegions(t *testing.T) {
 	for _, choice := range languageChoices {
 		t.Run(choice.tag, func(t *testing.T) {
-			d := manualDestination{ID: taskconfig.NewID(), Name: "完成", Path: `C:\目標`, Filters: allFileRules(), Collision: taskconfig.Suffix}
+			d := syncengine.ManualDestination{ID: taskconfig.NewID(), Name: "完成", Path: `C:\目標`, Filters: syncengine.AllFileRules(), Collision: taskconfig.Suffix}
 			a := &application{locale: choice.tag, manual: manualSession{
-				name: "Settings", source: `C:\源`, targets: []manualDestination{d}, targetID: d.ID, targetName: d.Name, target: d.Path,
+				name: "Settings", source: `C:\源`, targets: []syncengine.ManualDestination{d}, targetID: d.ID, targetName: d.Name, target: d.Path,
 				kind: taskconfig.Moving, filterEditor: filterEditor{Mode: filterGrouped, Groups: []filterDraftGroup{{}}},
 				trigger: taskconfig.Trigger{Kind: "scheduled"}, cronText: "*/5 * * * *", cronNext: "2026-11-15 10:00:00 CST",
 			}}
@@ -110,7 +111,7 @@ func TestLanguageEditorAndHistoryRegions(t *testing.T) {
 			if a.manual.name != "Settings" || a.manual.source != `C:\源` || a.manual.targetName != "完成" || a.manual.cronText != "*/5 * * * *" {
 				t.Fatal("user fields changed")
 			}
-			r := runRecord{ID: taskconfig.NewID(), TaskID: taskconfig.NewID(), Name: "完成", Outcome: "stopped", Goals: []runGoal{{ID: d.ID, Name: d.Name, State: destinationCanceled}}}
+			r := runRecord{ID: taskconfig.NewID(), TaskID: taskconfig.NewID(), Name: "完成", Outcome: "stopped", Goals: []runGoal{{ID: d.ID, Name: d.Name, State: syncengine.DestinationCanceled}}}
 			a.historyView = runHistoryData{Version: 1, Recent: []runRecord{r}}
 			a.historyOpen = true
 			view = ui.NewTester(a.view, 1000, 1400)
@@ -128,7 +129,7 @@ func TestLanguageChangeKeepsDraftAndConfirmation(t *testing.T) {
 	a := &application{locale: "en", settingsOpen: true, manual: manualSession{
 		name: "完成", source: `C:\任务\原样`, cronText: "*/5 * * * *", dirty: true,
 		phase: manualRunning, targetName: "Settings", mirrorReply: reply,
-		mirrorPreview: &mirrorPreview{Name: "任务名", Paths: []string{"保持.txt"}, Mode: taskconfig.Permanent},
+		mirrorPreview: &syncengine.MirrorPreview{Name: "任务名", Paths: []string{"保持.txt"}, Mode: taskconfig.Permanent},
 		message:       messagef("任务存在失败或未执行目标: %s", "原始诊断"),
 	}}
 	before := a.manual

@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
 )
@@ -10,8 +11,8 @@ import (
 // screenshots are still required for visual acceptance; this checks geometry.
 func TestDirtyEditorFooterActionsStayInside760(t *testing.T) {
 	for _, lang := range languageChoices {
-		d := manualDestination{ID: taskconfig.NewID(), Name: "Fixture", Path: `C:\fixture`, Filters: allFileRules()}
-		a := &application{locale: lang.tag, manual: manualSession{phase: manualDraft, dirty: true, source: `C:\source`, targets: []manualDestination{d}, targetID: d.ID, filterEditor: filterEditor{Mode: filterAll}}}
+		d := syncengine.ManualDestination{ID: taskconfig.NewID(), Name: "Fixture", Path: `C:\fixture`, Filters: syncengine.AllFileRules()}
+		a := &application{locale: lang.tag, manual: manualSession{phase: manualDraft, dirty: true, source: `C:\source`, targets: []syncengine.ManualDestination{d}, targetID: d.ID, filterEditor: filterEditor{Mode: filterAll}}}
 		a.cards.editor = true
 		a.cards.destinations = true
 		view := ui.NewTester(a.view, 760, 620)

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"slices"
+	"syncmaid/internal/syncengine"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -33,7 +34,7 @@ func servePollingWatch(ctx context.Context, path string, status func(error), cha
 	for ctx.Err() == nil {
 		delay := 5 * time.Second
 		var inventory *fileinventory.Inventory
-		err := interruptibleIO(ctx, func(ctx context.Context) error {
+		err := syncengine.InterruptibleIO(ctx, func(ctx context.Context) error {
 			var err error
 			inventory, err = fileinventory.Scan(ctx, path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 			return err

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"syncmaid/internal/syncengine"
 
 	"syncmaid/internal/atomicfile"
 	"syncmaid/internal/taskconfig"
@@ -79,7 +80,7 @@ func validateRunHistory(d runHistoryData) error {
 				return errors.New("目标记录无效或超限")
 			}
 			switch g.State {
-			case destinationWaiting, destinationRunning, destinationSucceeded, destinationNoMatches, destinationFailed, destinationCanceled, destinationSkipped, destinationInterrupted:
+			case syncengine.DestinationWaiting, syncengine.DestinationRunning, syncengine.DestinationSucceeded, syncengine.DestinationNoMatches, syncengine.DestinationFailed, syncengine.DestinationCanceled, syncengine.DestinationSkipped, syncengine.DestinationInterrupted:
 			default:
 				return errors.New("未知目标结果")
 			}

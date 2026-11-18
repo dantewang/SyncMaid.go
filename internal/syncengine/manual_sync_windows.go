@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -16,9 +16,9 @@ import (
 	"syncmaid/internal/winutil"
 )
 
-// manualRequest is a session task, deliberately separate from persisted legacy tasks.
-type manualRequest struct{ Source, Target string }
-type transferProgress struct {
+// ManualRequest is a session task, deliberately separate from persisted legacy tasks.
+type ManualRequest struct{ Source, Target string }
+type TransferProgress struct {
 	Stage, Path                        string
 	Total, Copied, Unchanged           int
 	Bytes                              int64
@@ -28,14 +28,14 @@ type transferProgress struct {
 	SourceEmpty                        bool
 }
 
-type transferRoots struct {
+type TransferRoots struct {
 	source, target *winutil.DirectoryObject
 	ancestors      []*winutil.DirectoryObject
 	ownsSource     bool
 	targetWritable bool
 }
 
-func (r *transferRoots) Close() (err error) {
+func (r *TransferRoots) Close() (err error) {
 	for _, d := range r.ancestors {
 		err = errors.Join(err, d.Close())
 	}
@@ -48,11 +48,19 @@ func (r *transferRoots) Close() (err error) {
 	return
 }
 
-func (r *transferRoots) close(ctx context.Context) error {
-	return closeProtected(ctx, r)
+func (r *TransferRoots) close(ctx context.Context) error {
+	return CloseProtected(ctx, r)
 }
 
-func (r *transferRoots) ensureWritableTarget(ctx context.Context) error {
+func (r *TransferRoots) CloseProtected(ctx context.Context) error {
+	return r.close(ctx)
+}
+
+func (r *TransferRoots) Paths() (string, string) {
+	return r.source.Path, r.target.Path
+}
+
+func (r *TransferRoots) ensureWritableTarget(ctx context.Context) error {
 	if r.targetWritable {
 		return nil
 	}
@@ -64,23 +72,23 @@ func (r *transferRoots) ensureWritableTarget(ctx context.Context) error {
 		return fmt.Errorf("目标文件夹: %w", err)
 	}
 	if err := ordinaryDirectory(next.Handle); err != nil {
-		return errors.Join(err, closeProtected(ctx, next))
+		return errors.Join(err, CloseProtected(ctx, next))
 	}
 	if next.Key != r.target.Key {
-		return errors.Join(fmt.Errorf("%w: 目标目录句柄已变化", errTransferOverlap), closeProtected(ctx, next))
+		return errors.Join(fmt.Errorf("%w: 目标目录句柄已变化", ErrTransferOverlap), CloseProtected(ctx, next))
 	}
 	old := r.target
 	r.target = next
 	r.targetWritable = true
-	return closeProtected(ctx, old)
+	return CloseProtected(ctx, old)
 }
 
 // no-delete-sharing handles keep the resolved operation paths stable for Scan.
-func openTransferRoots(ctx context.Context, q manualRequest) (roots *transferRoots, err error) {
-	return openTransferRootsAccess(ctx, q, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE)
+func OpenTransferRoots(ctx context.Context, q ManualRequest) (roots *TransferRoots, err error) {
+	return OpenTransferRootsAccess(ctx, q, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE)
 }
 
-var errTransferOverlap = errors.New("源与同步目标不可重叠")
+var ErrTransferOverlap = errors.New("源与同步目标不可重叠")
 
 func openAncestors(ctx context.Context, rootPath string, againstKey string) ([]*winutil.DirectoryObject, error) {
 	var ancestors []*winutil.DirectoryObject
@@ -95,21 +103,21 @@ func openAncestors(ctx context.Context, rootPath string, againstKey string) ([]*
 		}
 		ancestors = append(ancestors, parent)
 		if againstKey != "" && parent.Key == againstKey {
-			return ancestors, fmt.Errorf("%w: 源与目标互相包含（包括目录别名）", errTransferOverlap)
+			return ancestors, fmt.Errorf("%w: 源与目标互相包含（包括目录别名）", ErrTransferOverlap)
 		}
 		child = path
 	}
 	return ancestors, nil
 }
 
-func openDestinationRoots(ctx context.Context, source *winutil.DirectoryObject, sourceAncestors []*winutil.DirectoryObject, targetPath string, targetAccess uint32) (roots *transferRoots, err error) {
+func openDestinationRoots(ctx context.Context, source *winutil.DirectoryObject, sourceAncestors []*winutil.DirectoryObject, targetPath string, targetAccess uint32) (roots *TransferRoots, err error) {
 	if strings.TrimSpace(targetPath) == "" {
 		return nil, errors.New("目标文件夹未填写，请在目标编辑中浏览选择现有文件夹")
 	}
 	if !filepath.IsAbs(targetPath) {
 		return nil, errors.New("目标文件夹：请选择现有文件夹的绝对路径")
 	}
-	r := &transferRoots{
+	r := &TransferRoots{
 		source:         source,
 		targetWritable: targetAccess&windows.FILE_GENERIC_WRITE == windows.FILE_GENERIC_WRITE,
 	}
@@ -125,11 +133,11 @@ func openDestinationRoots(ctx context.Context, source *winutil.DirectoryObject, 
 		return nil, err
 	}
 	if r.source.Key == r.target.Key {
-		return nil, fmt.Errorf("%w: 源与目标指向同一文件夹", errTransferOverlap)
+		return nil, fmt.Errorf("%w: 源与目标指向同一文件夹", ErrTransferOverlap)
 	}
 	for _, parent := range sourceAncestors {
 		if parent.Key == r.target.Key {
-			return nil, fmt.Errorf("%w: 源与目标互相包含（包括目录别名）", errTransferOverlap)
+			return nil, fmt.Errorf("%w: 源与目标互相包含（包括目录别名）", ErrTransferOverlap)
 		}
 	}
 	r.ancestors, err = openAncestors(ctx, r.target.Path, r.source.Key)
@@ -139,11 +147,11 @@ func openDestinationRoots(ctx context.Context, source *winutil.DirectoryObject, 
 	return r, nil
 }
 
-func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess uint32) (roots *transferRoots, err error) {
+func OpenTransferRootsAccess(ctx context.Context, q ManualRequest, targetAccess uint32) (roots *TransferRoots, err error) {
 	if !filepath.IsAbs(q.Source) {
 		return nil, errors.New("源文件夹：请选择现有文件夹的绝对路径")
 	}
-	r := &transferRoots{ownsSource: true}
+	r := &TransferRoots{ownsSource: true}
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, r.close(ctx))
@@ -158,7 +166,7 @@ func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess 
 	sourceAncestors, err := openAncestors(ctx, r.source.Path, "")
 	defer func() {
 		for _, d := range sourceAncestors {
-			if closeErr := closeProtected(ctx, d); closeErr != nil && err == nil {
+			if closeErr := CloseProtected(ctx, d); closeErr != nil && err == nil {
 				err = closeErr
 			}
 		}
@@ -179,37 +187,37 @@ func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess 
 }
 
 // Only the two fallible transfer boundaries are injectable; tests still use real files.
-type transferIO struct {
-	collision    taskconfig.CollisionPolicy
-	copy         func(context.Context, *os.File, *os.File, func(int64)) error
-	publish      func(*os.File, windows.Handle, string, bool) error
-	sourceDelete func(*os.File) error
+type TransferIO struct {
+	Collision    taskconfig.CollisionPolicy
+	Copy         func(context.Context, *os.File, *os.File, func(int64)) error
+	Publish      func(*os.File, windows.Handle, string, bool) error
+	SourceDelete func(*os.File) error
 }
 
-type transferPublication uint8
+type TransferPublication uint8
 
 const (
-	transferStaged transferPublication = iota
-	transferPublishUnknown
-	transferPublished
+	TransferStaged TransferPublication = iota
+	TransferPublishUnknown
+	TransferPublished
 )
 
-var errTransferPublicationUnknown = errors.New("发布结果无法确认，已保留文件对象，请检查目标及临时文件")
+var ErrTransferPublicationUnknown = errors.New("发布结果无法确认，已保留文件对象，请检查目标及临时文件")
 
-func runManualFiltered(ctx context.Context, q manualRequest, rules []taskconfig.Rule, notify func(transferProgress)) (transferProgress, error) {
-	return runManualWithFilters(ctx, q, notify, transferIO{copy: copyChecked, publish: publishTransfer}, rules)
+func RunManualFiltered(ctx context.Context, q ManualRequest, rules []taskconfig.Rule, notify func(TransferProgress)) (TransferProgress, error) {
+	return RunManualWithFilters(ctx, q, notify, TransferIO{Copy: CopyChecked, Publish: PublishTransfer}, rules)
 }
-func runManualWithFilters(ctx context.Context, q manualRequest, notify func(transferProgress), ops transferIO, rules []taskconfig.Rule, prepared ...*filefilter.Matcher) (p transferProgress, err error) {
-	return runManualWithSession(ctx, q, nil, nil, notify, ops, rules, prepared...)
+func RunManualWithFilters(ctx context.Context, q ManualRequest, notify func(TransferProgress), ops TransferIO, rules []taskconfig.Rule, prepared ...*filefilter.Matcher) (p TransferProgress, err error) {
+	return RunManualWithSession(ctx, q, nil, nil, notify, ops, rules, prepared...)
 }
-func runManualWithSession(ctx context.Context, q manualRequest, r *transferRoots, inventory *fileinventory.Inventory, notify func(transferProgress), ops transferIO, rules []taskconfig.Rule, prepared ...*filefilter.Matcher) (p transferProgress, err error) {
+func RunManualWithSession(ctx context.Context, q ManualRequest, r *TransferRoots, inventory *fileinventory.Inventory, notify func(TransferProgress), ops TransferIO, rules []taskconfig.Rule, prepared ...*filefilter.Matcher) (p TransferProgress, err error) {
 	update := func() {
 		if notify != nil {
 			notify(p)
 		}
 	}
 	if r == nil {
-		r, err = openTransferRoots(ctx, q)
+		r, err = OpenTransferRoots(ctx, q)
 		if err != nil {
 			return p, err
 		}
@@ -233,9 +241,9 @@ func runManualWithSession(ctx context.Context, q manualRequest, r *transferRoots
 	var files []fileinventory.File
 	var filterErr error
 	if len(prepared) > 0 && prepared[0] != nil {
-		files, filterErr = selectMatchedFiles(ctx, raw, prepared[0])
+		files, filterErr = SelectMatchedFiles(ctx, raw, prepared[0])
 	} else {
-		files, filterErr = selectFilteredFiles(ctx, raw, rules)
+		files, filterErr = SelectFilteredFiles(ctx, raw, rules)
 	}
 	if filterErr != nil {
 		return p, filterErr
@@ -273,10 +281,10 @@ func runManualWithSession(ctx context.Context, q manualRequest, r *transferRoots
 	return p, nil
 }
 
-func transferFile(ctx context.Context, roots *transferRoots, entry fileinventory.File, ops transferIO, progress func(int64)) (bool, error) {
+func transferFile(ctx context.Context, roots *TransferRoots, entry fileinventory.File, ops TransferIO, progress func(int64)) (bool, error) {
 	return transferFileTo(ctx, roots, entry, entry.Path, nil, ops, progress)
 }
-func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinventory.File, targetRel string, expected *mirrorStamp, ops transferIO, progress func(int64)) (copied bool, err error) {
+func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinventory.File, targetRel string, expected *MirrorStamp, ops TransferIO, progress func(int64)) (copied bool, err error) {
 	if err = ctx.Err(); err != nil {
 		return false, err
 	}
@@ -286,7 +294,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	}
 	parents := []*os.File{}
 	defer func() {
-		err = errors.Join(err, closeFilesProtected(ctx, parents))
+		err = errors.Join(err, CloseFilesProtected(ctx, parents))
 	}()
 	// Open every actual directory relative to a pinned handle; never follow a
 	// replaced junction. Held no-delete-sharing handles also pin its spelling.
@@ -325,7 +333,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	if e != nil {
 		return false, e
 	}
-	defer func() { err = errors.Join(err, closeProtected(ctx, source)) }()
+	defer func() { err = errors.Join(err, CloseProtected(ctx, source)) }()
 	stamp, e := source.Stat()
 	if e != nil {
 		return false, e
@@ -353,7 +361,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	}
 	var existing *os.File
 	replace := false
-	suffix := expected != nil && ops.collision == taskconfig.Suffix
+	suffix := expected != nil && ops.Collision == taskconfig.Suffix
 	if !suffix {
 		existing, e = retryTransferOpen(ctx, func() (*os.File, error) {
 			return openTransferChild(dp, name, false, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
@@ -365,14 +373,14 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 			replace = true
 			defer func() {
 				if existing != nil {
-					err = errors.Join(err, closeProtected(ctx, existing))
+					err = errors.Join(err, CloseProtected(ctx, existing))
 				}
 			}()
 			destStamp, se := existing.Stat()
 			if se != nil {
 				return false, se
 			}
-			if !transferNeeded(stamp.Size(), stamp.ModTime(), destStamp.Size(), destStamp.ModTime()) {
+			if !TransferNeeded(stamp.Size(), stamp.ModTime(), destStamp.Size(), destStamp.ModTime()) {
 				return false, nil
 			}
 		} else if !errors.Is(e, windows.ERROR_FILE_NOT_FOUND) {
@@ -388,11 +396,11 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	if e != nil {
 		return false, e
 	}
-	publication := transferStaged
+	publication := TransferStaged
 	defer func() {
 		err = errors.Join(err, finalizeTempTransfer(ctx, temp, &publication))
 	}()
-	if e = ops.copy(ctx, source, temp, progress); e != nil {
+	if e = ops.Copy(ctx, source, temp, progress); e != nil {
 		return false, e
 	}
 	mtime := windows.NsecToFiletime(stamp.ModTime().UnixNano())
@@ -416,14 +424,14 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 		}
 	}
 	if suffix {
-		publication, e = publishMoveSuffix(ctx, temp, dp, name, ops.publish)
-		copied = publication == transferPublished
+		publication, e = publishMoveSuffix(ctx, temp, dp, name, ops.Publish)
+		copied = publication == TransferPublished
 	} else {
-		e = publishTransferChecked(ctx, temp, dp, name, replace, &publication, ops.publish)
-		copied = publication == transferPublished
+		e = publishTransferChecked(ctx, temp, dp, name, replace, &publication, ops.Publish)
+		copied = publication == TransferPublished
 	}
 	if e == nil && copied && expected != nil {
-		e = deleteVerifiedSource(ctx, source, *expected, roots.source.Fat, ops.sourceDelete)
+		e = deleteVerifiedSource(ctx, source, *expected, roots.source.Fat, ops.SourceDelete)
 	}
 	return copied, e
 }

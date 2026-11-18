@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 	"time"
 )
 
-func manualKind(k taskconfig.TaskKind) taskconfig.TaskKind {
+func ManualKind(k taskconfig.TaskKind) taskconfig.TaskKind {
 	if k == "" {
 		return taskconfig.Sync
 	}
 	return k
 }
-func validateMoveDestination(d manualDestination) error {
+func ValidateMoveDestination(d ManualDestination) error {
 	if d.Strategy != taskconfig.Move {
 		return errors.New("Move任务只能使用Move目标")
 	}
@@ -29,16 +29,16 @@ func validateMoveDestination(d manualDestination) error {
 
 // Compile every target before matching anything. First match owns the file,
 // including when its destination later fails or skips a collision.
-func prepareMoveRoutes(ctx context.Context, files []fileinventory.File, destinations []manualDestination) ([][]fileinventory.File, int, error) {
+func PrepareMoveRoutes(ctx context.Context, files []fileinventory.File, destinations []ManualDestination) ([][]fileinventory.File, int, error) {
 	matchers := make([]*filefilter.Matcher, len(destinations))
 	for i, d := range destinations {
-		if d.filterError != nil {
-			return nil, 0, d.filterError
+		if d.FilterError != nil {
+			return nil, 0, d.FilterError
 		}
-		if e := validateMoveDestination(d); e != nil {
+		if e := ValidateMoveDestination(d); e != nil {
 			return nil, 0, e
 		}
-		m := d.matcher
+		m := d.Matcher
 		var e error
 		if m == nil {
 			m, e = filefilter.Compile(d.Filters)
@@ -73,21 +73,21 @@ func prepareMoveRoutes(ctx context.Context, files []fileinventory.File, destinat
 	return routes, unmatched, nil
 }
 
-func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationResult)) (results multipleResult, err error) {
+func RunMove(ctx context.Context, q ManualTaskRequest, notify func(DestinationResult)) (results MultipleResult, err error) {
 	if len(q.Destinations) == 0 {
-		return multipleResult{}, nil
+		return MultipleResult{}, nil
 	}
-	results = initialDestinationResults(q)
-	failAll := func(e error) (multipleResult, error) {
+	results = InitialDestinationResults(q)
+	failAll := func(e error) (MultipleResult, error) {
 		for id, r := range results {
 			r.Ended = time.Now()
-			r.State = destinationFailed
+			r.State = DestinationFailed
 			r.Error = e.Error()
 			results[id] = r
 		}
 		return results, e
 	}
-	plan, e := openMultiplePlan(ctx, q)
+	plan, e := OpenMultiplePlan(ctx, q)
 	if e != nil {
 		return failAll(e)
 	}
@@ -96,16 +96,16 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 	if e != nil {
 		return failAll(e)
 	}
-	routes, unmatched, e := prepareMoveRoutes(ctx, files, q.Destinations)
+	routes, unmatched, e := PrepareMoveRoutes(ctx, files, q.Destinations)
 	if e != nil {
 		return failAll(e)
 	}
 	var failures []error
 	for i, d := range q.Destinations {
 		r := results[d.ID]
-		r.Progress = transferProgress{SourceFiles: len(files), Total: len(routes[i]), Unmatched: unmatched}
+		r.Progress = TransferProgress{SourceFiles: len(files), Total: len(routes[i]), Unmatched: unmatched}
 		emit := func() {
-			if r.State != destinationRunning && r.State != destinationWaiting && r.Ended.IsZero() {
+			if r.State != DestinationRunning && r.State != DestinationWaiting && r.Ended.IsZero() {
 				r.Ended = time.Now()
 			}
 			results[d.ID] = r
@@ -114,14 +114,14 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 			}
 		}
 		if ctx.Err() != nil {
-			r.State = destinationSkipped
+			r.State = DestinationSkipped
 			r.Progress.Retained = len(routes[i])
 			emit()
 			continue
 		}
 		if e := plan.failures[d.ID]; e != nil {
 			r.Ended = time.Now()
-			r.State = destinationFailed
+			r.State = DestinationFailed
 			r.Error = e.Error()
 			r.Progress.Failed = len(routes[i])
 			r.Progress.Retained = len(routes[i])
@@ -130,14 +130,14 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 			continue
 		}
 		if len(routes[i]) == 0 {
-			r.State = destinationNoMatches
+			r.State = DestinationNoMatches
 			emit()
 			continue
 		}
 		roots := plan.takeTargetRoots(d.ID)
 		var e error
 		if roots == nil {
-			roots, e = openTransferRoots(ctx, plan.requests[d.ID])
+			roots, e = OpenTransferRoots(ctx, plan.requests[d.ID])
 		} else {
 			e = roots.ensureWritableTarget(ctx)
 		}
@@ -146,7 +146,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 				e = errors.Join(e, roots.close(ctx))
 			}
 			r.Ended = time.Now()
-			r.State = destinationFailed
+			r.State = DestinationFailed
 			r.Error = e.Error()
 			r.Progress.Retained = len(routes[i])
 			failures = append(failures, e)
@@ -154,7 +154,7 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 			continue
 		}
 		r.Started = time.Now()
-		r.State = destinationRunning
+		r.State = DestinationRunning
 		emit()
 		var targetErrors []error
 		for j, f := range routes[i] {
@@ -190,11 +190,11 @@ func runMove(ctx context.Context, q manualTaskRequest, notify func(destinationRe
 		combined := errors.Join(targetErrors...)
 		switch {
 		case ctx.Err() != nil:
-			r.State = destinationCanceled
+			r.State = DestinationCanceled
 		case combined != nil:
-			r.State = destinationFailed
+			r.State = DestinationFailed
 		default:
-			r.State = destinationSucceeded
+			r.State = DestinationSucceeded
 		}
 		if combined != nil {
 			r.Error = combined.Error()

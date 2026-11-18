@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -22,7 +22,7 @@ type transferIOGate struct {
 // interval. The same mutex covers the cancellation syscall, so a call already
 // issuing finishes before masking. An OS cancellation request already issued
 // cannot be withdrawn; this is not a hard guarantee about driver completion.
-func protectedTransferIO(ctx context.Context, action func() error) error {
+func ProtectedTransferIO(ctx context.Context, action func() error) error {
 	g, ok := ctx.Value(transferIOKey{}).(*transferIOGate)
 	if !ok {
 		return action()
@@ -38,7 +38,7 @@ func protectedTransferIO(ctx context.Context, action func() error) error {
 // Windows to interrupt outstanding I/O. Retries cover cancellation racing the
 // next syscall; they are bounded and stop as soon as the worker releases files.
 // A broken driver can still delay OS completion; never quit before cleanup.
-func interruptibleIO(ctx context.Context, work func(context.Context) error) error {
+func InterruptibleIO(ctx context.Context, work func(context.Context) error) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	var thread windows.Handle

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syncmaid/internal/filefilter"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"testing"
 )
@@ -13,11 +14,11 @@ import (
 func TestNativeFilterProjectionKeepsMeaningAndOriginal(t *testing.T) {
 	leaf := taskconfig.ExtensionFilter("*.*.jpg")
 	cases := [][]taskconfig.Rule{
-		{filterGroup("anyOf", []taskconfig.Rule{filterGroup("allOf", []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")}), filterGroup("anyOf", []taskconfig.Rule{taskconfig.ExtensionFilter("jpg")})})},
+		{syncengine.FilterGroup("anyOf", []taskconfig.Rule{syncengine.FilterGroup("allOf", []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")}), syncengine.FilterGroup("anyOf", []taskconfig.Rule{taskconfig.ExtensionFilter("jpg")})})},
 		{leaf},
-		{filterGroup("allOf", []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")})},
-		{filterGroup("anyOf", nil)}, {filterGroup("allOf", nil)},
-		{{Kind: "not", Rule: filterRulePtr(filterGroup("anyOf", nil))}},
+		{syncengine.FilterGroup("allOf", []taskconfig.Rule{taskconfig.PathFilter("中文"), taskconfig.ExtensionFilter("txt")})},
+		{syncengine.FilterGroup("anyOf", nil)}, {syncengine.FilterGroup("allOf", nil)},
+		{{Kind: "not", Rule: filterRulePtr(syncengine.FilterGroup("anyOf", nil))}},
 		editorRules(t, filterEditor{
 			Mode:     filterGrouped,
 			MatchAll: true,
@@ -58,7 +59,7 @@ func TestNativeFilterUnknownDeepAndRegexStayReadOnly(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"kind":"extension","Extension":"txt","future":{"n":9007199254740993}}`), &unknown); err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range []taskconfig.Rule{unknown, {Kind: "regex", Pattern: filterText("a")}, filterGroup("allOf", []taskconfig.Rule{filterGroup("anyOf", []taskconfig.Rule{filterGroup("allOf", []taskconfig.Rule{taskconfig.PathFilter("a")})})})} {
+	for _, r := range []taskconfig.Rule{unknown, {Kind: "regex", Pattern: filterText("a")}, syncengine.FilterGroup("allOf", []taskconfig.Rule{syncengine.FilterGroup("anyOf", []taskconfig.Rule{syncengine.FilterGroup("allOf", []taskconfig.Rule{taskconfig.PathFilter("a")})})})} {
 		before, _ := json.Marshal(r)
 		if projectNativeFilter([]taskconfig.Rule{r}).Mode != filterReadOnly {
 			t.Fatal("unsafe projection")
@@ -91,7 +92,7 @@ func TestNativeGroupCopyAndSaveRestart(t *testing.T) {
 	before := l.tasks[0].Destinations[0].Filters
 	a := &application{tasks: l}
 	a.selectManual(id)
-	if !sameFilterRules(before, a.manual.targets[0].Filters) || a.manual.dirty {
+	if !syncengine.SameFilterRules(before, a.manual.targets[0].Filters) || a.manual.dirty {
 		t.Fatal("opening editor rewrote rules")
 	}
 	a.setFilterMode(filterGrouped)
@@ -116,7 +117,7 @@ func TestNativeGroupCopyAndSaveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sameFilterRules(reloaded.tasks[0].Destinations[0].Filters, draft.Destinations[0].Filters) {
+	if !syncengine.SameFilterRules(reloaded.tasks[0].Destinations[0].Filters, draft.Destinations[0].Filters) {
 		t.Fatal("restart changed rules")
 	}
 	b, err := os.ReadFile(filepath.Join(data, savedTaskFile))

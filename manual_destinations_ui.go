@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -14,8 +15,8 @@ func (s *manualSession) flushTarget() {
 		}
 	}
 }
-func (s *manualSession) draftRequest() manualTaskRequest {
-	return manualTaskRequest{Kind: manualKind(s.kind), Trigger: s.trigger, Source: s.source, Destinations: append([]manualDestination(nil), s.targets...)}
+func (s *manualSession) draftRequest() syncengine.ManualTaskRequest {
+	return syncengine.ManualTaskRequest{Kind: syncengine.ManualKind(s.kind), Trigger: s.trigger, Source: s.source, Destinations: append([]syncengine.ManualDestination(nil), s.targets...)}
 }
 func (s *manualSession) selectTarget(id taskconfig.ID) {
 	if s.busy() {
@@ -42,8 +43,8 @@ func (a *application) addManualTarget() {
 	}
 	s := &a.manual
 	s.flushTarget()
-	d := manualDestination{ID: taskconfig.NewID(), Name: a.tr("目标 %d", len(s.targets)+1), Filters: allFileRules()}
-	if manualKind(s.kind) == taskconfig.Moving {
+	d := syncengine.ManualDestination{ID: taskconfig.NewID(), Name: a.tr("目标 %d", len(s.targets)+1), Filters: syncengine.AllFileRules()}
+	if syncengine.ManualKind(s.kind) == taskconfig.Moving {
 		d.Strategy = taskconfig.Move
 		d.Collision = taskconfig.Skip
 	}
@@ -59,7 +60,7 @@ func (a *application) removeManualTarget() {
 	}
 	s := &a.manual
 	for _, d := range s.targets {
-		if d.ID == s.targetID && rulesHaveUnknownFields(d.Filters) {
+		if d.ID == s.targetID && syncengine.RulesHaveUnknownFields(d.Filters) {
 			s.message = messagef("此目标含不支持过滤，不能移除其配置。")
 			return
 		}
@@ -91,7 +92,7 @@ func (a *application) moveManualTarget(id taskconfig.ID, delta int) {
 			if j < 0 || j >= len(s.targets) {
 				return
 			}
-			if manualKind(s.kind) == taskconfig.Moving && (isAllFileRules(d.Filters) || isAllFileRules(s.targets[j].Filters)) {
+			if syncengine.ManualKind(s.kind) == taskconfig.Moving && (syncengine.IsAllFileRules(d.Filters) || syncengine.IsAllFileRules(s.targets[j].Filters)) {
 				return
 			}
 			s.targets[i], s.targets[j] = s.targets[j], s.targets[i]
@@ -186,8 +187,8 @@ func (a *application) copyManualTarget(id taskconfig.ID) {
 			}
 			d.Filters = rules
 			d.Name = a.tr("%s（副本）", d.Name)
-			d.matcher = nil
-			d.filterError = nil
+			d.Matcher = nil
+			d.FilterError = nil
 			s.targets = append(s.targets, d)
 			s.beginDestinationEdit(d.ID, nil)
 			s.selectTarget(d.ID)
@@ -208,7 +209,7 @@ func (a *application) selectedTargetEditor(c *ui.Context, locked bool) {
 		porcelainButton(c, a.tr("浏览")).Label(a.tr("选择目标")).Disabled(locked).OnClick(func() { a.chooseFolder(false) })
 	})
 
-	if manualKind(s.kind) == taskconfig.Moving {
+	if syncengine.ManualKind(s.kind) == taskconfig.Moving {
 		a.moveOptionsView(c, locked)
 	} else {
 		a.destinationModeView(c, locked)

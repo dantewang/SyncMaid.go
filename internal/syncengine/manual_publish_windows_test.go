@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -21,14 +21,14 @@ func TestManualPublishAmbiguousErrorDoesNotDiscardTarget(t *testing.T) {
 				manualWrite(t, filepath.Join(q.Target, "f"), "old")
 			}
 			fault := errors.New("injected error after successful rename")
-			ops := transferIO{copy: copyChecked, publish: func(f *os.File, parent windows.Handle, name string, replace bool) error {
-				if e := publishTransfer(f, parent, name, replace); e != nil {
+			ops := TransferIO{Copy: CopyChecked, Publish: func(f *os.File, parent windows.Handle, name string, replace bool) error {
+				if e := PublishTransfer(f, parent, name, replace); e != nil {
 					return e
 				}
 				return fault
 			}}
 			p, e := runManualWith(context.Background(), q, nil, ops)
-			if !errors.Is(e, fault) || !errors.Is(e, errTransferPublicationUnknown) || p.Copied != 0 {
+			if !errors.Is(e, fault) || !errors.Is(e, ErrTransferPublicationUnknown) || p.Copied != 0 {
 				t.Fatal(p, e)
 			}
 			manualRead(t, filepath.Join(q.Target, "f"), "complete-new-content")
@@ -43,10 +43,10 @@ func TestManualPublishMasksCancellationAndKeepsCommittedFile(t *testing.T) {
 	manualWrite(t, filepath.Join(q.Target, "f"), "old")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var result transferProgress
-	err := interruptibleIO(ctx, func(ctx context.Context) error {
+	var result TransferProgress
+	err := InterruptibleIO(ctx, func(ctx context.Context) error {
 		g := ctx.Value(transferIOKey{}).(*transferIOGate)
-		ops := transferIO{copy: copyChecked, publish: func(f *os.File, parent windows.Handle, name string, replace bool) error {
+		ops := TransferIO{Copy: CopyChecked, Publish: func(f *os.File, parent windows.Handle, name string, replace bool) error {
 			g.mu.Lock()
 			enabled := g.enabled
 			g.mu.Unlock()
@@ -54,7 +54,7 @@ func TestManualPublishMasksCancellationAndKeepsCommittedFile(t *testing.T) {
 				t.Fatal("publish permits new synchronous cancellation calls")
 			}
 			cancel() // deterministic cancellation at the publication boundary
-			return publishTransfer(f, parent, name, replace)
+			return PublishTransfer(f, parent, name, replace)
 		}}
 		var e error
 		result, e = runManualWith(ctx, q, nil, ops)

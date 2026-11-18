@@ -8,13 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syncmaid/internal/syncengine"
 	"testing"
 	"time"
 
 	"syncmaid/internal/taskconfig"
 )
 
-func historyFixture(t *testing.T) (runRecord, manualTaskRequest) {
+func historyFixture(t *testing.T) (runRecord, syncengine.ManualTaskRequest) {
 	q, _ := multiFixture(t)
 	r, e := newRunRecord(taskconfig.NewID(), "history", q, false, time.Now())
 	if e != nil {
@@ -22,10 +23,10 @@ func historyFixture(t *testing.T) (runRecord, manualTaskRequest) {
 	}
 	return r, q
 }
-func historySuccess(r runRecord) multipleResult {
-	result := multipleResult{}
+func historySuccess(r runRecord) syncengine.MultipleResult {
+	result := syncengine.MultipleResult{}
 	for _, g := range r.Goals {
-		result[g.ID] = destinationResult{ID: g.ID, Name: g.Name, State: destinationSucceeded, Progress: transferProgress{Total: 2, Copied: 1, Unchanged: 1, SourceFiles: 2, Bytes: 42}}
+		result[g.ID] = syncengine.DestinationResult{ID: g.ID, Name: g.Name, State: syncengine.DestinationSucceeded, Progress: syncengine.TransferProgress{Total: 2, Copied: 1, Unchanged: 1, SourceFiles: 2, Bytes: 42}}
 	}
 	return result
 }
@@ -40,18 +41,18 @@ func TestRunHistorySuccessMixedAndStoppedRestore(t *testing.T) {
 			if outcome == "failed" {
 				workErr = errors.New("target failed")
 				target := results[r.Goals[1].ID]
-				target.State = destinationFailed
+				target.State = syncengine.DestinationFailed
 				target.Error = "target failed"
 				results[target.ID] = target
 			}
 			if outcome == "stopped" {
 				workErr = context.Canceled
 				target := results[r.Goals[1].ID]
-				target.State = destinationCanceled
+				target.State = syncengine.DestinationCanceled
 				results[target.ID] = target
 			}
 			calls := 0
-			_, end, actual, e, diagnostic := executeRecordedRun(h, r, nil, []taskconfig.ID{r.TaskID}, func() (multipleResult, error) { calls++; return results, workErr })
+			_, end, actual, e, diagnostic := executeRecordedRun(h, r, nil, []taskconfig.ID{r.TaskID}, func() (syncengine.MultipleResult, error) { calls++; return results, workErr })
 			if calls != 1 || e != workErr || diagnostic != nil || end.Outcome != outcome || len(actual) != 2 {
 				t.Fatal(calls, end, e, diagnostic)
 			}
@@ -91,7 +92,7 @@ func TestRunHistoryInterruptedIsNotSuccessOrReplay(t *testing.T) {
 	a := application{tasks: &savedTaskLibrary{tasks: []taskconfig.Task{{ID: r.TaskID}}}, historyView: loaded.data}
 	a.restoreRunResults()
 	result := a.results[r.TaskID]
-	if !strings.Contains(result.message.render("zh-Hans"), "中断") || result.destinations[r.Goals[0].ID].State != destinationInterrupted || a.manual.cancel != nil || a.manual.phase != manualDraft {
+	if !strings.Contains(result.message.render("zh-Hans"), "中断") || result.destinations[r.Goals[0].ID].State != syncengine.DestinationInterrupted || a.manual.cancel != nil || a.manual.phase != manualDraft {
 		t.Fatal(result)
 	}
 	after, _ := os.ReadFile(filepath.Join(data, runHistoryFile))
@@ -112,7 +113,7 @@ func TestRunHistoryCorruptFileNeverOverwritten(t *testing.T) {
 		}
 		r, _ := historyFixture(t)
 		calls := 0
-		view, end, _, workErr, recordErr := executeRecordedRun(h, r, nil, nil, func() (multipleResult, error) { calls++; return historySuccess(r), nil })
+		view, end, _, workErr, recordErr := executeRecordedRun(h, r, nil, nil, func() (syncengine.MultipleResult, error) { calls++; return historySuccess(r), nil })
 		if calls != 1 || workErr != nil || recordErr == nil || end.Outcome != "succeeded" || view.Latest[r.TaskID].Outcome != "succeeded" {
 			t.Fatal(calls, end, workErr, recordErr)
 		}
@@ -136,7 +137,7 @@ func TestRunHistoryPublishFailureDoesNotRetryWorkOrOverwrite(t *testing.T) {
 	h.publish = func(string, string) error { publishes++; return sentinel }
 	r, _ := historyFixture(t)
 	calls := 0
-	view, end, _, workErr, recordErr := executeRecordedRun(h, r, nil, nil, func() (multipleResult, error) { calls++; return historySuccess(r), nil })
+	view, end, _, workErr, recordErr := executeRecordedRun(h, r, nil, nil, func() (syncengine.MultipleResult, error) { calls++; return historySuccess(r), nil })
 	if calls != 1 || publishes != 1 || workErr != nil || !errors.Is(recordErr, sentinel) || end.Outcome != "succeeded" || view.Latest[r.TaskID].Outcome != "succeeded" {
 		t.Fatal(calls, publishes, workErr, recordErr)
 	}

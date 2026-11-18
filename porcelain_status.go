@@ -2,20 +2,21 @@ package main
 
 import (
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"time"
 )
 
-func destinationHealthColor(r destinationResult, exists bool) ui.Color {
+func destinationHealthColor(r syncengine.DestinationResult, exists bool) ui.Color {
 	if !exists {
 		return porcelain.TextMuted
 	}
 	switch r.State {
-	case destinationSucceeded, destinationNoMatches, destinationRunning:
+	case syncengine.DestinationSucceeded, syncengine.DestinationNoMatches, syncengine.DestinationRunning:
 		return porcelain.Text
-	case destinationFailed:
+	case syncengine.DestinationFailed:
 		return porcelain.Danger
-	case destinationCanceled, destinationSkipped, destinationInterrupted:
+	case syncengine.DestinationCanceled, syncengine.DestinationSkipped, syncengine.DestinationInterrupted:
 		return porcelain.Warning
 	default:
 		return porcelain.TextMuted
@@ -40,15 +41,15 @@ func (a *application) taskHealth(t taskconfig.Task) (string, ui.Color) {
 		goal, exists := result.destinations[d.ID]
 		currentResult = currentResult || exists
 		switch goal.State {
-		case destinationSucceeded:
+		case syncengine.DestinationSucceeded:
 			completed++
 			matched++
 			retained += goal.Progress.Retained
-		case destinationNoMatches:
+		case syncengine.DestinationNoMatches:
 			completed++
-		case destinationFailed:
+		case syncengine.DestinationFailed:
 			failed++
-		case destinationCanceled, destinationSkipped, destinationInterrupted:
+		case syncengine.DestinationCanceled, syncengine.DestinationSkipped, syncengine.DestinationInterrupted:
 			interrupted = true
 		}
 	}
@@ -60,7 +61,7 @@ func (a *application) taskHealth(t taskconfig.Task) (string, ui.Color) {
 	case interrupted || result.outcome == "stopped" && currentResult:
 		return a.render(result.message), porcelain.Warning
 	case completed == len(t.Destinations) && matched == 0:
-		return a.tr(string(destinationNoMatches)), porcelain.Text
+		return a.tr(string(syncengine.DestinationNoMatches)), porcelain.Text
 	case completed == len(t.Destinations) && retained > 0:
 		return a.tr("完成 · 保留 %d 个源文件", retained), porcelain.Text
 	case completed == len(t.Destinations):
@@ -71,11 +72,11 @@ func (a *application) taskHealth(t taskconfig.Task) (string, ui.Color) {
 		return a.tr("未开始"), porcelain.TextMuted
 	}
 }
-func (a *application) destinationStatus(r destinationResult, exists bool, now time.Time) string {
-	if !exists || r.State == destinationWaiting {
+func (a *application) destinationStatus(r syncengine.DestinationResult, exists bool, now time.Time) string {
+	if !exists || r.State == syncengine.DestinationWaiting {
 		return a.tr("从未运行")
 	}
-	if r.State != destinationSucceeded {
+	if r.State != syncengine.DestinationSucceeded {
 		if r.Error != "" {
 			return a.tr(string(r.State)) + " · " + historyText(r.Error, historyErrorBytes)
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"syncmaid/internal/filefilter"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -19,11 +20,11 @@ func (e filterEditor) groupRules() ([]taskconfig.Rule, error) {
 		if g.All {
 			kind = "allOf"
 		}
-		groups = append(groups, filterGroup(kind, g.Rows))
+		groups = append(groups, syncengine.FilterGroup(kind, g.Rows))
 	}
 	var rules []taskconfig.Rule
 	if e.MatchAll {
-		rules = []taskconfig.Rule{filterGroup("allOf", groups)}
+		rules = []taskconfig.Rule{syncengine.FilterGroup("allOf", groups)}
 	} else {
 		rules = groups
 	}
@@ -78,7 +79,7 @@ func projectFilterGroup(r taskconfig.Rule) (filterDraftGroup, bool) {
 	return g, true
 }
 func projectNativeFilter(rules []taskconfig.Rule) filterEditor {
-	if isAllFileRules(rules) {
+	if syncengine.IsAllFileRules(rules) {
 		return filterEditor{Mode: filterAll}
 	}
 	if len(rules) == 0 {

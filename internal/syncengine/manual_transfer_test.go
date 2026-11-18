@@ -1,4 +1,4 @@
-package main
+package syncengine
 
 import (
 	"context"
@@ -23,14 +23,14 @@ func TestTransferNeeded(t *testing.T) {
 		{"empty same", 0, 0, time.Unix(0, 0), time.Unix(0, 0), false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			if got := transferNeeded(c.sourceSize, c.sourceTime, c.targetSize, c.targetTime); got != c.want {
+			if got := TransferNeeded(c.sourceSize, c.sourceTime, c.targetSize, c.targetTime); got != c.want {
 				t.Fatal(got, c.want)
 			}
 		})
 	}
 }
 func TestCopyTransferShortWrite(t *testing.T) {
-	_, e := copyTransfer(context.Background(), shortTransferWriter{}, strings.NewReader("input"), make([]byte, 8), nil)
+	_, e := CopyTransfer(context.Background(), shortTransferWriter{}, strings.NewReader("input"), make([]byte, 8), nil)
 	if !errors.Is(e, io.ErrShortWrite) {
 		t.Fatal(e)
 	}

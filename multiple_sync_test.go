@@ -6,19 +6,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syncmaid/internal/syncengine"
 	"testing"
 
 	"syncmaid/internal/taskconfig"
 )
 
-func multiFixture(t *testing.T) (manualTaskRequest, manualRequest) {
+func multiFixture(t *testing.T) (syncengine.ManualTaskRequest, syncengine.ManualRequest) {
 	t.Helper()
 	first := manualFixture(t)
 	second := filepath.Join(filepath.Dir(first.Target), "second-target")
 	if e := os.Mkdir(second, 0700); e != nil {
 		t.Fatal(e)
 	}
-	q := manualTaskRequest{Source: first.Source, Destinations: []manualDestination{{ID: taskconfig.NewID(), Name: "First", Path: first.Target, Filters: allFileRules()}, {ID: taskconfig.NewID(), Name: "Second", Path: second, Filters: allFileRules()}}}
+	q := syncengine.ManualTaskRequest{Source: first.Source, Destinations: []syncengine.ManualDestination{{ID: taskconfig.NewID(), Name: "First", Path: first.Target, Filters: syncengine.AllFileRules()}, {ID: taskconfig.NewID(), Name: "Second", Path: second, Filters: syncengine.AllFileRules()}}}
 	return q, first
 }
 func TestMultipleDestinationsCRUDKeepsIDsAndFields(t *testing.T) {
@@ -83,7 +84,7 @@ func TestMultipleFailureContinuesHealthyTarget(t *testing.T) {
 		t.Fatal(e)
 	}
 	r, e := runMultiple(context.Background(), q, nil)
-	if e == nil || r[q.Destinations[0].ID].State != destinationFailed || r[q.Destinations[1].ID].State != destinationSucceeded {
+	if e == nil || r[q.Destinations[0].ID].State != syncengine.DestinationFailed || r[q.Destinations[1].ID].State != syncengine.DestinationSucceeded {
 		t.Fatal(r, e)
 	}
 	manualRead(t, filepath.Join(q.Destinations[1].Path, "f"), "complete")
@@ -93,12 +94,12 @@ func TestMultipleCancelStopsRemainingTargets(t *testing.T) {
 	manualWrite(t, filepath.Join(first.Source, "f"), strings.Repeat("x", 1<<20))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r, e := runMultiple(ctx, q, func(r destinationResult) {
+	r, e := runMultiple(ctx, q, func(r syncengine.DestinationResult) {
 		if r.ID == q.Destinations[0].ID && r.Progress.Bytes > 0 {
 			cancel()
 		}
 	})
-	if !errors.Is(e, context.Canceled) || r[q.Destinations[0].ID].State != destinationCanceled || r[q.Destinations[1].ID].State != destinationSkipped {
+	if !errors.Is(e, context.Canceled) || r[q.Destinations[0].ID].State != syncengine.DestinationCanceled || r[q.Destinations[1].ID].State != syncengine.DestinationSkipped {
 		t.Fatal(r, e)
 	}
 	if _, e = os.Stat(filepath.Join(q.Destinations[1].Path, "f")); !errors.Is(e, os.ErrNotExist) {
@@ -129,7 +130,7 @@ func TestMultipleOverlapBlocksBeforeAnyWrite(t *testing.T) {
 				q.Destinations[1].Path = alias
 			}
 			r, e := runMultiple(context.Background(), q, nil)
-			if !errors.Is(e, errTransferOverlap) {
+			if !errors.Is(e, syncengine.ErrTransferOverlap) {
 				t.Fatal(r, e)
 			}
 			if _, e = os.Stat(filepath.Join(first.Target, "f")); !errors.Is(e, os.ErrNotExist) {
@@ -162,7 +163,7 @@ func TestMultipleEditorGuardsAndExplicitDiscard(t *testing.T) {
 		t.Fatal(a.manual)
 	}
 	a.manual.phase = manualRunning
-	before := append([]manualDestination(nil), a.manual.targets...)
+	before := append([]syncengine.ManualDestination(nil), a.manual.targets...)
 	selected := a.manual.targetID
 	a.addManualTarget()
 	a.removeManualTarget()

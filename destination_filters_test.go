@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/syncengine"
 	"testing"
 
 	"syncmaid/internal/filefilter"
@@ -95,7 +96,7 @@ func TestFilterProjectionKeepsOnePassExtensionAndReadOnlyShapes(t *testing.T) {
 			t.Fatal(c, yes, err)
 		}
 	}
-	deep := filterGroup("allOf", []taskconfig.Rule{filterGroup("anyOf", []taskconfig.Rule{filterGroup("allOf", []taskconfig.Rule{taskconfig.ExtensionFilter("txt")})})})
+	deep := syncengine.FilterGroup("allOf", []taskconfig.Rule{syncengine.FilterGroup("anyOf", []taskconfig.Rule{syncengine.FilterGroup("allOf", []taskconfig.Rule{taskconfig.ExtensionFilter("txt")})})})
 	for _, rules := range [][]taskconfig.Rule{{deep}, {{Kind: "regex", Pattern: filterText("a+")}}} {
 		e := projectNativeFilter(rules)
 		if e.Mode != filterReadOnly || e.Reason == "" {
@@ -106,7 +107,7 @@ func TestFilterProjectionKeepsOnePassExtensionAndReadOnlyShapes(t *testing.T) {
 func filterText(s string) *string { return &s }
 
 func TestFilterMatchErrorReturnsNoPartialSelection(t *testing.T) {
-	selected, err := selectFilteredFiles(context.Background(), []fileinventory.File{{Path: "good.txt"}, {Path: "bad\x00.txt"}}, allFileRules())
+	selected, err := syncengine.SelectFilteredFiles(context.Background(), []fileinventory.File{{Path: "good.txt"}, {Path: "bad\x00.txt"}}, syncengine.AllFileRules())
 	if !errors.Is(err, filefilter.ErrInvalidInput) || selected != nil {
 		t.Fatal(selected, err)
 	}
@@ -156,7 +157,7 @@ func TestFilteredCompileFailureDoesNotWriteAndHealthyTargetContinues(t *testing.
 	// Eager compilation must reject this even though the first OR arm is all.
 	q.Destinations[0].Filters = []taskconfig.Rule{{Kind: "all"}, {Kind: "regex", Pattern: filterText("a+")}}
 	r, err := runMultiple(context.Background(), q, nil)
-	if !errors.Is(err, filefilter.ErrUnsupportedRegex) || r[q.Destinations[0].ID].State != destinationFailed || r[q.Destinations[1].ID].State != destinationSucceeded {
+	if !errors.Is(err, filefilter.ErrUnsupportedRegex) || r[q.Destinations[0].ID].State != syncengine.DestinationFailed || r[q.Destinations[1].ID].State != syncengine.DestinationSucceeded {
 		t.Fatal(r, err)
 	}
 	if entries, err := os.ReadDir(first.Target); err != nil || len(entries) != 0 {
@@ -178,7 +179,7 @@ func TestNoMatchIsNotEmptySourceAndNeverDeletes(t *testing.T) {
 		q.Destinations[0].Filters = editorRules(t, editor)
 		r, err := runMultiple(context.Background(), q, nil)
 		result := r[q.Destinations[0].ID]
-		if err != nil || result.State != destinationNoMatches || result.Progress.Total != 0 || result.Progress.SourceFiles != 1 || result.Progress.SourceEmpty {
+		if err != nil || result.State != syncengine.DestinationNoMatches || result.Progress.Total != 0 || result.Progress.SourceFiles != 1 || result.Progress.SourceEmpty {
 			t.Fatal(r, err)
 		}
 		manualRead(t, filepath.Join(first.Target, "a.txt"), "unchanged")
@@ -191,7 +192,7 @@ func TestFilteringNeverSkipsRawScanSafety(t *testing.T) {
 	q.Destinations[0].Filters = editorRules(t, filterEditor{Mode: filterNone})
 	manualJunction(t, filepath.Join(first.Source, "excluded-link"), t.TempDir())
 	r, err := runMultiple(context.Background(), q, nil)
-	if err == nil || r[q.Destinations[0].ID].State != destinationFailed {
+	if err == nil || r[q.Destinations[0].ID].State != syncengine.DestinationFailed {
 		t.Fatal(r, err)
 	}
 }
@@ -256,7 +257,7 @@ func TestFilterDraftBindingErrorAndReload(t *testing.T) {
 	before := a.manual.targets[1].Filters
 	a.setFilterMode(filterNone)
 	a.filterEdited()
-	if !sameFilterRules(before, a.manual.targets[1].Filters) || a.manual.phase != manualRunning {
+	if !syncengine.SameFilterRules(before, a.manual.targets[1].Filters) || a.manual.phase != manualRunning {
 		t.Fatal("running guard bypassed")
 	}
 }
@@ -305,8 +306,8 @@ func TestReadOnlyUnknownFiltersPreservedAndIsolated(t *testing.T) {
 		t.Fatal("unsupported record deleted")
 	}
 	badEdit := request
-	badEdit.Destinations = append([]manualDestination(nil), request.Destinations...)
-	badEdit.Destinations[0].Filters = allFileRules()
+	badEdit.Destinations = append([]syncengine.ManualDestination(nil), request.Destinations...)
+	badEdit.Destinations[0].Filters = syncengine.AllFileRules()
 	if _, _, err = l.saveMultiple(id, "Bad rewrite", badEdit); err == nil {
 		t.Fatal("unknown rule rewritten")
 	}
@@ -323,7 +324,7 @@ func TestReadOnlyUnknownFiltersPreservedAndIsolated(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, err := runMultiple(context.Background(), request, nil)
-	if !errors.Is(err, filefilter.ErrUnknownFields) || r[request.Destinations[1].ID].State != destinationSucceeded {
+	if !errors.Is(err, filefilter.ErrUnknownFields) || r[request.Destinations[1].ID].State != syncengine.DestinationSucceeded {
 		t.Fatal(r, err)
 	}
 	if entries, e := os.ReadDir(first.Target); e != nil || len(entries) != 0 {

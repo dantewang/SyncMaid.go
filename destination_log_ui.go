@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 
 	"github.com/egoist/mygo"
@@ -163,7 +164,7 @@ func (a *application) destinationLogView(c *ui.Context) {
 							if g.Error != "" || r.Error != "" {
 								color = porcelain.Danger
 							}
-							if g.State == destinationCanceled || g.State == destinationInterrupted || r.Outcome == "stopped" {
+							if g.State == syncengine.DestinationCanceled || g.State == syncengine.DestinationInterrupted || r.Outcome == "stopped" {
 								color = porcelain.Warning
 							}
 							ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(4).Children(func() {
