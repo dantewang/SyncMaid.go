@@ -57,11 +57,11 @@ func validateRunHistory(d runHistoryData) error {
 			return errors.New("运行记录字段无效或超限")
 		}
 		switch r.Outcome {
-		case "running":
+		case outcomeRunning:
 			if !r.Ended.IsZero() {
 				return errors.New("开始记录含结束时间")
 			}
-		case "succeeded", "failed", "stopped":
+		case outcomeSucceeded, outcomeFailed, outcomeStopped:
 			if r.Ended.IsZero() {
 				return errors.New("结束记录缺失时间")
 			}
@@ -71,7 +71,7 @@ func validateRunHistory(d runHistoryData) error {
 		if r.Kind != taskconfig.Sync && r.Kind != taskconfig.Moving {
 			return errors.New("未知任务类型")
 		}
-		if r.Origin != "manual" && r.Origin != "watch" && r.Origin != "scheduled" {
+		if r.Origin != originManual && r.Origin != originWatch && r.Origin != originScheduled {
 			return errors.New("未知触发来源")
 		}
 		for _, g := range r.Goals {
@@ -130,9 +130,6 @@ func (h *runHistoryStore) put(r runRecord, active []taskconfig.ID) error {
 	}
 	if len(next.Recent) > historyLimit {
 		next.Recent = next.Recent[len(next.Recent)-historyLimit:]
-	}
-	if e := validateRunHistory(next); e != nil {
-		return e
 	}
 	var body []byte
 	for {

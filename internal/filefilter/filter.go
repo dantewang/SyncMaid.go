@@ -82,9 +82,6 @@ type preparation struct {
 }
 
 func compileWithRegex(rules []taskconfig.Rule, base string, resolve regexResolver) (*Matcher, error) {
-	if err := checkUnicodeTables(); err != nil {
-		return nil, &Error{Field: "UnicodeTables", Err: err}
-	}
 	root := &node{kind: "anyOf"}
 	m := &Matcher{root: root}
 	ctx := preparation{resolve: resolve}
@@ -227,10 +224,8 @@ func (m *Matcher) Match(relativePath string) (bool, error) {
 	if !utf8.ValidString(relativePath) || strings.ContainsRune(relativePath, 0) {
 		return false, &Error{Field: "RelativePath", Err: ErrInvalidInput}
 	}
-	if len(m.regexPrograms) > 0 {
-		if err := checkRegexInput(relativePath, "RelativePath"); err != nil {
-			return false, err
-		}
+	if len(m.regexPrograms) > 0 && len(relativePath) > MaxRegexInputBytes {
+		return false, &Error{Field: "RelativePath", Err: fmt.Errorf("%w: input bytes > %d", ErrRegexBudget, MaxRegexInputBytes)}
 	}
 	input, err := preparePath(relativePath)
 	if err != nil {

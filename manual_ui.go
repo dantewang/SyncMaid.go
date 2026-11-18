@@ -58,7 +58,7 @@ type manualSession struct {
 }
 
 type savedTaskResult struct {
-	outcome        string
+	outcome        outcomeState
 	started, ended time.Time
 	message        localizedMessage
 	progress       transferProgress
@@ -284,12 +284,12 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 			if err != nil {
 				message = messagef("运行未完成: %s", historyText(err.Error(), historyErrorBytes))
 			}
-			a.results[id] = savedTaskResult{outcome: recordEnd.Outcome, message: message, destinations: results, started: recordEnd.Started, ended: recordEnd.Ended}
 			a.watchActivity = messagef("%s: %s", name, message)
 			if w := a.watches[id]; w != nil && w.ticket.phase == watchArmed {
 				w.status = message
 			}
 			if !showResult {
+				a.results[id] = savedTaskResult{outcome: recordEnd.Outcome, message: message, destinations: results, started: recordEnd.Started, ended: recordEnd.Ended}
 				s.phase = previous
 				if s.quitPending {
 					a.requestQuit()
@@ -312,9 +312,6 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 				slog.Warn("multiple-sync-ended", "error", err, "targets", len(q.Destinations))
 			}
 			if id != "" {
-				if a.results == nil {
-					a.results = make(map[taskconfig.ID]savedTaskResult)
-				}
 				a.results[id] = savedTaskResult{outcome: recordEnd.Outcome, message: s.message, progress: s.progress, destinations: s.destinationResults, started: recordEnd.Started, ended: recordEnd.Ended}
 			}
 			if s.quitPending {

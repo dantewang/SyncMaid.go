@@ -57,7 +57,7 @@ func (a *application) historyViewContent(c *ui.Context) {
 			ui.Column(c).FillWidth().Gap(10).Children(func() {
 				ui.Text(c, r.Name+a.tr(" · ")+a.tr(runOutcome(r))).Bold()
 				if a.historyDetails {
-					ui.Text(c, fmt.Sprintf(a.tr("任务 %s · 运行 %s · %s / %s"), r.TaskID, r.ID, r.Kind, a.tr(r.Origin))).FontSize(12)
+					ui.Text(c, fmt.Sprintf(a.tr("任务 %s · 运行 %s · %s / %s"), r.TaskID, r.ID, r.Kind, a.tr(string(r.Origin)))).FontSize(12)
 				}
 				ui.Text(c, a.tr("开始: ")+r.Started.Local().Format("2006-01-02 15:04:05 MST"))
 				if !r.Ended.IsZero() {

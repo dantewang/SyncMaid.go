@@ -49,16 +49,19 @@ type Status struct {
 	Err   error
 }
 type version struct {
-	status Status
-	data   []byte
-	info   os.FileInfo
+	status  Status
+	data    []byte
+	info    os.FileInfo
+	tasks   []taskconfig.Task
+	reviews []filefilter.RegexConfirmation
 }
 
 type Store struct {
-	versioned bool
-	path      string
-	mu        sync.Mutex
-	io        operations
+	versioned  bool
+	path       string
+	mu         sync.Mutex
+	io         operations
+	knownValid map[string][]byte
 }
 
 // New does not create directories or files. This adapter currently supports
@@ -70,7 +73,9 @@ func New(path string) (*Store, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("task store requires an absolute path")
 	}
-	return &Store{path: path, io: realOperations()}, nil
+	s := &Store{path: path, io: realOperations()}
+	s.io.read = func(p string) version { return readVersionFormat(p, false, s.knownValid[p]) }
+	return s, nil
 }
 
 // Snapshot is an immutable save basis issued only by a successful Load/Save or
@@ -123,10 +128,14 @@ func (s *Store) load() (*Snapshot, error) {
 		tasks := []taskconfig.Task{}
 		var reviews []filefilter.RegexConfirmation
 		if p.status.State == Valid {
-			var err error
-			tasks, reviews, err = decodeDocument(p.data, s.versioned)
-			if err != nil {
-				return nil, err
+			if p.tasks != nil {
+				tasks, reviews = p.tasks, p.reviews
+			} else {
+				var err error
+				tasks, reviews, err = decodeDocument(p.data, s.versioned)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 		canonical, err := taskconfig.Encode(tasks)
@@ -139,9 +148,9 @@ func (s *Store) load() (*Snapshot, error) {
 }
 
 func readVersion(path string) version {
-	return readVersionFormat(path, false)
+	return readVersionFormat(path, false, nil)
 }
-func readVersionFormat(path string, versioned bool) version {
+func readVersionFormat(path string, versioned bool, knownValid []byte) version {
 	v := version{status: Status{Path: path, State: Unreadable}}
 	var maxBytes int64
 	if versioned {
@@ -167,7 +176,11 @@ func readVersionFormat(path string, versioned bool) version {
 	}
 	v.data = res.Data
 	v.info = res.Info
-	_, _, err = decodeDocument(v.data, versioned)
+	if knownValid != nil && bytes.Equal(v.data, knownValid) {
+		v.status.State = Valid
+		return v
+	}
+	tasks, reviews, err := decodeDocument(v.data, versioned)
 	v.status.State = Valid
 	if err != nil {
 		v.status.State = Corrupt
@@ -175,6 +188,9 @@ func readVersionFormat(path string, versioned bool) version {
 			v.status.State = Unsupported
 		}
 		v.status.Err = err
+	} else {
+		v.tasks = tasks
+		v.reviews = reviews
 	}
 	return v
 }
@@ -206,6 +222,8 @@ func (snap *Snapshot) Save(tasks []taskconfig.Task) (next *Snapshot, err error) 
 	}
 	return snap.save(tasks, snap.reviews)
 }
+func (s *Store) clearKnownValid() { s.knownValid = nil }
+
 func (snap *Snapshot) save(tasks []taskconfig.Task, reviews []filefilter.RegexConfirmation) (next *Snapshot, err error) {
 	if snap == nil || snap.store == nil {
 		return nil, ErrBlocked
@@ -213,18 +231,27 @@ func (snap *Snapshot) save(tasks []taskconfig.Task, reviews []filefilter.RegexCo
 	s := snap.store
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	encoded, err := taskconfig.Encode(tasks)
+	canonical, err := taskconfig.Encode(tasks)
 	if err != nil {
 		return nil, err
 	}
+	s.knownValid = make(map[string][]byte, 2)
+	if snap.primary.status.State == Valid {
+		s.knownValid[s.path] = snap.primary.data
+	}
+	if snap.backup.status.State == Valid {
+		s.knownValid[s.path+".bak"] = snap.backup.data
+	}
+	defer s.clearKnownValid()
 	if err = s.check(snap.primary, snap.backup); err != nil {
 		return nil, err
 	}
-	if snap.primary.status.State == Valid && bytes.Equal(encoded, snap.canonical) && reflect.DeepEqual(reviews, snap.reviews) {
+	if snap.primary.status.State == Valid && bytes.Equal(canonical, snap.canonical) && reflect.DeepEqual(reviews, snap.reviews) {
 		return snap, nil
 	}
+	encoded := canonical
 	if s.versioned {
-		encoded, err = encodeDocument(encoded, reviews)
+		encoded, err = encodeDocument(canonical, reviews)
 		if err != nil {
 			return nil, err
 		}
@@ -234,10 +261,10 @@ func (snap *Snapshot) save(tasks []taskconfig.Task, reviews []filefilter.RegexCo
 		return nil, err
 	}
 	defer s.cleanup(temp, &err)
-	return s.commit(snap, temp, encoded)
+	return s.commit(snap, temp, canonical, encoded, reviews)
 }
 
-func (s *Store) commit(snap *Snapshot, temp string, encoded []byte) (next *Snapshot, err error) {
+func (s *Store) commit(snap *Snapshot, temp string, canonical, encoded []byte, reviews []filefilter.RegexConfirmation) (next *Snapshot, err error) {
 	backup := snap.backup
 	if snap.primary.status.State == Valid {
 		bt, stageErr := s.stage(snap.primary.data, ".tmp-")
@@ -251,6 +278,7 @@ func (s *Store) commit(snap *Snapshot, temp string, encoded []byte) (next *Snaps
 		if err = s.io.replace(bt, s.path+".bak", snap.backup.status.State != Missing); err != nil {
 			return nil, fmt.Errorf("replace backup: %w", err)
 		}
+		s.knownValid[s.path+".bak"] = snap.primary.data
 		backup = s.io.read(s.path + ".bak")
 		if backup.status.State != Valid || !bytes.Equal(backup.data, snap.primary.data) {
 			return nil, errors.Join(ErrChanged, backup.status.Err)
@@ -262,14 +290,16 @@ func (s *Store) commit(snap *Snapshot, temp string, encoded []byte) (next *Snaps
 	if err = s.io.replace(temp, s.path, snap.primary.status.State != Missing); err != nil {
 		return nil, fmt.Errorf("replace tasks: %w", err)
 	}
-	next, err = s.load()
-	if err != nil {
-		return nil, &CommitError{Err: err}
+	s.knownValid[s.path] = encoded
+	cp := s.io.read(s.path)
+	cb := s.io.read(s.path + ".bak")
+	if cp.status.State != Valid || (cb.status.State != Valid && cb.status.State != Missing) {
+		return nil, &CommitError{Err: &LoadError{Primary: cp.status, Backup: cb.status, store: s, primary: cp, backup: cb}}
 	}
-	if !bytes.Equal(next.primary.data, encoded) || !same(backup, next.backup) {
+	if !bytes.Equal(cp.data, encoded) || !same(backup, cb) {
 		return nil, &CommitError{Err: ErrChanged}
 	}
-	return next, nil
+	return &Snapshot{store: s, primary: cp, backup: cb, canonical: canonical, reviews: reviews}, nil
 }
 
 // CommitError means replacement succeeded but a fresh snapshot could not be

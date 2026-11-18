@@ -2,6 +2,7 @@ package filefilter
 
 import (
 	"fmt"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -10,6 +11,12 @@ import (
 )
 
 const unicodeVersion = "17.0.0"
+
+func init() {
+	if err := checkUnicodeTables(); err != nil {
+		panic(err)
+	}
+}
 
 func checkUnicodeVersions(goVersion, textVersion string) error {
 	if goVersion != unicodeVersion || textVersion != unicodeVersion {
@@ -68,10 +75,18 @@ func (mapper *scalarMapper) uppercase(r rune) (upperKey, error) {
 	return key, nil
 }
 
-// Each preparation/path owns its Caser, reusable byte buffers and output. No
-// global mutable Caser or retained cache; Transform runs once per original scalar.
+var scalarMapperPool = sync.Pool{
+	New: func() any {
+		m := newScalarMapper()
+		return &m
+	},
+}
+
+// Each preparation/path owns its Caser from the pool, reusable byte buffers and
+// output. Transform runs once per original scalar without cross-call string caches.
 func mapScalars(s string) ([]scalar, error) {
-	mapper := newScalarMapper()
+	mapper := scalarMapperPool.Get().(*scalarMapper)
+	defer scalarMapperPool.Put(mapper)
 	out := make([]scalar, 0, utf8.RuneCountInString(s))
 	for _, r := range s {
 		key, err := mapper.uppercase(r)

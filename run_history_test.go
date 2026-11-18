@@ -30,8 +30,8 @@ func historySuccess(r runRecord) multipleResult {
 	return result
 }
 func TestRunHistorySuccessMixedAndStoppedRestore(t *testing.T) {
-	for _, outcome := range []string{"succeeded", "failed", "stopped"} {
-		t.Run(outcome, func(t *testing.T) {
+	for _, outcome := range []outcomeState{outcomeSucceeded, outcomeFailed, outcomeStopped} {
+		t.Run(string(outcome), func(t *testing.T) {
 			data := t.TempDir()
 			h := loadRunHistory(data)
 			r, _ := historyFixture(t)
@@ -207,7 +207,7 @@ func TestRunHistoryBoundsAndOrigins(t *testing.T) {
 	for _, kind := range []string{"watch", "scheduled"} {
 		q.Trigger.Kind = kind
 		record, e := newRunRecord(r.TaskID, "name", q, true, time.Now())
-		if e != nil || record.Origin != kind {
+		if e != nil || string(record.Origin) != kind {
 			t.Fatal(record, e)
 		}
 		manual, _ := newRunRecord(r.TaskID, "name", q, false, time.Now())

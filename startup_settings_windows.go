@@ -83,16 +83,30 @@ func (e startupEntry) status() (startupStatus, error) {
 	}
 }
 func (e startupEntry) set(enabled bool) error {
-	old, err := e.commandValue()
-	missing := errors.Is(err, registry.ErrNotExist)
-	if err != nil && !missing {
+	if !enabled {
+		k, err := registry.OpenKey(registry.CURRENT_USER, startupRunKey, registry.QUERY_VALUE|registry.SET_VALUE)
+		if errors.Is(err, registry.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		defer k.Close()
+		actual, _, readErr := k.GetStringValue(e.name)
+		if errors.Is(readErr, registry.ErrNotExist) {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
+		}
+		if !strings.EqualFold(actual, e.command) {
+			return fmt.Errorf("%s", startupForeign)
+		}
+		err = k.DeleteValue(e.name)
+		if errors.Is(err, registry.ErrNotExist) {
+			return nil
+		}
 		return err
-	}
-	if !missing && !strings.EqualFold(old, e.command) {
-		return fmt.Errorf("%s", startupForeign)
-	}
-	if !enabled && missing {
-		return nil
 	}
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, startupRunKey, registry.QUERY_VALUE|registry.SET_VALUE)
 	if err != nil {
@@ -107,12 +121,5 @@ func (e startupEntry) set(enabled bool) error {
 	if readErr == nil && !strings.EqualFold(actual, e.command) {
 		return fmt.Errorf("%s", startupForeign)
 	}
-	if enabled {
-		return k.SetStringValue(e.name, e.command)
-	}
-	err = k.DeleteValue(e.name)
-	if errors.Is(err, registry.ErrNotExist) {
-		return nil
-	}
-	return err
+	return k.SetStringValue(e.name, e.command)
 }

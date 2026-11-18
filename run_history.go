@@ -18,6 +18,23 @@ const (
 	historyGoalLimit  = 256
 )
 
+type outcomeState string
+
+const (
+	outcomeRunning   outcomeState = "running"
+	outcomeSucceeded outcomeState = "succeeded"
+	outcomeFailed    outcomeState = "failed"
+	outcomeStopped   outcomeState = "stopped"
+)
+
+type triggerOrigin string
+
+const (
+	originManual    triggerOrigin = "manual"
+	originWatch     triggerOrigin = "watch"
+	originScheduled triggerOrigin = "scheduled"
+)
+
 type runGoal struct {
 	Started, Ended time.Time
 	ID             taskconfig.ID
@@ -30,9 +47,9 @@ type runRecord struct {
 	ID, TaskID     taskconfig.ID
 	Name           string
 	Kind           taskconfig.TaskKind
-	Origin         string
+	Origin         triggerOrigin
 	Started, Ended time.Time
-	Outcome        string
+	Outcome        outcomeState
 	Error          string
 	Goals          []runGoal
 }
@@ -56,9 +73,9 @@ func historyText(s string, n int) string {
 	return s
 }
 func newRunRecord(id taskconfig.ID, name string, q manualTaskRequest, automatic bool, now time.Time) (runRecord, error) {
-	r := runRecord{ID: taskconfig.NewID(), TaskID: id, Name: historyText(name, 256), Kind: manualKind(q.Kind), Origin: "manual", Started: now, Outcome: "running"}
+	r := runRecord{ID: taskconfig.NewID(), TaskID: id, Name: historyText(name, 256), Kind: manualKind(q.Kind), Origin: originManual, Started: now, Outcome: outcomeRunning}
 	if automatic {
-		r.Origin = q.Trigger.Kind
+		r.Origin = triggerOrigin(q.Trigger.Kind)
 	}
 	if len(q.Destinations) > historyGoalLimit {
 		return r, fmt.Errorf("运行记录每次最多支持%d个目标，文件执行不受影响", historyGoalLimit)
@@ -70,11 +87,11 @@ func newRunRecord(id taskconfig.ID, name string, q manualTaskRequest, automatic 
 }
 func finishRunRecord(r runRecord, results multipleResult, err error, now time.Time) runRecord {
 	r.Ended = now
-	r.Outcome = "succeeded"
+	r.Outcome = outcomeSucceeded
 	if errors.Is(err, context.Canceled) {
-		r.Outcome = "stopped"
+		r.Outcome = outcomeStopped
 	} else if err != nil {
-		r.Outcome = "failed"
+		r.Outcome = outcomeFailed
 	}
 	if err != nil {
 		r.Error = historyText(err.Error(), historyErrorBytes)
@@ -85,8 +102,8 @@ func finishRunRecord(r runRecord, results multipleResult, err error, now time.Ti
 		if !ok {
 			g.State = destinationInterrupted
 			g.Error = "没有记录此目标的最终状态，请核对文件"
-			if r.Outcome == "succeeded" {
-				r.Outcome = "failed"
+			if r.Outcome == outcomeSucceeded {
+				r.Outcome = outcomeFailed
 				r.Error = "没有记录所有目标的最终状态"
 			}
 		} else {
@@ -97,8 +114,8 @@ func finishRunRecord(r runRecord, results multipleResult, err error, now time.Ti
 			g.Counts = result.Progress
 			g.Counts.Path = ""
 			g.Counts.Stage = "" // Counts only, never a per-file trace.
-			if result.State == destinationFailed && r.Outcome == "succeeded" {
-				r.Outcome = "failed"
+			if result.State == destinationFailed && r.Outcome == outcomeSucceeded {
+				r.Outcome = outcomeFailed
 			}
 		}
 		r.Goals[i] = g
@@ -126,11 +143,11 @@ func executeRecordedRun(h *runHistoryStore, start runRecord, startErr error, act
 }
 func runOutcome(r runRecord) string {
 	switch r.Outcome {
-	case "running":
+	case outcomeRunning:
 		return "中断/结果未知（未记录结束）"
-	case "succeeded":
+	case outcomeSucceeded:
 		return "完成"
-	case "stopped":
+	case outcomeStopped:
 		return "已停止"
 	default:
 		return "失败"
@@ -145,7 +162,7 @@ func historyResult(r runRecord) savedTaskResult {
 	var progress transferProgress
 	for _, g := range r.Goals {
 		result := destinationResult{ID: g.ID, Name: g.Name, Started: g.Started, Ended: g.Ended, State: g.State, Progress: g.Counts, Error: g.Error}
-		if r.Outcome == "running" {
+		if r.Outcome == outcomeRunning {
 			result.State = destinationInterrupted
 			result.Error = "上次未记录结束，计数不是最终结果，请核对文件"
 		}

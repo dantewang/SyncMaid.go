@@ -28,19 +28,19 @@ func NewVersioned(path string) (*Store, error) {
 		return nil, err
 	}
 	s.versioned = true
-	s.io.read = func(path string) version { return readVersionFormat(path, true) }
+	s.io.read = func(path string) version { return readVersionFormat(path, true, s.knownValid[path]) }
 	return s, nil
 }
 func decodeDocument(b []byte, versioned bool) ([]taskconfig.Task, []filefilter.RegexConfirmation, error) {
+	if !utf8.Valid(b) {
+		return nil, nil, errors.New("invalid or oversized Go task document")
+	}
 	if versioned && len(b) > 8<<20 {
 		return nil, nil, errors.New("Go task document exceeds 8 MiB")
 	}
 	if !versioned || bytes.HasPrefix(bytes.TrimSpace(b), []byte("[")) {
 		tasks, err := taskconfig.Decode(b)
 		return tasks, nil, err
-	}
-	if len(b) > 8<<20 || !utf8.Valid(b) {
-		return nil, nil, errors.New("invalid or oversized Go task document")
 	}
 	var d taskDocument
 	fields, err := uniqueDocumentMembers(b)
@@ -112,12 +112,17 @@ func encodeDocument(tasks []byte, reviews []filefilter.RegexConfirmation) ([]byt
 	if reviews == nil {
 		reviews = []filefilter.RegexConfirmation{}
 	}
+	if len(reviews) > 4096 {
+		return nil, errors.New("unsupported Go task document version or confirmations")
+	}
 	b, err := json.MarshalIndent(taskDocument{documentFormat, 1, tasks, reviews}, "", "  ")
 	if err != nil {
 		return nil, err
 	}
-	_, _, err = decodeDocument(b, true)
-	return b, err
+	if len(b) > 8<<20 {
+		return nil, errors.New("Go task document exceeds 8 MiB")
+	}
+	return b, nil
 }
 func (s *Snapshot) Confirmations() []filefilter.RegexConfirmation {
 	if s == nil {
