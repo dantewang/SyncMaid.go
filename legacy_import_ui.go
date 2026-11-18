@@ -12,46 +12,41 @@ func (a *application) beginImport() {
 	}
 	previous := s.phase
 	a.importError = nil
-	s.phase = manualChoosing
 	title := a.tr("选择旧任务 JSON 或备份")
 	library := a.tasks
-	go func() {
+	type importChoice struct {
+		preview *legacyImport
+	}
+	runDialog(a, func() (importChoice, error) {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: a.window, Title: title})
-		var preview *legacyImport
+		var out importChoice
 		if err == nil && len(paths) > 0 {
-			preview, err = readLegacyImport(paths[0], library)
+			out.preview, err = readLegacyImport(paths[0], library)
 		}
-		a.window.Update(func() {
-			s.phase = previous
-			if s.quitPending {
-				a.requestQuit()
-				return
-			}
-			if err != nil {
-				a.importError = err
-				s.message = messagef("导入拒绝，旧文件和任务库未修改：%s", err.Error())
-			} else if preview != nil {
-				a.importPreview = preview
-				a.importPrevious = previous
-				a.importError = nil
-				s.phase = manualImporting
-				a.settingsOpen = false
-				a.historyOpen = false
-			}
-			a.drainWatches()
-		})
-	}()
+		return out, err
+	}, func(res importChoice, err error) {
+		if s.quitPending {
+			return
+		}
+		if err != nil {
+			a.importError = err
+			s.message = messagef("导入拒绝，旧文件和任务库未修改：%s", err.Error())
+		} else if res.preview != nil {
+			a.importPreview = res.preview
+			a.importPrevious = previous
+			a.importError = nil
+			s.phase = manualImporting
+			a.settingsOpen = false
+			a.historyOpen = false
+		}
+	})
 }
 func (a *application) cancelImport() {
 	if a.manual.phase != manualImporting {
 		return
 	}
 	a.discardImportPreview()
-	if a.manual.quitPending {
-		a.requestQuit()
-		return
-	}
-	a.drainWatches()
+	a.finishAsyncStep(true)
 }
 func (a *application) discardImportPreview() {
 	a.importPreview = nil
@@ -80,9 +75,7 @@ func (a *application) confirmImport() {
 			a.selectManual(p.tasks[0].ID)
 			a.manual.message = messagef("已追加导入 %d 个任务；全部为手动触发，尚未运行。", len(p.tasks))
 			a.syncWatches()
-			if a.manual.quitPending {
-				a.requestQuit()
-			}
+			a.finishAsyncStep(false)
 		})
 	}()
 }

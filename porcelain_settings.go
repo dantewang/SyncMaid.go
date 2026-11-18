@@ -80,12 +80,18 @@ func (a *application) settingsView(c *ui.Context) {
 		})
 	})
 }
+func porcelainBoundSwitch(c *ui.Context, value bool, label string, disabled bool, onToggle func(bool)) {
+	state := value
+	porcelainSwitch(c, &state).Label(label).Disabled(disabled).OnChange(func() { onToggle(state) })
+}
+
 func (a *application) commonSettingsView(c *ui.Context) {
 	locked := a.commonBusy || a.common == nil || a.commonError != nil
 	porcelainSection(c, a.tr("启动"), func() {
 		porcelainSettingRow(c, a.tr("开机自启：")+a.tr(string(a.startupStatus)), func() {
 			enabled := a.startupStatus == startupRegistered || a.startupStatus == startupDisabled || a.startupStatus == startupUnknown
-			porcelainSwitch(c, &enabled).Label(a.tr("开机自启：")).Disabled(a.commonBusy || a.startupError != nil || a.startupEntry.name == "" || a.startupStatus == startupDisabled || a.startupStatus == startupForeign).OnChange(func() { a.setStartup(enabled) })
+			disabled := a.commonBusy || a.startupError != nil || a.startupEntry.name == "" || a.startupStatus == startupDisabled || a.startupStatus == startupForeign
+			porcelainBoundSwitch(c, enabled, a.tr("开机自启："), disabled, a.setStartup)
 		})
 		if a.startupError != nil {
 			ui.Text(c, a.tr("自启操作或读取失败：")+a.startupError.Error()).FontSize(12).TextColor(porcelain.Danger)
@@ -97,8 +103,11 @@ func (a *application) commonSettingsView(c *ui.Context) {
 			closeLabel = "关闭窗口：隐藏到托盘"
 		}
 		porcelainSettingRow(c, a.tr("关闭到托盘"), func() {
-			enabled := a.commonValue.CloseToTray
-			porcelainSwitch(c, &enabled).Label(a.tr(closeLabel)).Disabled(locked).OnChange(func() { v := a.commonValue; v.CloseToTray = enabled; a.changeCommon(v) })
+			porcelainBoundSwitch(c, a.commonValue.CloseToTray, a.tr(closeLabel), locked, func(next bool) {
+				v := a.commonValue
+				v.CloseToTray = next
+				a.changeCommon(v)
+			})
 		})
 		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 		startLabel := "启动时：显示窗口"
@@ -106,8 +115,11 @@ func (a *application) commonSettingsView(c *ui.Context) {
 			startLabel = "启动时：隐藏到托盘"
 		}
 		porcelainSettingRow(c, a.tr("启动时最小化"), func() {
-			enabled := a.commonValue.StartMinimized
-			porcelainSwitch(c, &enabled).Label(a.tr(startLabel)).Disabled(locked).OnChange(func() { v := a.commonValue; v.StartMinimized = enabled; a.changeCommon(v) })
+			porcelainBoundSwitch(c, a.commonValue.StartMinimized, a.tr(startLabel), locked, func(next bool) {
+				v := a.commonValue
+				v.StartMinimized = next
+				a.changeCommon(v)
+			})
 		})
 		if a.commonError != nil {
 			ui.Text(c, a.tr("设置不可用或保存失败，原文保留：")+a.commonError.Error()).TextColor(porcelain.Danger)

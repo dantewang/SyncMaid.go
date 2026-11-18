@@ -52,7 +52,7 @@ type manualSession struct {
 	destinationResults      multipleResult
 	filterEditor            filterEditor
 	filterDrafts            map[taskconfig.ID]filterEditor
-	destinationEdits        map[taskconfig.ID]*manualDestination
+	destinationEdits        map[taskconfig.ID]destinationEditState
 	mirrorPreview           *mirrorPreview
 	mirrorReply             chan error
 }
@@ -143,35 +143,54 @@ func (a *application) taskEditorView(c *ui.Context) {
 		ui.PrimaryButton(c, a.tr(saveLabel)).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
 	})
 }
+func runDialog[T any](a *application, prompt func() (T, error), onDone func(T, error)) {
+	s := &a.manual
+	previous := s.phase
+	s.phase = manualChoosing
+	go func() {
+		result, err := prompt()
+		a.window.Update(func() {
+			s.phase = previous
+			onDone(result, err)
+			a.finishAsyncStep(true)
+		})
+	}()
+}
+
+func (a *application) finishAsyncStep(drainWatches bool) {
+	if a.manual.quitPending {
+		a.requestQuit()
+		return
+	}
+	if drainWatches {
+		a.drainWatches()
+	}
+}
+
+func (a *application) hasModalOpen() bool {
+	return a.importPreview != nil || a.regexSession != nil || a.manual.mirrorPreview != nil || a.manual.mirrorReply != nil
+}
+
 func (a *application) chooseFolder(source bool) {
 	s := &a.manual
 	if s.busy() || a.tasks == nil || a.selectedTaskIssue() != nil {
 		return
 	}
-	previous := s.phase
-	s.phase = manualChoosing
 	title := a.tr("选择文件夹")
-	go func() {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: a.window, Title: title, Directory: true})
-		a.window.Update(func() {
-			s.phase = previous
-			if err != nil {
-				s.message = messagef("选择失败: %s", err.Error())
-			} else if len(paths) > 0 {
-				if source {
-					s.source = paths[0]
-				} else {
-					s.target = paths[0]
-				}
-				s.edited()
-			}
-			if s.quitPending {
-				a.requestQuit()
+	runDialog(a, func() ([]string, error) {
+		return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: a.window, Title: title, Directory: true})
+	}, func(paths []string, err error) {
+		if err != nil {
+			s.message = messagef("选择失败: %s", err.Error())
+		} else if len(paths) > 0 {
+			if source {
+				s.source = paths[0]
 			} else {
-				a.drainWatches()
+				s.target = paths[0]
 			}
-		})
-	}()
+			s.edited()
+		}
+	})
 }
 func (a *application) startManual() {
 	s := &a.manual
@@ -291,11 +310,7 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 			if !showResult {
 				a.results[id] = savedTaskResult{outcome: recordEnd.Outcome, message: message, destinations: results, started: recordEnd.Started, ended: recordEnd.Ended}
 				s.phase = previous
-				if s.quitPending {
-					a.requestQuit()
-				} else {
-					a.drainWatches()
-				}
+				a.finishAsyncStep(true)
 				return
 			}
 			s.destinationResults = results
@@ -314,11 +329,7 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 			if id != "" {
 				a.results[id] = savedTaskResult{outcome: recordEnd.Outcome, message: s.message, progress: s.progress, destinations: s.destinationResults, started: recordEnd.Started, ended: recordEnd.Ended}
 			}
-			if s.quitPending {
-				a.requestQuit()
-			} else {
-				a.drainWatches()
-			}
+			a.finishAsyncStep(true)
 		})
 	}()
 }
@@ -333,13 +344,13 @@ func (a *application) stopManual() {
 	s.message = messagef("正在停止并清理临时文件…")
 	s.cancel()
 }
-func (a *application) requestQuit() {
+func (a *application) tryPrepareQuit(showStatus bool) bool {
 	a.batch.clear()
 	a.stopWatches(watchesStopped)
 	a.sourcePreview.invalidate()
 	if a.sourcePreview.job != nil {
 		a.manual.quitPending = true
-		return
+		return false
 	}
 	if a.manual.phase == manualReviewing {
 		a.discardRegexMigration()
@@ -348,42 +359,29 @@ func (a *application) requestQuit() {
 		a.discardImportPreview()
 	}
 	s := &a.manual
-	if a.languageBusy || a.commonBusy {
+	if a.languageBusy || a.commonBusy || s.busy() {
 		s.quitPending = true
-		return
-	}
-	if s.busy() {
-		s.quitPending = true
-		if s.phase == manualChoosing {
-			s.message = messagef("请关闭当前对话框以退出。")
-		}
-		if s.phase == manualLoading || s.phase == manualSaving {
-			s.message = messagef("文件操作结束后退出…")
+		if showStatus {
+			if s.phase == manualChoosing {
+				s.message = messagef("请关闭当前对话框以退出。")
+			}
+			if s.phase == manualLoading || s.phase == manualSaving {
+				s.message = messagef("文件操作结束后退出…")
+			}
 		}
 		a.stopManual()
-		return
+		return false
 	}
-	a.lifecycle.exit()
+	return true
+}
+func (a *application) requestQuit() {
+	if a.tryPrepareQuit(true) {
+		a.lifecycle.exit()
+	}
 }
 func (a *application) beforeQuit(e *mygo.QuitEvent) {
-	a.batch.clear()
-	a.stopWatches(watchesStopped)
-	a.sourcePreview.invalidate()
-	if a.sourcePreview.job != nil {
+	if !a.tryPrepareQuit(false) {
 		e.PreventDefault()
-		a.manual.quitPending = true
-		return
-	}
-	if a.manual.phase == manualReviewing {
-		a.discardRegexMigration()
-	}
-	if a.manual.phase == manualImporting {
-		a.discardImportPreview()
-	}
-	if a.manual.busy() || a.languageBusy || a.commonBusy {
-		e.PreventDefault()
-		a.manual.quitPending = true
-		a.stopManual()
 		return
 	}
 	a.lifecycle.beginQuit()

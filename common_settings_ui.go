@@ -23,9 +23,7 @@ func (a *application) changeCommon(value commonSettings) {
 			if err == nil {
 				a.commonValue = value
 			}
-			if a.manual.quitPending {
-				a.requestQuit()
-			}
+			a.finishAsyncStep(false)
 		})
 	}()
 }
@@ -44,9 +42,7 @@ func (a *application) reloadCommon() {
 			if s.err == nil {
 				a.commonValue = s.value
 			}
-			if a.manual.quitPending {
-				a.requestQuit()
-			}
+			a.finishAsyncStep(false)
 		})
 	}()
 }
@@ -66,9 +62,7 @@ func (a *application) setStartup(enabled bool) {
 			if err == nil {
 				a.startupError = readErr
 			}
-			if a.manual.quitPending {
-				a.requestQuit()
-			}
+			a.finishAsyncStep(false)
 		})
 	}()
 }

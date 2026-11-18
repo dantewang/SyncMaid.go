@@ -117,7 +117,5 @@ func (a *application) changeLanguage(tag string) {
 func (a *application) finishLanguageChange(err error) {
 	a.languageBusy = false
 	a.languageError = err
-	if a.manual.quitPending {
-		a.requestQuit()
-	}
+	a.finishAsyncStep(false)
 }

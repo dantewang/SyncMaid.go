@@ -49,19 +49,23 @@ func cloneManualDestination(d manualDestination) manualDestination {
 	return d
 }
 
-// No entry means accepted; a nil original is a new, unaccepted row.
+type destinationEditState struct {
+	isNew    bool
+	original manualDestination
+}
+
 func (s *manualSession) beginDestinationEdit(id taskconfig.ID, original *manualDestination) {
 	if s.destinationEdits == nil {
-		s.destinationEdits = map[taskconfig.ID]*manualDestination{}
+		s.destinationEdits = map[taskconfig.ID]destinationEditState{}
 	}
 	if _, open := s.destinationEdits[id]; open {
 		return
 	}
-	if original != nil {
-		copy := cloneManualDestination(*original)
-		original = &copy
+	if original == nil {
+		s.destinationEdits[id] = destinationEditState{isNew: true}
+		return
 	}
-	s.destinationEdits[id] = original
+	s.destinationEdits[id] = destinationEditState{original: cloneManualDestination(*original)}
 }
 
 func (a *application) acceptDestination(id taskconfig.ID) bool {
@@ -138,7 +142,7 @@ func (a *application) cancelDestination(id taskconfig.ID) {
 		return
 	}
 	s := &a.manual
-	original, open := s.destinationEdits[id]
+	edit, open := s.destinationEdits[id]
 	if !open {
 		return
 	}
@@ -146,10 +150,10 @@ func (a *application) cancelDestination(id taskconfig.ID) {
 		if d.ID != id {
 			continue
 		}
-		if original == nil {
+		if edit.isNew {
 			s.targets = append(s.targets[:i], s.targets[i+1:]...)
 		} else {
-			s.targets[i] = cloneManualDestination(*original)
+			s.targets[i] = cloneManualDestination(edit.original)
 		}
 		break
 	}

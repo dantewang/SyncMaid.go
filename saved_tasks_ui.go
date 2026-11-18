@@ -116,9 +116,7 @@ func (a *application) reloadTasks() {
 				}
 			}
 			a.syncWatches()
-			if s.quitPending {
-				a.requestQuit()
-			}
+			a.finishAsyncStep(false)
 		})
 	}()
 }
@@ -189,9 +187,7 @@ func (a *application) finishTaskSave(next *savedTaskLibrary, id taskconfig.ID, v
 		return
 	}
 	a.syncWatches()
-	if s.quitPending {
-		a.requestQuit()
-	}
+	a.finishAsyncStep(false)
 }
 func (a *application) pauseQuitAfterTaskError() {
 	if a.manual.quitPending {
@@ -220,7 +216,7 @@ func (a *application) confirmDeleteManual() {
 		a.window.Update(func() {
 			s.phase = previous
 			if s.quitPending {
-				a.requestQuit()
+				a.finishAsyncStep(false)
 				return
 			}
 			if err != nil {
@@ -269,9 +265,7 @@ func (a *application) deleteManual(id taskconfig.ID) {
 				s.message = messagef("任务已删除，源与目标文件保留。")
 			}
 			a.syncWatches()
-			if s.quitPending {
-				a.requestQuit()
-			}
+			a.finishAsyncStep(false)
 		})
 	}()
 }

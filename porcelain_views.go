@@ -7,10 +7,39 @@ import (
 	"time"
 )
 
+type uiScreen uint8
+
+const (
+	screenTasks uiScreen = iota
+	screenHistory
+	screenSettings
+	screenImport
+	screenRegex
+	screenMirrorConfirm
+)
+
+func (a *application) activeScreen() uiScreen {
+	switch {
+	case a.manual.mirrorPreview != nil:
+		return screenMirrorConfirm
+	case a.regexSession != nil:
+		return screenRegex
+	case a.importPreview != nil:
+		return screenImport
+	case a.settingsOpen:
+		return screenSettings
+	case a.historyOpen:
+		return screenHistory
+	default:
+		return screenTasks
+	}
+}
+
 func (a *application) manualView(c *ui.Context) {
 	c.SetTheme(&porcelain)
 	width, height := c.Size()
 	s := &a.manual
+	screen := a.activeScreen()
 	ui.Row(c).Fill().Gap(0).Children(func() {
 		ui.Column(c).Width(210).FillHeight().Background(rgb(0xD9DFE3)).Children(func() {
 			ui.Text(c, a.tr("任务")).FontSize(10).TextColor(porcelain.TextMuted).Padding(14, 14, 6, 14)
@@ -54,28 +83,29 @@ func (a *application) manualView(c *ui.Context) {
 			ui.Row(c).FillWidth().Padding(6, 10).Gap(6).Children(func() {
 				ui.Text(c, "SYNC").FontSize(13).LineHeight(1.5).Bold().Background(porcelain.Accent).TextColor(porcelain.AccentText).Padding(4, 6)
 				ui.Text(c, "MAID").FontSize(13).Bold().Grow(1)
+				modalLocked := screen == screenMirrorConfirm || screen == screenImport || screen == screenRegex
 				gear := porcelainIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
-				if a.settingsOpen {
+				if screen == screenSettings {
 					gear = gear.Background(porcelain.Accent).TextColor(porcelain.AccentText)
 				}
-				gear.Disabled(a.importPreview != nil || a.regexSession != nil || a.manual.busy()).OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false })
+				gear.Disabled(modalLocked || a.manual.busy()).OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false })
 				ui.MenuButton(c, "", func(m *ui.Menu) {
-					if m.Item(a.tr("运行全部")).Disabled(!a.cardActionAllowed()).Chosen() {
+					if m.Item(a.tr("运行全部")).Disabled(!a.cardActionAllowed() || modalLocked).Chosen() {
 						a.startBatch()
 					}
 					if m.Item(a.tr("重新载入设置")).Disabled(a.commonBusy).Chosen() {
 						a.reloadCommon()
 					}
-					if m.Item(a.tr("查看运行记录")).Disabled(a.importPreview != nil || a.regexSession != nil).Chosen() {
+					if m.Item(a.tr("查看运行记录")).Disabled(modalLocked).Chosen() {
 						a.toggleHistory()
 					}
 					if m.Item(a.tr("重新载入")).Disabled(s.busy()).Chosen() {
 						a.reloadTasks()
 					}
-					if m.Item(a.tr("导入旧任务")).Disabled(!a.cardActionAllowed()).Chosen() {
+					if m.Item(a.tr("导入旧任务")).Disabled(!a.cardActionAllowed() || modalLocked).Chosen() {
 						a.beginImport()
 					}
-					if m.Item(a.tr("旧正则迁移")).Disabled(!a.cardActionAllowed() || s.id == "").Chosen() {
+					if m.Item(a.tr("旧正则迁移")).Disabled(!a.cardActionAllowed() || modalLocked || s.id == "").Chosen() {
 						a.beginRegexMigration()
 					}
 					if m.Item(a.tr("暂停自动触发")).Disabled(a.watchPhase != watchesServing).Chosen() {
@@ -93,7 +123,7 @@ func (a *application) manualView(c *ui.Context) {
 		})
 		ui.Box(c).Width(1).FillHeight().Background(porcelain.Border)
 		pane := ui.Column(c).Grow(1).FillHeight().Gap(0)
-		if !a.settingsOpen {
+		if screen != screenSettings {
 			pane = pane.Padding(12, 16)
 		}
 		pane.Children(func() {
@@ -110,22 +140,20 @@ func (a *application) manualView(c *ui.Context) {
 					porcelainButton(c, a.tr("停止")).Disabled(s.phase == manualStopping).OnClick(a.stopManual)
 				})
 			}
-			if s.mirrorPreview != nil {
+			switch screen {
+			case screenMirrorConfirm:
 				a.mirrorPreviewView(c)
-			}
-			if a.regexSession != nil {
+				return
+			case screenRegex:
 				a.regexMigrationView(c)
 				return
-			}
-			if a.importPreview != nil {
+			case screenImport:
 				a.importView(c)
 				return
-			}
-			if a.settingsOpen {
+			case screenSettings:
 				ui.Column(c).Fill().Children(func() { a.settingsView(c) })
 				return
-			}
-			if a.historyOpen {
+			case screenHistory:
 				a.historyViewContent(c)
 				return
 			}
@@ -151,18 +179,21 @@ func (a *application) manualView(c *ui.Context) {
 					porcelainButton(c, a.tr("恢复自动触发")).Disabled(!a.cardActionAllowed()).OnClick(a.resumeWatches)
 				})
 			}
+			now := time.Now()
+			focusID := a.cards.focus
+			a.cards.focus = ""
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
 					if a.tasks != nil {
 						for _, t := range a.tasks.tasks {
-							a.taskCard(c, t)
+							a.taskCard(c, t, now, focusID)
 						}
 					}
 				})
 			})
 		})
 	})
-	if a.cards.editor && s.mirrorPreview == nil {
+	if a.cards.editor && screen == screenTasks {
 		preferred := float32(470)
 		if a.cards.destinations {
 			preferred = 760
@@ -231,7 +262,7 @@ func (a *application) porcelainHeader(c *ui.Context, width float32) {
 	})
 }
 
-func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
+func (a *application) taskCard(c *ui.Context, t taskconfig.Task, now time.Time, focusID taskconfig.ID) {
 	width, _ := c.Size()
 	healthWidth, resultWidth := float32(190), float32(280)
 	if width < 900 {
@@ -243,9 +274,8 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 	result := a.results[id]
 	status, color := a.taskHealth(t)
 	card := ui.Column(c).FillWidth().Gap(0).Border(1, color)
-	if a.cards.focus == id {
+	if focusID == id {
 		card = card.ScrollIntoView()
-		a.cards.focus = ""
 	}
 	card.Children(func() {
 		ui.Row(c).FillWidth().MinHeight(68).Gap(4).Padding(10).Children(func() {
@@ -334,7 +364,7 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task) {
 					})
 					porcelainPath(c, d.Target.Path)
 				})
-				summary := a.destinationStatus(r, ok, time.Now())
+				summary := a.destinationStatus(r, ok, now)
 				ui.ButtonBase(c).Role(ui.RoleLink).Label(summary).MaxWidth(resultWidth).Background(ui.Transparent).Tooltip(summary).Children(func() { ui.Text(c, summary).SingleLine().Ellipsis("…").Underline().FontSize(16).TextColor(mark) }).OnClick(func() { a.openDestinationLog(id, did) })
 				porcelainIcon(c, "♢", a.tr("编辑目标")+" "+d.Name).Border(0, ui.Transparent).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did) })
 				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")+" "+d.Name).Border(0, ui.Transparent).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did); a.confirmRemoveManualTarget() })

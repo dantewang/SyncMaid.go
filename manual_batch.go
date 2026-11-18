@@ -30,10 +30,7 @@ func (b *manualBatch) next() (taskconfig.ID, bool) {
 }
 
 func (a *application) startBatch() {
-	if a.sourcePreview.job != nil {
-		return
-	}
-	if !a.cardActionAllowed() || a.importPreview != nil || a.regexSession != nil || a.manual.mirrorPreview != nil || a.manual.mirrorReply != nil || a.manual.quitPending {
+	if !a.cardActionAllowed() || a.hasModalOpen() || a.manual.quitPending {
 		return
 	}
 	a.batch.begin(taskIDs(a.tasks.tasks))
@@ -41,7 +38,7 @@ func (a *application) startBatch() {
 }
 func (a *application) advanceBatch() { a.advanceBatchUsing(a.startTaskRun) }
 func (a *application) advanceBatchUsing(start func(taskconfig.ID, string, manualTaskRequest, bool)) {
-	if a.batch.phase != batchServing || a.manual.busy() || a.manual.mirrorPreview != nil || a.manual.mirrorReply != nil {
+	if a.batch.phase != batchServing || a.manual.busy() || a.hasModalOpen() {
 		return
 	}
 	if a.manual.quitPending || a.manual.dirty || a.taskError != nil || a.tasks == nil {

@@ -75,11 +75,7 @@ func (a *application) closeRegexMigration() {
 		return
 	}
 	a.discardRegexMigration()
-	if a.manual.quitPending {
-		a.requestQuit()
-	} else {
-		a.drainWatches()
-	}
+	a.finishAsyncStep(true)
 }
 func (a *application) previewRegex() {
 	s := a.regexSession
@@ -100,9 +96,7 @@ func (a *application) previewRegex() {
 			a.manual.phase = manualReviewing
 			e.preview = preview
 			e.err = err
-			if a.manual.quitPending {
-				a.requestQuit()
-			}
+			a.finishAsyncStep(false)
 		})
 	}()
 }
@@ -140,9 +134,7 @@ func (a *application) confirmRegexMigration() {
 			a.tasks = next
 			e.preview = nil
 			e.notice = messagef("确认已保存；尚未运行。编辑任务或规则后需重新确认。")
-			if a.manual.quitPending {
-				a.requestQuit()
-			}
+			a.finishAsyncStep(false)
 		})
 	}()
 }

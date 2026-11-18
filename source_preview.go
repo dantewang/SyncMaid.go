@@ -291,11 +291,7 @@ func (a *application) startSourcePreview() {
 		result, err := scanSourcePreview(ctx, q)
 		a.window.Update(func() {
 			s.finish(job, result, err)
-			if a.manual.quitPending {
-				a.requestQuit()
-			} else {
-				a.drainWatches()
-			}
+			a.finishAsyncStep(true)
 		})
 	}()
 }

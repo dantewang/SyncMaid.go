@@ -82,7 +82,7 @@ func (a *application) openLegacyData() {
 			a.commonBusy = false
 			a.manual.phase = previous
 			if a.manual.quitPending {
-				a.requestQuit()
+				a.finishAsyncStep(false)
 				return
 			}
 			defer a.drainWatches()

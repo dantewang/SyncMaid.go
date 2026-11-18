@@ -15,8 +15,7 @@ func (a *application) taskRecovery() (*taskstore.LoadError, bool) {
 
 func (a *application) taskRecoveryAllowed() bool {
 	return !a.manual.busy() && !a.manual.dirty && !a.cards.editor &&
-		!a.manual.quitPending && a.sourcePreview.job == nil &&
-		a.manual.mirrorPreview == nil && a.manual.mirrorReply == nil &&
+		!a.manual.quitPending && a.sourcePreview.job == nil && !a.hasModalOpen() &&
 		a.batch.phase == batchIdle && !a.languageBusy && !a.commonBusy
 }
 
@@ -46,9 +45,7 @@ func (a *application) confirmTaskRecovery(backup *taskstore.LoadError) {
 			a.window.Update(func() {
 				s.phase = previous
 				a.recoveryNotice = messagef("备份无法恢复：%s", err.Error())
-				if s.quitPending {
-					a.requestQuit()
-				}
+				a.finishAsyncStep(false)
 			})
 			return
 		}
@@ -56,7 +53,7 @@ func (a *application) confirmTaskRecovery(backup *taskstore.LoadError) {
 		a.window.Update(func() {
 			s.phase = previous
 			if s.quitPending {
-				a.requestQuit()
+				a.finishAsyncStep(false)
 				return
 			}
 			if dialogErr != nil {
@@ -98,9 +95,7 @@ func (a *application) restoreTaskBackup(backup *taskstore.LoadError) {
 			if err == nil {
 				a.newManual()
 			}
-			if a.manual.quitPending {
-				a.requestQuit()
-			}
+			a.finishAsyncStep(false)
 		})
 	}()
 }
