@@ -75,8 +75,8 @@ func TestTaskSheetSavesZeroDestinationsWithoutRuntimePreflight(t *testing.T) {
 	}
 }
 
-func TestTaskSheetCancelXEscapeAndBackdropDiscardOnce(t *testing.T) {
-	for _, how := range []string{"取消", "关闭编辑", "escape", "backdrop"} {
+func TestTaskSheetCancelXEscapeAndStayOpenOnBlankClicks(t *testing.T) {
+	for _, how := range []string{"取消", "关闭编辑", "escape"} {
 		t.Run(how, func(t *testing.T) {
 			a, _ := emptyTaskApplication(t)
 			a.cards.editor = true
@@ -86,13 +86,28 @@ func TestTaskSheetCancelXEscapeAndBackdropDiscardOnce(t *testing.T) {
 				if err := view.Click(how); err != nil {
 					t.Fatal(err)
 				}
-			case "backdrop":
-				view.ClickAt(8, 300)
 			case "escape":
 				view.Key(0, ui.KeyEscape)
 			}
 			if a.cards.editor || a.manual.dirty || len(a.tasks.tasks) != 0 {
 				t.Fatal("cancel retained draft or saved it")
+			}
+		})
+	}
+	for _, pos := range []struct {
+		name string
+		x, y float32
+	}{
+		{"backdrop", 8, 300},
+		{"sheet-blank", 740, 560},
+	} {
+		t.Run(pos.name, func(t *testing.T) {
+			a, _ := emptyTaskApplication(t)
+			a.cards.editor = true
+			view := ui.NewTester(a.view, 760, 620)
+			view.ClickAt(pos.x, pos.y)
+			if !a.cards.editor {
+				t.Fatalf("%s click unexpectedly closed editor", pos.name)
 			}
 		})
 	}

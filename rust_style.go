@@ -67,6 +67,9 @@ var porcelain = func() ui.Theme {
 func porcelainButton(c *ui.Context, text string) ui.Element {
 	return ui.Button(c, text).Radius(0).Padding(5, 10).FontSize(16)
 }
+func porcelainPrimaryButton(c *ui.Context, text string) ui.Element {
+	return ui.PrimaryButton(c, text).Radius(0).Padding(5, 10).FontSize(16)
+}
 func porcelainSegment(c *ui.Context, text string, selected bool, glyph ...string) ui.Element {
 	bg := porcelain.Background
 	if selected {
@@ -88,7 +91,10 @@ func porcelainSwitch(c *ui.Context, on *bool) ui.Element {
 	return ui.SwitchBase(c, on).Size(36, 20).Padding(2).Justify(align).Background(bg).Children(func() { ui.Box(c).Size(16, 16).Background(porcelain.Background) })
 }
 func porcelainIcon(c *ui.Context, glyph, label string) ui.Element {
-	return ui.ButtonBase(c).Label(label).Tooltip(label).Shrink(0).Border(1, porcelain.Border).Size(24, 24).Children(func() { ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16) })
+	return ui.Button(c, "").Padding(0).Radius(0).Size(24, 24).Label(label).Tooltip(label).Shrink(0).Border(1, porcelain.Border).Children(func() { ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16) })
+}
+func porcelainPrimaryIcon(c *ui.Context, glyph, label string) ui.Element {
+	return ui.PrimaryButton(c, "").Padding(0).Radius(0).Size(24, 24).Label(label).Tooltip(label).Shrink(0).Border(1, porcelain.Border).Children(func() { ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16) })
 }
 func porcelainTag(c *ui.Context, text string, primary bool) {
 	pip := rgb(0x5B666E)

@@ -189,10 +189,10 @@ func (a *application) destinationLogView(c *ui.Context) {
 			})
 		})
 		ui.Row(c).FillWidth().Gap(10).Children(func() {
-			porcelainButton(c, a.tr("诊断详情")).OnClick(func() { a.logDetails = !a.logDetails })
+			porcelainButton(c, a.tr("诊断详情")).Height(32).MinWidth(96).OnClick(func() { a.logDetails = !a.logDetails })
 			ui.Box(c).Grow(1)
-			porcelainButton(c, a.tr("刷新")).FontSize(14).Padding(3, 8).Disabled(a.logReading).OnClick(a.refreshDestinationLog)
-			ui.PrimaryButton(c, a.tr("打开日志文件")).FontSize(14).Padding(3, 8).Disabled(!a.logFileAvailable || a.logReading).OnClick(func() {
+			porcelainButton(c, a.tr("刷新")).Height(32).MinWidth(96).Disabled(a.logReading).OnClick(a.refreshDestinationLog)
+			porcelainPrimaryButton(c, a.tr("打开日志文件")).Height(32).MinWidth(96).Disabled(!a.logFileAvailable || a.logReading).OnClick(func() {
 				a.openDestinationLogFile(mygo.Shell.OpenPath)
 			})
 		})

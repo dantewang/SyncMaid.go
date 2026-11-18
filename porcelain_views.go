@@ -86,7 +86,7 @@ func (a *application) manualView(c *ui.Context) {
 				modalLocked := screen == screenMirrorConfirm || screen == screenImport || screen == screenRegex
 				gear := porcelainIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
 				if screen == screenSettings {
-					gear = gear.Background(porcelain.Accent).TextColor(porcelain.AccentText)
+					gear = porcelainPrimaryIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
 				}
 				gear.Disabled(modalLocked || a.manual.busy()).OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false })
 				ui.MenuButton(c, "", func(m *ui.Menu) {
@@ -204,10 +204,7 @@ func (a *application) manualView(c *ui.Context) {
 			if back.OverlayShortcut(0, ui.KeyEscape) {
 				a.closeTaskEditor()
 			}
-			back.Children(func() {
-				ui.Column(c).Absolute().Right(0).Top(0).Width(sheetWidth).Height(height).LineHeight(1.25).Background(porcelain.Background).Gap(0).Padding(8, 16, 16, 16).Children(func() { a.taskEditorView(c) })
-			})
-			back.OnClick(a.closeTaskEditor)
+			ui.Column(c).Absolute().Right(0).Top(0).Width(sheetWidth).Height(height).LineHeight(1.25).Background(porcelain.Background).Gap(0).Padding(8, 16, 16, 16).Children(func() { a.taskEditorView(c) })
 		})
 	}
 }
@@ -313,7 +310,7 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task, now time.Time, 
 			if running {
 				porcelainIcon(c, "■", a.tr("停止")).OnClick(a.stopManual)
 			} else {
-				porcelainIcon(c, "▷", a.tr("运行")).Background(porcelain.Accent).TextColor(porcelain.AccentText).Disabled(!a.cardActionAllowed() || len(t.Destinations) == 0).OnClick(func() { a.runCard(id) })
+				porcelainPrimaryIcon(c, "▷", a.tr("运行")).Disabled(!a.cardActionAllowed() || len(t.Destinations) == 0).OnClick(func() { a.runCard(id) })
 			}
 			porcelainIcon(c, "＋", a.tr("添加目标")).Disabled(!a.cardActionAllowed()).OnClick(func() {
 				a.editCard(id, "")
@@ -366,8 +363,8 @@ func (a *application) taskCard(c *ui.Context, t taskconfig.Task, now time.Time, 
 				})
 				summary := a.destinationStatus(r, ok, now)
 				ui.ButtonBase(c).Role(ui.RoleLink).Label(summary).MaxWidth(resultWidth).Background(ui.Transparent).Tooltip(summary).Children(func() { ui.Text(c, summary).SingleLine().Ellipsis("…").Underline().FontSize(16).TextColor(mark) }).OnClick(func() { a.openDestinationLog(id, did) })
-				porcelainIcon(c, "♢", a.tr("编辑目标")+" "+d.Name).Border(0, ui.Transparent).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did) })
-				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")+" "+d.Name).Border(0, ui.Transparent).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did); a.confirmRemoveManualTarget() })
+				porcelainIcon(c, "♢", a.tr("编辑目标")+" "+d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did) })
+				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")+" "+d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did); a.confirmRemoveManualTarget() })
 			})
 
 		}
