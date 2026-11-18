@@ -1,0 +1,262 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/syncengine"
+	"syncmaid/internal/taskconfig"
+)
+
+type batchPhase uint8
+
+const (
+	batchIdle batchPhase = iota
+	batchServing
+)
+
+// UI-owned order fixed at the user's click; no parallel executor or retries.
+type manualBatch struct {
+	phase   batchPhase
+	pending []taskconfig.ID
+}
+
+func (b *manualBatch) clear() { b.phase = batchIdle; b.pending = nil }
+func (b *manualBatch) begin(ids []taskconfig.ID) {
+	b.phase = batchServing
+	b.pending = append([]taskconfig.ID(nil), ids...)
+}
+func (b *manualBatch) next() (taskconfig.ID, bool) {
+	if b.phase != batchServing || len(b.pending) == 0 {
+		return "", false
+	}
+	id := b.pending[0]
+	b.pending = b.pending[1:]
+	return id, true
+}
+
+func (a *application) startBatch() {
+	if !a.cardActionAllowed() || a.hasModalOpen() || a.manual.quitPending {
+		return
+	}
+	a.batch.begin(taskIDs(a.tasks.Tasks))
+	a.advanceBatch()
+}
+func (a *application) advanceBatch() { a.advanceBatchUsing(a.startTaskRun) }
+func (a *application) advanceBatchUsing(start func(taskconfig.ID, string, syncengine.ManualTaskRequest, bool)) {
+	if a.batch.phase != batchServing || a.manual.busy() || a.hasModalOpen() {
+		return
+	}
+	if a.manual.quitPending || a.manual.dirty || a.taskError != nil || a.tasks == nil {
+		a.batch.clear()
+		return
+	}
+	for {
+		id, ok := a.batch.next()
+		if !ok {
+			a.batch.clear()
+			a.drainWatches()
+			return
+		}
+		t, err := a.tasks.Find(id)
+		if err == nil {
+			q, e := a.tasks.Request(t)
+			err = e
+			if err == nil {
+				a.selectManual(id)
+				if len(q.Destinations) == 0 {
+					a.startTaskRun(id, t.Name, q, false)
+					continue
+				}
+				start(id, t.Name, q, false)
+				return
+			}
+		}
+		if a.results == nil {
+			a.results = map[taskconfig.ID]savedTaskResult{}
+		}
+		goals := syncengine.MultipleResult{}
+		for _, d := range t.Destinations {
+			goals[d.ID] = syncengine.DestinationResult{ID: d.ID, Name: d.Name, State: syncengine.DestinationFailed, Error: err.Error()}
+		}
+		a.results[id] = savedTaskResult{outcome: "failed", message: messagef("准备失败，任务未执行: %s", err.Error()), destinations: goals}
+	}
+}
+
+func (a *application) setDestinationMode(strategy taskconfig.Strategy, mode taskconfig.DeleteMode) {
+	if !a.targetEditAllowed() || syncengine.ManualKind(a.manual.kind) == taskconfig.Moving {
+		return
+	}
+	for i := range a.manual.targets {
+		d := &a.manual.targets[i]
+		if d.ID != a.manual.targetID {
+			continue
+		}
+		if strategy == taskconfig.Mirror && !syncengine.IsAllFileRules(d.Filters) {
+			a.manual.message = messagef("请先将此目标过滤设为全部文件，再选择Mirror。")
+			return
+		}
+		d.Strategy = strategy
+		d.DeleteMode = mode
+		a.manual.edited()
+		return
+	}
+}
+func (a *application) destinationModeView(c *ui.Context, locked bool) {
+	for _, d := range a.manual.targets {
+		if d.ID == a.manual.targetID {
+			ui.Text(c, a.tr("同步策略"))
+			porcelainChoice(c, "sync", a.tr("镜像"), a.tr("复制新增和更改的文件；多余文件须每次确认后移除。"), syncengine.DestinationStrategy(d) == taskconfig.Mirror, locked, func() { a.setDestinationMode(taskconfig.Mirror, syncengine.DestinationDeleteMode(d)) })
+			porcelainChoice(c, "＋", a.tr("仅添加"), a.tr("复制新增和更改的文件；从不删除目标中的文件。"), syncengine.DestinationStrategy(d) == taskconfig.AddOnly, locked, func() { a.setDestinationMode(taskconfig.AddOnly, syncengine.DestinationDeleteMode(d)) })
+			if syncengine.DestinationStrategy(d) == taskconfig.Mirror {
+				ui.Text(c, a.tr("Mirror同步全部文件；每次移除多余文件前须确认。空源禁止删除，不清理空目录。"))
+				ui.Row(c).Gap(8).Children(func() {
+					ui.Button(c, a.tr("回收站")).Selected(syncengine.DestinationDeleteMode(d) == taskconfig.Recycle).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Recycle) })
+					ui.Button(c, a.tr("永久删除")).Selected(syncengine.DestinationDeleteMode(d) == taskconfig.Permanent).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Permanent) })
+				})
+				return
+			}
+		}
+	}
+}
+func (a *application) confirmMirror(ctx context.Context, p syncengine.MirrorPreview) error {
+	reply := make(chan error, 1)
+	a.window.Update(func() {
+		if ctx.Err() == nil {
+			a.lifecycle.show()
+			a.manual.mirrorPreview = &p
+			a.manual.mirrorReply = reply
+		}
+	})
+	defer a.window.Update(func() {
+		if a.manual.mirrorReply == reply {
+			a.manual.mirrorPreview = nil
+			a.manual.mirrorReply = nil
+		}
+	})
+	select {
+	case e := <-reply:
+		return e
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func (a *application) answerMirror(accept bool) {
+	s := &a.manual
+	if s.mirrorReply == nil {
+		return
+	}
+	var e error
+	if !accept {
+		e = syncengine.ErrMirrorDeclined
+	}
+	select {
+	case s.mirrorReply <- e:
+	default:
+	}
+	s.mirrorPreview = nil
+	s.mirrorReply = nil
+}
+func (a *application) mirrorPreviewView(c *ui.Context) {
+	p := a.manual.mirrorPreview
+	if p == nil {
+		return
+	}
+	action := a.tr("移至回收站")
+	if p.Mode == taskconfig.Permanent {
+		action = a.tr("永久删除（不可撤销）")
+	}
+	ui.Text(c, fmt.Sprintf(a.tr("确认本次Mirror：%s · %s · %d个文件"), p.Name, action, len(p.Paths))).Bold()
+	ui.Text(c, p.Target)
+	ui.Scroll(c).Height(150).Children(func() {
+		ui.Column(c).Children(func() {
+			for _, path := range p.Paths {
+				ui.Text(c, path)
+			}
+		})
+	})
+	ui.Row(c).Gap(8).Children(func() {
+		ui.Button(c, a.tr("取消本次移除")).OnClick(func() { a.answerMirror(false) })
+		ui.Button(c, a.tr("确认本次移除")).OnClick(func() { a.answerMirror(true) })
+	})
+}
+
+func (a *application) selectedMirror() bool {
+	for _, d := range a.manual.targets {
+		if d.ID == a.manual.targetID {
+			return syncengine.DestinationStrategy(d) == taskconfig.Mirror
+		}
+	}
+	return false
+}
+
+func (a *application) setManualKind(kind taskconfig.TaskKind) {
+	s := &a.manual
+	if !a.targetEditAllowed() || len(s.targets) != 0 || syncengine.ManualKind(s.kind) == kind {
+		return
+	}
+	s.kind = kind
+	s.edited()
+}
+func (a *application) manualKindView(c *ui.Context, locked bool) {
+	s := &a.manual
+	ui.Text(c, a.tr("此任务做什么"))
+	for _, kind := range []taskconfig.TaskKind{taskconfig.Sync, taskconfig.Moving} {
+		key, description := "同步", "把源复制到各个目标，源保持原样。每个目标各自挑选文件。"
+		if kind == taskconfig.Moving {
+			key = "移动"
+			description = "把源里的文件分拣走：每个文件进入第一条匹配它的规则，并从源中移除。"
+		}
+		glyph := "sync"
+		if kind == taskconfig.Moving {
+			glyph = "move"
+		}
+		porcelainChoice(c, glyph, a.tr(key), a.tr(description), syncengine.ManualKind(s.kind) == kind, locked || len(s.targets) != 0, func() { a.setManualKind(kind) }).MinHeight(94)
+	}
+	if syncengine.ManualKind(s.kind) == taskconfig.Moving {
+		ui.Text(c, a.tr("首个匹配目标拥有文件；不覆盖目标，失败不转投后续目标。已保存任务不能切换类型。"))
+	}
+}
+func (a *application) setMoveFlatten(flatten bool) {
+	if !a.targetEditAllowed() || syncengine.ManualKind(a.manual.kind) != taskconfig.Moving {
+		return
+	}
+	for i := range a.manual.targets {
+		if a.manual.targets[i].ID == a.manual.targetID {
+			a.manual.targets[i].Flatten = flatten
+			a.manual.edited()
+			return
+		}
+	}
+}
+func (a *application) moveOptionsView(c *ui.Context, locked bool) {
+	for _, d := range a.manual.targets {
+		if d.ID == a.manual.targetID {
+			ui.Text(c, a.tr("Move冲突处理：保留源，或在扩展名前加编号；都不覆盖已有文件。"))
+			ui.Row(c).Gap(8).Children(func() {
+				ui.Button(c, a.tr("保留源")).Selected(d.Collision == "" || d.Collision == taskconfig.Skip).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Skip) })
+				ui.Button(c, a.tr("加编号")).Selected(d.Collision == taskconfig.Suffix).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Suffix) })
+			})
+			ui.Row(c).Gap(8).Children(func() {
+				ui.Button(c, a.tr("保留目录结构")).Selected(!d.Flatten).Disabled(locked).OnClick(func() { a.setMoveFlatten(false) })
+				ui.Button(c, a.tr("平铺到目标根目录")).Selected(d.Flatten).Disabled(locked).OnClick(func() { a.setMoveFlatten(true) })
+			})
+		}
+	}
+}
+
+func (a *application) setMoveCollision(policy taskconfig.CollisionPolicy) {
+	if !a.targetEditAllowed() || syncengine.ManualKind(a.manual.kind) != taskconfig.Moving {
+		return
+	}
+	if policy != taskconfig.Skip && policy != taskconfig.Suffix {
+		return
+	}
+	for i := range a.manual.targets {
+		if a.manual.targets[i].ID == a.manual.targetID {
+			a.manual.targets[i].Collision = policy
+			a.manual.edited()
+			return
+		}
+	}
+}
