@@ -80,7 +80,7 @@ func (a *application) reloadTasks() {
 	id := s.id
 	s.phase = manualLoading
 	s.message = messagef("正在载入 Go 专用任务文件…")
-	data := a.installation.data
+	data := a.installation.Data
 	go func() {
 		library, err := loadSavedTasks(data)
 		history := loadRunHistory(data)

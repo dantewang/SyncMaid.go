@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/sys/windows"
 	"syncmaid/internal/taskconfig"
+	"syncmaid/internal/winutil"
 )
 
 // Compare current object identities, not path spellings. Only peers in the
@@ -27,16 +28,16 @@ func validateCrossTaskPaths(ctx context.Context, current taskconfig.ID, q manual
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			d, err := openDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
+			d, err := winutil.OpenDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
 			if err != nil {
 				if len(keys) == 0 && errors.Is(err, os.ErrNotExist) {
 					return nil, nil
 				}
 				return nil, err
 			}
-			keys = append(keys, d.key)
-			parent := filepath.Dir(d.path)
-			done := parent == d.path
+			keys = append(keys, d.Key)
+			parent := filepath.Dir(d.Path)
+			done := parent == d.Path
 			if err = d.Close(); err != nil {
 				return nil, err
 			}

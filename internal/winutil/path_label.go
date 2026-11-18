@@ -1,12 +1,12 @@
-package main
+package winutil
 
 import "strings"
 
-// pathLabel is a human-facing label, NEVER an operation-path
+// PathLabel is a human-facing label, NEVER an operation-path
 // normalizer. Extended paths can have semantics (length, trailing dots/spaces)
 // that ordinary Win32 callers do not preserve. Keep the original for I/O.
 // Unknown device namespaces are left intact rather than guessed.
-func pathLabel(native string) string {
+func PathLabel(native string) string {
 	if strings.HasPrefix(strings.ToUpper(native), `\\?\UNC\`) {
 		return `\\` + native[len(`\\?\UNC\`):]
 	}

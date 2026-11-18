@@ -1,5 +1,7 @@
 package main
 
+import "syncmaid/internal/winutil"
+
 func (a *application) closeWindow() {
 	a.sourcePreview.invalidate()
 	a.answerMirror(false)
@@ -9,14 +11,14 @@ func (a *application) closeWindow() {
 	}
 	a.requestQuit()
 }
-func (a *application) changeCommon(value commonSettings) {
+func (a *application) changeCommon(value winutil.CommonSettings) {
 	if a.commonBusy || a.common == nil || a.commonError != nil {
 		return
 	}
 	a.commonBusy = true
 	store := a.common
 	go func() {
-		err := store.save(value)
+		err := store.Save(value)
 		a.window.Update(func() {
 			a.commonBusy = false
 			a.commonError = err
@@ -32,29 +34,29 @@ func (a *application) reloadCommon() {
 		return
 	}
 	a.commonBusy = true
-	data := a.installation.data
+	data := a.installation.Data
 	go func() {
-		s := loadCommonSettings(data)
+		s := winutil.LoadCommonSettings(data)
 		a.window.Update(func() {
 			a.commonBusy = false
 			a.common = s
-			a.commonError = s.err
-			if s.err == nil {
-				a.commonValue = s.value
+			a.commonError = s.Err
+			if s.Err == nil {
+				a.commonValue = s.Value
 			}
 			a.finishAsyncStep(false)
 		})
 	}()
 }
 func (a *application) setStartup(enabled bool) {
-	if a.commonBusy || a.startupEntry.name == "" {
+	if a.commonBusy || a.startupEntry.Name == "" {
 		return
 	}
 	a.commonBusy = true
 	entry := a.startupEntry
 	go func() {
-		err := entry.set(enabled)
-		status, readErr := entry.status()
+		err := entry.Set(enabled)
+		status, readErr := entry.Status()
 		a.window.Update(func() {
 			a.commonBusy = false
 			a.startupStatus = status

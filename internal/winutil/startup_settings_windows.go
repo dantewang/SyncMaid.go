@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"errors"
@@ -13,76 +13,76 @@ import (
 const startupRunKey = `Software\Microsoft\Windows\CurrentVersion\Run`
 const startupApprovedKey = `Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`
 
-type startupEntry struct{ name, command string }
-type startupStatus string
+type StartupEntry struct{ Name, Command string }
+type StartupStatus string
 
 const (
-	startupAbsent     startupStatus = "未登记"
-	startupRegistered startupStatus = "已登记"
-	startupDisabled   startupStatus = "已登记，但被系统禁用"
-	startupUnknown    startupStatus = "已登记，系统批准状态未知"
-	startupForeign    startupStatus = "同名启动项命令不同，未修改"
+	StartupAbsent     StartupStatus = "未登记"
+	StartupRegistered StartupStatus = "已登记"
+	StartupDisabled   StartupStatus = "已登记，但被系统禁用"
+	StartupUnknown    StartupStatus = "已登记，系统批准状态未知"
+	StartupForeign    StartupStatus = "同名启动项命令不同，未修改"
 )
 
-func currentStartupEntry(i installation) (startupEntry, error) {
+func CurrentStartupEntry(i Installation) (StartupEntry, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return startupEntry{}, err
+		return StartupEntry{}, err
 	}
 	exe, err = filepath.EvalSymlinks(exe)
 	if err != nil {
-		return startupEntry{}, err
+		return StartupEntry{}, err
 	}
-	return startupEntry{name: "SyncMaid.Go." + strings.TrimPrefix(i.key, "SyncMaid-"), command: `"` + exe + `"`}, nil
+	return StartupEntry{Name: "SyncMaid.Go." + strings.TrimPrefix(i.Key, "SyncMaid-"), Command: `"` + exe + `"`}, nil
 }
-func (e startupEntry) commandValue() (string, error) {
+func (e StartupEntry) commandValue() (string, error) {
 	k, err := registry.OpenKey(registry.CURRENT_USER, startupRunKey, registry.QUERY_VALUE)
 	if err != nil {
 		return "", err
 	}
 	defer k.Close()
-	value, _, err := k.GetStringValue(e.name)
+	value, _, err := k.GetStringValue(e.Name)
 	return value, err
 }
-func (e startupEntry) status() (startupStatus, error) {
+func (e StartupEntry) Status() (StartupStatus, error) {
 	command, err := e.commandValue()
 	if errors.Is(err, registry.ErrNotExist) {
-		return startupAbsent, nil
+		return StartupAbsent, nil
 	}
 	if err != nil {
 		return "", err
 	}
-	if !strings.EqualFold(command, e.command) {
-		return startupForeign, nil
+	if !strings.EqualFold(command, e.Command) {
+		return StartupForeign, nil
 	}
 	k, err := registry.OpenKey(registry.CURRENT_USER, startupApprovedKey, registry.QUERY_VALUE)
 	if errors.Is(err, registry.ErrNotExist) {
-		return startupRegistered, nil
+		return StartupRegistered, nil
 	}
 	if err != nil {
-		return startupUnknown, err
+		return StartupUnknown, err
 	}
 	defer k.Close()
-	b, _, err := k.GetBinaryValue(e.name)
+	b, _, err := k.GetBinaryValue(e.Name)
 	if errors.Is(err, registry.ErrNotExist) {
-		return startupRegistered, nil
+		return StartupRegistered, nil
 	}
 	if err != nil {
-		return startupUnknown, err
+		return StartupUnknown, err
 	}
 	if len(b) < 12 {
-		return startupUnknown, nil
+		return StartupUnknown, nil
 	}
 	switch b[0] {
 	case 2:
-		return startupRegistered, nil
+		return StartupRegistered, nil
 	case 3:
-		return startupDisabled, nil
+		return StartupDisabled, nil
 	default:
-		return startupUnknown, nil
+		return StartupUnknown, nil
 	}
 }
-func (e startupEntry) set(enabled bool) error {
+func (e StartupEntry) Set(enabled bool) error {
 	if !enabled {
 		k, err := registry.OpenKey(registry.CURRENT_USER, startupRunKey, registry.QUERY_VALUE|registry.SET_VALUE)
 		if errors.Is(err, registry.ErrNotExist) {
@@ -92,17 +92,17 @@ func (e startupEntry) set(enabled bool) error {
 			return err
 		}
 		defer k.Close()
-		actual, _, readErr := k.GetStringValue(e.name)
+		actual, _, readErr := k.GetStringValue(e.Name)
 		if errors.Is(readErr, registry.ErrNotExist) {
 			return nil
 		}
 		if readErr != nil {
 			return readErr
 		}
-		if !strings.EqualFold(actual, e.command) {
-			return fmt.Errorf("%s", startupForeign)
+		if !strings.EqualFold(actual, e.Command) {
+			return fmt.Errorf("%s", StartupForeign)
 		}
-		err = k.DeleteValue(e.name)
+		err = k.DeleteValue(e.Name)
 		if errors.Is(err, registry.ErrNotExist) {
 			return nil
 		}
@@ -114,12 +114,12 @@ func (e startupEntry) set(enabled bool) error {
 	}
 	defer k.Close()
 	// Recheck after acquiring the key; this is not a registry transaction/CAS.
-	actual, _, readErr := k.GetStringValue(e.name)
+	actual, _, readErr := k.GetStringValue(e.Name)
 	if readErr != nil && !errors.Is(readErr, registry.ErrNotExist) {
 		return readErr
 	}
-	if readErr == nil && !strings.EqualFold(actual, e.command) {
-		return fmt.Errorf("%s", startupForeign)
+	if readErr == nil && !strings.EqualFold(actual, e.Command) {
+		return fmt.Errorf("%s", StartupForeign)
 	}
-	return k.SetStringValue(e.name, e.command)
+	return k.SetStringValue(e.Name, e.Command)
 }

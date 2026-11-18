@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/windows"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
+	"syncmaid/internal/winutil"
 )
 
 type mirrorStamp struct {
@@ -76,11 +77,11 @@ func mirrorFileStamp(f *os.File, fat bool) (s mirrorStamp, err error) {
 // restoreMirrorDirectories creates missing source directories and preserves their
 // timestamps after file publication and any confirmed removal. Extra folders
 // are left alone; this never turns a file-only approval into folder deletion.
-func restoreMirrorDirectories(ctx context.Context, root *directoryObject, dirs []fileinventory.Directory) error {
+func restoreMirrorDirectories(ctx context.Context, root *winutil.DirectoryObject, dirs []fileinventory.Directory) error {
 	for i := len(dirs) - 1; i >= 0; i-- {
 		d := dirs[i]
 		if err := protectedTransferIO(ctx, func() error {
-			return restoreMirrorDirectory(ctx, root.handle, d)
+			return restoreMirrorDirectory(ctx, root.Handle, d)
 		}); err != nil {
 			return fmt.Errorf("恢复目标目录 %s: %w", d.Path, err)
 		}
@@ -167,21 +168,21 @@ func collectMirrorCandidates(ctx context.Context, roots *transferRoots, targetFi
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-		exists, e := mirrorSourceExists(roots.source.handle, entry.Path)
+		exists, e := mirrorSourceExists(roots.source.Handle, entry.Path)
 		if e != nil {
 			return nil, nil, e
 		}
 		if exists {
 			continue
 		}
-		f, close, e := openMirrorFile(roots.target.handle, entry.Path, windows.GENERIC_READ)
+		f, close, e := openMirrorFile(roots.target.Handle, entry.Path, windows.GENERIC_READ)
 		if e != nil {
 			if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) {
 				return nil, nil, errMirrorChanged
 			}
 			return nil, nil, e
 		}
-		stamp, e := mirrorFileStamp(f, roots.target.fat)
+		stamp, e := mirrorFileStamp(f, roots.target.Fat)
 		e = errors.Join(e, close())
 		if e != nil {
 			return nil, nil, e
@@ -195,18 +196,18 @@ func collectMirrorCandidates(ctx context.Context, roots *transferRoots, targetFi
 	return paths, stamps, nil
 }
 func removeMirrorCandidate(ctx context.Context, roots *transferRoots, rel string, expected mirrorStamp, mode taskconfig.DeleteMode, recycle func(string) error) error {
-	exists, e := mirrorSourceExists(roots.source.handle, rel)
+	exists, e := mirrorSourceExists(roots.source.Handle, rel)
 	if e != nil {
 		return e
 	}
 	if exists {
 		return errMirrorChanged
 	}
-	f, close, e := openMirrorFile(roots.target.handle, rel, windows.GENERIC_READ|windows.DELETE)
+	f, close, e := openMirrorFile(roots.target.Handle, rel, windows.GENERIC_READ|windows.DELETE)
 	if e != nil {
 		return e
 	}
-	stamp, e := mirrorFileStamp(f, roots.target.fat)
+	stamp, e := mirrorFileStamp(f, roots.target.Fat)
 	if e == nil && stamp != expected {
 		e = errMirrorChanged
 	}
@@ -226,7 +227,7 @@ func removeMirrorCandidate(ctx context.Context, roots *transferRoots, rel string
 			return e
 		}
 		f = nil
-		return recycle(filepath.Join(roots.target.path, filepath.FromSlash(rel)))
+		return recycle(filepath.Join(roots.target.Path, filepath.FromSlash(rel)))
 	})
 	e = errors.Join(e, close())
 	return e

@@ -13,6 +13,7 @@ import (
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
+	"syncmaid/internal/winutil"
 )
 
 // manualRequest is a session task, deliberately separate from persisted legacy tasks.
@@ -28,8 +29,8 @@ type transferProgress struct {
 }
 
 type transferRoots struct {
-	source, target *directoryObject
-	ancestors      []*directoryObject
+	source, target *winutil.DirectoryObject
+	ancestors      []*winutil.DirectoryObject
 	ownsSource     bool
 	targetWritable bool
 }
@@ -58,14 +59,14 @@ func (r *transferRoots) ensureWritableTarget(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	next, err := openDirectoryAccess(r.target.path, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE)
+	next, err := winutil.OpenDirectoryAccess(r.target.Path, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE)
 	if err != nil {
 		return fmt.Errorf("目标文件夹: %w", err)
 	}
-	if err := ordinaryDirectory(next.handle); err != nil {
+	if err := ordinaryDirectory(next.Handle); err != nil {
 		return errors.Join(err, closeProtected(ctx, next))
 	}
-	if next.key != r.target.key {
+	if next.Key != r.target.Key {
 		return errors.Join(fmt.Errorf("%w: 目标目录句柄已变化", errTransferOverlap), closeProtected(ctx, next))
 	}
 	old := r.target
@@ -81,19 +82,19 @@ func openTransferRoots(ctx context.Context, q manualRequest) (roots *transferRoo
 
 var errTransferOverlap = errors.New("源与同步目标不可重叠")
 
-func openAncestors(ctx context.Context, rootPath string, againstKey string) ([]*directoryObject, error) {
-	var ancestors []*directoryObject
+func openAncestors(ctx context.Context, rootPath string, againstKey string) ([]*winutil.DirectoryObject, error) {
+	var ancestors []*winutil.DirectoryObject
 	for child := rootPath; filepath.Dir(child) != child; {
 		path := filepath.Dir(child)
 		if err := ctx.Err(); err != nil {
 			return ancestors, err
 		}
-		parent, err := openDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
+		parent, err := winutil.OpenDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
 		if err != nil {
 			return ancestors, err
 		}
 		ancestors = append(ancestors, parent)
-		if againstKey != "" && parent.key == againstKey {
+		if againstKey != "" && parent.Key == againstKey {
 			return ancestors, fmt.Errorf("%w: 源与目标互相包含（包括目录别名）", errTransferOverlap)
 		}
 		child = path
@@ -101,7 +102,7 @@ func openAncestors(ctx context.Context, rootPath string, againstKey string) ([]*
 	return ancestors, nil
 }
 
-func openDestinationRoots(ctx context.Context, source *directoryObject, sourceAncestors []*directoryObject, targetPath string, targetAccess uint32) (roots *transferRoots, err error) {
+func openDestinationRoots(ctx context.Context, source *winutil.DirectoryObject, sourceAncestors []*winutil.DirectoryObject, targetPath string, targetAccess uint32) (roots *transferRoots, err error) {
 	if strings.TrimSpace(targetPath) == "" {
 		return nil, errors.New("目标文件夹未填写，请在目标编辑中浏览选择现有文件夹")
 	}
@@ -117,21 +118,21 @@ func openDestinationRoots(ctx context.Context, source *directoryObject, sourceAn
 			err = errors.Join(err, r.close(ctx))
 		}
 	}()
-	if r.target, err = openDirectoryAccess(targetPath, targetAccess); err != nil {
+	if r.target, err = winutil.OpenDirectoryAccess(targetPath, targetAccess); err != nil {
 		return nil, fmt.Errorf("目标文件夹: %w", err)
 	}
-	if err = ordinaryDirectory(r.target.handle); err != nil {
+	if err = ordinaryDirectory(r.target.Handle); err != nil {
 		return nil, err
 	}
-	if r.source.key == r.target.key {
+	if r.source.Key == r.target.Key {
 		return nil, fmt.Errorf("%w: 源与目标指向同一文件夹", errTransferOverlap)
 	}
 	for _, parent := range sourceAncestors {
-		if parent.key == r.target.key {
+		if parent.Key == r.target.Key {
 			return nil, fmt.Errorf("%w: 源与目标互相包含（包括目录别名）", errTransferOverlap)
 		}
 	}
-	r.ancestors, err = openAncestors(ctx, r.target.path, r.source.key)
+	r.ancestors, err = openAncestors(ctx, r.target.Path, r.source.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -148,13 +149,13 @@ func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess 
 			err = errors.Join(err, r.close(ctx))
 		}
 	}()
-	if r.source, err = openDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {
+	if r.source, err = winutil.OpenDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {
 		return nil, fmt.Errorf("源文件夹: %w", err)
 	}
-	if err = ordinaryDirectory(r.source.handle); err != nil {
+	if err = ordinaryDirectory(r.source.Handle); err != nil {
 		return nil, err
 	}
-	sourceAncestors, err := openAncestors(ctx, r.source.path, "")
+	sourceAncestors, err := openAncestors(ctx, r.source.Path, "")
 	defer func() {
 		for _, d := range sourceAncestors {
 			if closeErr := closeProtected(ctx, d); closeErr != nil && err == nil {
@@ -219,7 +220,7 @@ func runManualWithSession(ctx context.Context, q manualRequest, r *transferRoots
 	if inventory == nil {
 		p.Stage = "扫描源文件夹"
 		update()
-		inventory, err = fileinventory.Scan(ctx, r.source.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+		inventory, err = fileinventory.Scan(ctx, r.source.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 		if err != nil {
 			return p, err
 		} // No destination mutation before a complete source scan.
@@ -309,7 +310,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 		}
 		return parent, nil
 	}
-	sp, e := openParents(roots.source.handle, false, parts)
+	sp, e := openParents(roots.source.Handle, false, parts)
 	if e != nil {
 		return false, e
 	}
@@ -333,7 +334,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 		return false, errors.New("源文件已在扫描后改变，请重新运行")
 	}
 	if expected != nil {
-		actual, e := mirrorFileStamp(source, roots.source.fat)
+		actual, e := mirrorFileStamp(source, roots.source.Fat)
 		if e != nil {
 			return false, e
 		}
@@ -346,7 +347,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 		return false, errors.New("非法目标相对路径")
 	}
 	name = targetParts[len(targetParts)-1]
-	dp, e := openParents(roots.target.handle, true, targetParts)
+	dp, e := openParents(roots.target.Handle, true, targetParts)
 	if e != nil {
 		return false, e
 	}
@@ -422,7 +423,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 		copied = publication == transferPublished
 	}
 	if e == nil && copied && expected != nil {
-		e = deleteVerifiedSource(ctx, source, *expected, roots.source.fat, ops.sourceDelete)
+		e = deleteVerifiedSource(ctx, source, *expected, roots.source.Fat, ops.sourceDelete)
 	}
 	return copied, e
 }

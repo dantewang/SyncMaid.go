@@ -6,13 +6,14 @@ import (
 	"slices"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
+	"syncmaid/internal/winutil"
 	"time"
 
 	"golang.org/x/sys/windows"
 )
 
-func scanMoveFiles(ctx context.Context, root *directoryObject) ([]fileinventory.File, map[string]mirrorStamp, error) {
-	inventory, err := fileinventory.Scan(ctx, root.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+func scanMoveFiles(ctx context.Context, root *winutil.DirectoryObject) ([]fileinventory.File, map[string]mirrorStamp, error) {
+	inventory, err := fileinventory.Scan(ctx, root.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -21,11 +22,11 @@ func scanMoveFiles(ctx context.Context, root *directoryObject) ([]fileinventory.
 		if err = ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-		f, close, e := openMirrorFile(root.handle, entry.Path, windows.GENERIC_READ)
+		f, close, e := openMirrorFile(root.Handle, entry.Path, windows.GENERIC_READ)
 		if e != nil {
 			return nil, nil, e
 		}
-		stamp, e := mirrorFileStamp(f, root.fat)
+		stamp, e := mirrorFileStamp(f, root.Fat)
 		e = errors.Join(e, close())
 		if e != nil {
 			return nil, nil, e

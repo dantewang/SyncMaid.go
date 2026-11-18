@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"os"
@@ -18,7 +18,7 @@ func TestPathLabelNamespaces(t *testing.T) {
 		`\\.\device`:                `\\.\device`,
 		`\\?\C:relative`:            `\\?\C:relative`,
 	} {
-		if got := pathLabel(input); got != want {
+		if got := PathLabel(input); got != want {
 			t.Errorf("%q => %q want %q", input, got, want)
 		}
 	}
@@ -26,21 +26,21 @@ func TestPathLabelNamespaces(t *testing.T) {
 
 func TestPathRepresentationPreservesDirectoryIdentity(t *testing.T) {
 	path := t.TempDir()
-	d, err := openDirectory(path)
+	d, err := OpenDirectory(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	label := pathLabel(d.path)
+	label := PathLabel(d.Path)
 	if strings.HasPrefix(label, `\\?\`) {
 		t.Fatal("ordinary DOS label leaked prefix")
 	}
-	again, err := openDirectory(label)
+	again, err := OpenDirectory(label)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer again.Close()
-	if d.key != again.key {
+	if d.Key != again.Key {
 		t.Fatal("presentation conversion changed object identity")
 	}
 }
@@ -54,15 +54,15 @@ func TestLongNativeOperationPathIsPreserved(t *testing.T) {
 	if err := os.MkdirAll(native, 0700); err != nil {
 		t.Fatal(err)
 	}
-	d, err := openDirectory(native)
+	d, err := OpenDirectory(native)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	if !strings.HasPrefix(d.path, `\\?\`) || len(pathLabel(d.path)) < 260 {
+	if !strings.HasPrefix(d.Path, `\\?\`) || len(PathLabel(d.Path)) < 260 {
 		t.Fatal("long path lost its native form")
 	}
-	file := filepath.Join(d.path, "operation-check")
+	file := filepath.Join(d.Path, "operation-check")
 	if err := os.WriteFile(file, []byte("ok"), 0600); err != nil {
 		t.Fatal(err)
 	}

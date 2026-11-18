@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/winutil"
 )
 
 //go:embed mygo.json
@@ -58,13 +59,13 @@ func (a *application) settingsView(c *ui.Context) {
 			porcelainSection(c, a.tr("存储"), func() {
 				porcelainSettingRow(c, a.tr("数据目录"), func() {
 					porcelainButton(c, a.tr("打开数据目录")).OnClick(func() {
-						a.openDataError = openShellPath(a.installation.data)
+						a.openDataError = openShellPath(a.installation.Data)
 					})
 				})
 				if a.openDataError != nil {
 					ui.Text(c, a.tr("无法打开数据目录：%s", a.openDataError.Error())).TextColor(porcelain.Danger)
 				}
-				porcelainPath(c, pathLabel(a.installation.data))
+				porcelainPath(c, winutil.PathLabel(a.installation.Data))
 				porcelainButton(c, a.tr("打开旧版设置或记录")).Disabled(a.commonBusy || a.manual.busy() || a.languageBusy).OnClick(a.openLegacyData)
 				if a.legacyDataError != nil {
 					ui.Text(c, a.tr("无法打开旧版设置或记录：%s", a.legacyDataError.Error())).TextColor(porcelain.Danger)
@@ -89,8 +90,8 @@ func (a *application) commonSettingsView(c *ui.Context) {
 	locked := a.commonBusy || a.common == nil || a.commonError != nil
 	porcelainSection(c, a.tr("启动"), func() {
 		porcelainSettingRow(c, a.tr("开机自启：")+a.tr(string(a.startupStatus)), func() {
-			enabled := a.startupStatus == startupRegistered || a.startupStatus == startupDisabled || a.startupStatus == startupUnknown
-			disabled := a.commonBusy || a.startupError != nil || a.startupEntry.name == "" || a.startupStatus == startupDisabled || a.startupStatus == startupForeign
+			enabled := a.startupStatus == winutil.StartupRegistered || a.startupStatus == winutil.StartupDisabled || a.startupStatus == winutil.StartupUnknown
+			disabled := a.commonBusy || a.startupError != nil || a.startupEntry.Name == "" || a.startupStatus == winutil.StartupDisabled || a.startupStatus == winutil.StartupForeign
 			porcelainBoundSwitch(c, enabled, a.tr("开机自启："), disabled, a.setStartup)
 		})
 		if a.startupError != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
+	"syncmaid/internal/winutil"
 )
 
 var errMirrorDeclined = errors.New("未确认本次删除；多余文件保持不变")
@@ -73,7 +74,7 @@ func runMirrorSession(ctx context.Context, q manualRequest, d manualDestination,
 	}
 	if sourceInv == nil {
 		var scanErr error
-		sourceInv, scanErr = fileinventory.Scan(ctx, roots.source.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+		sourceInv, scanErr = fileinventory.Scan(ctx, roots.source.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 		if scanErr != nil {
 			return p, scanErr
 		}
@@ -83,7 +84,7 @@ func runMirrorSession(ctx context.Context, q manualRequest, d manualDestination,
 	}
 	// Scan target once before copy: an incomplete/unsupported target blocks before
 	// any copy, and its file list establishes pre-existing deletion candidates.
-	targetBefore, e := fileinventory.Scan(ctx, roots.target.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+	targetBefore, e := fileinventory.Scan(ctx, roots.target.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 	if e != nil {
 		return p, e
 	}
@@ -99,11 +100,11 @@ func runMirrorSession(ctx context.Context, q manualRequest, d manualDestination,
 	if e != nil {
 		return p, e
 	}
-	preview := mirrorPreview{DestinationID: d.ID, Name: d.Name, Target: pathLabel(roots.target.path), Mode: destinationDeleteMode(d), Paths: paths}
+	preview := mirrorPreview{DestinationID: d.ID, Name: d.Name, Target: winutil.PathLabel(roots.target.Path), Mode: destinationDeleteMode(d), Paths: paths}
 	if len(preview.Paths) == 0 {
 		return p, restoreMirrorDirectories(ctx, roots.target, sourceInv.Directories())
 	}
-	if preview.Mode == taskconfig.Recycle && (roots.target.network || roots.target.removable || roots.target.fat) {
+	if preview.Mode == taskconfig.Recycle && (roots.target.Network || roots.target.Removable || roots.target.Fat) {
 		return p, errors.New("此目标不支持回收确认；多余文件未移除。若需要，请明确选择永久删除后重新运行。")
 	}
 	p.Stage = "等待删除确认"
@@ -121,7 +122,7 @@ func runMirrorSession(ctx context.Context, q manualRequest, d manualDestination,
 	if e = ctx.Err(); e != nil {
 		return p, e
 	}
-	hasRegular, e := fileinventory.HasRegularFile(ctx, roots.source.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+	hasRegular, e := fileinventory.HasRegularFile(ctx, roots.source.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 	if e != nil {
 		return p, e
 	}

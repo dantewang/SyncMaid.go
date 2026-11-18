@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"crypto/sha256"
@@ -17,14 +17,14 @@ func activationPath(key string) string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("syncmaid-activate-%x.sock", sum[:12]))
 }
 
-type activationServer struct {
+type ActivationServer struct {
 	listener net.Listener
 	done     chan struct{}
 }
 
 var errInvalidActivationReceipt = errors.New("invalid activation receipt")
 
-func startActivation(key string, show func()) (*activationServer, error) {
+func StartActivation(key string, show func()) (*ActivationServer, error) {
 	path := activationPath(key)
 	// Only the exclusive Data owner may remove a stale activation endpoint.
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -34,7 +34,7 @@ func startActivation(key string, show func()) (*activationServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &activationServer{listener: listener, done: make(chan struct{})}
+	s := &ActivationServer{listener: listener, done: make(chan struct{})}
 	go func() {
 		defer close(s.done)
 		for {
@@ -59,20 +59,20 @@ func startActivation(key string, show func()) (*activationServer, error) {
 	return s, nil
 }
 
-func (s *activationServer) Close() error {
+func (s *ActivationServer) Close() error {
 	err := s.listener.Close()
 	<-s.done // One bounded in-flight read at most; no unbounded workers.
 	return err
 }
 
-func notifyInstallation(install installation) error {
-	d, err := openDirectory(install.data)
+func NotifyInstallation(install Installation) error {
+	d, err := OpenDirectory(install.Data)
 	if err != nil {
 		slog.Warn("activation-unavailable", "error", err)
-		return &locationError{path: install.data, cause: err}
+		return &LocationError{Path: install.Data, Cause: err}
 	}
 	defer d.Close()
-	conn, err := net.DialTimeout("unix", activationPath(d.key), time.Second)
+	conn, err := net.DialTimeout("unix", activationPath(d.Key), time.Second)
 	if err != nil {
 		slog.Warn("activation-unavailable", "error", err)
 		return err

@@ -5,6 +5,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"syncmaid/internal/taskstore"
+	"syncmaid/internal/winutil"
 )
 
 func (a *application) taskRecovery() (*taskstore.LoadError, bool) {
@@ -88,7 +89,7 @@ func (a *application) restoreTaskBackup(backup *taskstore.LoadError) {
 				a.results = nil
 			}
 			if recovered.PreservedPath != "" {
-				notice = messagef("%s 原文件：%s", notice, pathLabel(recovered.PreservedPath))
+				notice = messagef("%s 原文件：%s", notice, winutil.PathLabel(recovered.PreservedPath))
 			}
 			a.recoveryNotice = notice
 			a.manual.phase = manualDraft

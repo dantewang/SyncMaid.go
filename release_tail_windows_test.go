@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sys/windows"
 	"syncmaid/internal/taskconfig"
 	"syncmaid/internal/windowsfs"
+	"syncmaid/internal/winutil"
 )
 
 func TestReleaseTailNetworkPathClassification(t *testing.T) {
@@ -27,7 +28,7 @@ func TestReleaseTailNetworkPathClassification(t *testing.T) {
 func TestReleaseTailLegacyMutexBlocksBeforeConfigWrites(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "Data")
-	ptr, err := windows.UTF16PtrFromString(legacyMutexName(data))
+	ptr, err := windows.UTF16PtrFromString(winutil.LegacyMutexName(data))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,12 +36,12 @@ func TestReleaseTailLegacyMutexBlocksBeforeConfigWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = acquireOwnership(installation{directory: dir, data: data}); !errors.Is(err, errLegacyInstance) {
+	if _, err = winutil.AcquireOwnership(winutil.Installation{Directory: dir, Data: data}); !errors.Is(err, winutil.ErrLegacyInstance) {
 		windows.CloseHandle(legacy)
 		t.Fatalf("same Data accepted with old mutex: %v", err)
 	}
 	windows.CloseHandle(legacy)
-	goOwner, err := acquireOwnership(installation{directory: dir, data: data})
+	goOwner, err := winutil.AcquireOwnership(winutil.Installation{Directory: dir, Data: data})
 	if err != nil {
 		t.Fatal(err)
 	}

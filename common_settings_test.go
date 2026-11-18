@@ -5,27 +5,29 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"syncmaid/internal/winutil"
 )
 
 func TestCommonSettingsDefaultsRoundtripAndProtection(t *testing.T) {
 	data := t.TempDir()
-	s := loadCommonSettings(data)
-	if s.err != nil || s.value != (commonSettings{}) {
-		t.Fatal(s.err, s.value)
+	s := winutil.LoadCommonSettings(data)
+	if s.Err != nil || s.Value != (winutil.CommonSettings{}) {
+		t.Fatal(s.Err, s.Value)
 	}
-	want := commonSettings{true, true}
-	if err := s.save(want); err != nil {
+	want := winutil.CommonSettings{CloseToTray: true, StartMinimized: true}
+	if err := s.Save(want); err != nil {
 		t.Fatal(err)
 	}
-	s = loadCommonSettings(data)
-	if s.err != nil || s.value != want {
-		t.Fatal(s.err, s.value)
+	s = winutil.LoadCommonSettings(data)
+	if s.Err != nil || s.Value != want {
+		t.Fatal(s.Err, s.Value)
 	}
 	path := filepath.Join(data, "settings-go.json")
 	for _, bad := range []string{`null`, `{"CloseToTray":"yes"}`, `{"Language":"en"}`, `{bad`, `{} {}`} {
 		os.WriteFile(path, []byte(bad), 0600)
-		s = loadCommonSettings(data)
-		if s.err == nil || s.save(want) == nil {
+		s = winutil.LoadCommonSettings(data)
+		if s.Err == nil || s.Save(want) == nil {
 			t.Fatalf("accepted %s", bad)
 		}
 		b, _ := os.ReadFile(path)
@@ -34,9 +36,9 @@ func TestCommonSettingsDefaultsRoundtripAndProtection(t *testing.T) {
 		}
 	}
 	os.Remove(path)
-	s = loadCommonSettings(data)
+	s = winutil.LoadCommonSettings(data)
 	os.WriteFile(path, []byte(`{}`), 0600)
-	if s.save(want) == nil {
+	if s.Save(want) == nil {
 		t.Fatal("external creation overwritten")
 	}
 }
@@ -46,7 +48,7 @@ func TestCommonCloseAndBusyQuit(t *testing.T) {
 		quits := 0
 		canceled := false
 		reply := make(chan error, 1)
-		a := &application{commonValue: commonSettings{CloseToTray: hide}, manual: manualSession{phase: manualRunning, cancel: func() { canceled = true }, mirrorReply: reply, mirrorPreview: &mirrorPreview{}}}
+		a := &application{commonValue: winutil.CommonSettings{CloseToTray: hide}, manual: manualSession{phase: manualRunning, cancel: func() { canceled = true }, mirrorReply: reply, mirrorPreview: &mirrorPreview{}}}
 		a.lifecycle.ready(w, func() { quits++ }, nil)
 		a.closeWindow()
 		select {
@@ -70,7 +72,7 @@ func TestCommonCloseAndBusyQuit(t *testing.T) {
 			}
 		}
 	}
-	a := &application{commonValue: commonSettings{CloseToTray: true}, manual: manualSession{phase: manualReady}}
+	a := &application{commonValue: winutil.CommonSettings{CloseToTray: true}, manual: manualSession{phase: manualReady}}
 	w := &recordedWindow{}
 	quits := 0
 	a.lifecycle.ready(w, func() { quits++ }, nil)

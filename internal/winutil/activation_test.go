@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"net"
@@ -10,7 +10,7 @@ import (
 func TestActivationDeliveryAndServerCleanup(t *testing.T) {
 	key := t.TempDir()
 	shown := make(chan struct{}, 1)
-	s, err := startActivation(key, func() { shown <- struct{}{} })
+	s, err := StartActivation(key, func() { shown <- struct{}{} })
 	if err != nil {
 		t.Fatal(err)
 	}

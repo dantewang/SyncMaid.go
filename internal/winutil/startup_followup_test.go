@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"errors"
@@ -17,40 +17,40 @@ func TestOwnershipFailuresIdentifyActualDirectoryBoundary(t *testing.T) {
 	for _, stage := range []string{"install-open", "install-claim", "data-create", "data-claim"} {
 		t.Run(stage, func(t *testing.T) {
 			i := isolatedInstallation(t)
-			want := i.directory
+			want := i.Directory
 			switch stage {
 			case "install-open":
-				i.directory = filepath.Join(i.directory, "not-a-directory")
-				if err := os.WriteFile(i.directory, nil, 0600); err != nil {
+				i.Directory = filepath.Join(i.Directory, "not-a-directory")
+				if err := os.WriteFile(i.Directory, nil, 0600); err != nil {
 					t.Fatal(err)
 				}
-				want = i.directory
+				want = i.Directory
 			case "install-claim":
-				if err := os.Mkdir(filepath.Join(i.directory, ".syncmaid-owner.lock"), 0700); err != nil {
+				if err := os.Mkdir(filepath.Join(i.Directory, ".syncmaid-owner.lock"), 0700); err != nil {
 					t.Fatal(err)
 				}
 			case "data-create":
-				want = i.data
-				if err := os.WriteFile(i.data, nil, 0600); err != nil {
+				want = i.Data
+				if err := os.WriteFile(i.Data, nil, 0600); err != nil {
 					t.Fatal(err)
 				}
 			case "data-claim":
-				want = i.data
-				if err := os.MkdirAll(filepath.Join(i.data, ".syncmaid-owner.lock"), 0700); err != nil {
+				want = i.Data
+				if err := os.MkdirAll(filepath.Join(i.Data, ".syncmaid-owner.lock"), 0700); err != nil {
 					t.Fatal(err)
 				}
 			}
-			_, err := acquireOwnership(i)
-			var location *locationError
-			if err == nil || !errors.As(err, &location) || location.path != want || !errors.Is(err, location.cause) {
-				t.Fatalf("wrong location/cause: %v", err)
+			_, err := AcquireOwnership(i)
+			var location *LocationError
+			if err == nil || !errors.As(err, &location) || location.Path != want || !errors.Is(err, location.Cause) {
+				t.Fatalf("wrong location/Cause: %v", err)
 			}
-			problem := startupProblem(err, startupOwnership, i.data)
-			var failure *startupFailure
-			if !errors.As(problem, &failure) || failure.path != want {
+			problem := StartupProblem(err, StartupOwnership, i.Data)
+			var failure *StartupFailure
+			if !errors.As(problem, &failure) || failure.Path != want {
 				t.Fatalf("fallback overrode actual location: %v", problem)
 			}
-			if !strings.HasSuffix(noticeForStartup(problem).message, "位置："+pathLabel(want)) {
+			if !strings.HasSuffix(NoticeForStartup(problem).Message, "位置："+PathLabel(want)) {
 				t.Fatal("incorrect displayed location")
 			}
 		})
@@ -58,14 +58,14 @@ func TestOwnershipFailuresIdentifyActualDirectoryBoundary(t *testing.T) {
 }
 
 func TestActivationClassifiesOnlyProvenDirectoryAccessFailures(t *testing.T) {
-	for _, cause := range []error{windows.ERROR_ACCESS_DENIED, errUnsupportedLocation} {
-		directory := startupProblem(&locationError{path: `C:\Data`, cause: cause}, startupOccupied, `C:\Install`)
-		var failure *startupFailure
-		if !errors.As(directory, &failure) || failure.kind == startupOccupied {
+	for _, cause := range []error{windows.ERROR_ACCESS_DENIED, ErrUnsupportedLocation} {
+		directory := StartupProblem(&LocationError{Path: `C:\Data`, Cause: cause}, StartupOccupied, `C:\Install`)
+		var failure *StartupFailure
+		if !errors.As(directory, &failure) || failure.Kind == StartupOccupied {
 			t.Fatalf("directory evidence ignored: %v", directory)
 		}
-		transport := startupProblem(&net.OpError{Op: "dial", Net: "unix", Err: cause}, startupOccupied, `C:\Install`)
-		if !errors.As(transport, &failure) || failure.kind != startupOccupied || failure.path != `C:\Install` {
+		transport := StartupProblem(&net.OpError{Op: "dial", Net: "unix", Err: cause}, StartupOccupied, `C:\Install`)
+		if !errors.As(transport, &failure) || failure.Kind != StartupOccupied || failure.Path != `C:\Install` {
 			t.Fatalf("socket failure mislabeled as Data access: %v", transport)
 		}
 	}
@@ -75,16 +75,16 @@ func TestUnconfirmedActivationReceiptsRemainBoundedAndNeverBecomeWriter(t *testi
 	for _, mode := range []string{"eof", "timeout", "invalid"} {
 		t.Run(mode, func(t *testing.T) {
 			i := isolatedInstallation(t)
-			owner, err := acquireOwnership(i)
+			owner, err := AcquireOwnership(i)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer owner.Close()
-			marker := filepath.Join(i.data, "preserved-fixture")
+			marker := filepath.Join(i.Data, "preserved-fixture")
 			if err := os.WriteFile(marker, []byte("preserve"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			listener, err := net.Listen("unix", activationPath(owner.dataDirectory().key))
+			listener, err := net.Listen("unix", activationPath(owner.DataDirectory().Key))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,19 +114,19 @@ func TestUnconfirmedActivationReceiptsRemainBoundedAndNeverBecomeWriter(t *testi
 			calls := 0
 			var activationError error
 			start := time.Now()
-			code := runStartup(func() error {
-				if _, err := acquireOwnership(i); !errors.Is(err, errOccupied) {
+			code := RunStartup(func() error {
+				if _, err := AcquireOwnership(i); !errors.Is(err, ErrOccupied) {
 					t.Fatalf("second became writer: %v", err)
 				}
-				activationError = notifyInstallation(i)
+				activationError = NotifyInstallation(i)
 				if activationError == nil {
 					t.Fatal("unconfirmed receipt treated as success")
 				}
-				return startupProblem(activationError, startupOccupied, i.directory)
-			}, func(n startupNotice) error {
+				return StartupProblem(activationError, StartupOccupied, i.Directory)
+			}, func(n StartupNotice) error {
 				calls++
-				if !strings.Contains(n.message, "未能确认窗口已恢复") {
-					t.Fatal(n.message)
+				if !strings.Contains(n.Message, "未能确认窗口已恢复") {
+					t.Fatal(n.Message)
 				}
 				return nil
 			})
@@ -148,14 +148,14 @@ func TestUnconfirmedActivationReceiptsRemainBoundedAndNeverBecomeWriter(t *testi
 					t.Fatal(activationError)
 				}
 			}
-			if _, err := acquireOwnership(i); !errors.Is(err, errOccupied) {
+			if _, err := AcquireOwnership(i); !errors.Is(err, ErrOccupied) {
 				t.Fatalf("failed activation allowed writer: %v", err)
 			}
 			content, err := os.ReadFile(marker)
 			if err != nil || string(content) != "preserve" {
 				t.Fatal("fixture changed")
 			}
-			entries, err := os.ReadDir(i.data)
+			entries, err := os.ReadDir(i.Data)
 			if err != nil || len(entries) != 2 {
 				t.Fatalf("unexpected Data write: %v %v", entries, err)
 			}

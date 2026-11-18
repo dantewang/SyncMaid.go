@@ -1,9 +1,29 @@
 package main
 
 import (
+	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/egoist/mygo"
 )
+
+func TestWindowInitializationFailureCanQuitAndReleaseTray(t *testing.T) {
+	cause := errors.New("backend initialization failed")
+	_, err := createStartupWindow(func() *mygo.Window { panic(cause) })
+	if !errors.Is(err, cause) {
+		t.Fatalf("lost window failure: %v", err)
+	}
+	l := &lifecycle{}
+	releases := 0
+	l.destroyTray = func() { releases++ }
+	l.beginQuit()
+	l.finish()
+	l.finish()
+	if releases != 1 || l.phase != stopped {
+		t.Fatal("tray leaked on failed window initialization")
+	}
+}
 
 type recordedWindow struct{ calls []string }
 

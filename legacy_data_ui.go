@@ -7,26 +7,27 @@ import (
 
 	"github.com/egoist/mygo"
 	"syncmaid/internal/atomicfile"
+	"syncmaid/internal/winutil"
 )
 
-func decodeLegacyWindowSettings(raw []byte) (commonSettings, error) {
+func decodeLegacyWindowSettings(raw []byte) (winutil.CommonSettings, error) {
 	v, err := atomicfile.DecodeStrictJSONObject[struct {
-		commonSettings
+		winutil.CommonSettings
 		Language *string
 	}](raw)
 	if err != nil {
-		return commonSettings{}, err
+		return winutil.CommonSettings{}, err
 	}
-	return v.commonSettings, nil
+	return v.CommonSettings, nil
 }
 
-func readLegacyWindowSettings(path string) (commonSettings, error) {
+func readLegacyWindowSettings(path string) (winutil.CommonSettings, error) {
 	v, err := atomicfile.ReadRegular(path, 4096)
 	if err != nil {
-		return commonSettings{}, err
+		return winutil.CommonSettings{}, err
 	}
 	if v.Info == nil {
-		return commonSettings{}, errors.New("legacy settings file missing or above 4 KiB")
+		return winutil.CommonSettings{}, errors.New("legacy settings file missing or above 4 KiB")
 	}
 	return decodeLegacyWindowSettings(v.Data)
 }
@@ -47,13 +48,13 @@ func (a *application) openLegacyData() {
 	ok, cancel := a.tr("导入"), a.tr("取消")
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: a.window, Title: title})
-		var settings *commonSettings
+		var settings *winutil.CommonSettings
 		var diagnostic string
 		if err == nil && len(paths) == 1 {
 			path := paths[0]
 			switch strings.ToLower(filepath.Base(path)) {
 			case "settings.json":
-				var value commonSettings
+				var value winutil.CommonSettings
 				value, err = readLegacyWindowSettings(path)
 				if err == nil {
 					state := func(flag bool) string {

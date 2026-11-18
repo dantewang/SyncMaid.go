@@ -9,11 +9,12 @@ import (
 
 	"golang.org/x/sys/windows"
 	"syncmaid/internal/taskconfig"
+	"syncmaid/internal/winutil"
 )
 
 type multiplePlan struct {
-	source          *directoryObject
-	sourceAncestors []*directoryObject
+	source          *winutil.DirectoryObject
+	sourceAncestors []*winutil.DirectoryObject
 	roots           []*transferRoots
 	targetRoots     map[taskconfig.ID]*transferRoots
 	requests        map[taskconfig.ID]manualRequest
@@ -63,16 +64,16 @@ func obviousPathOverlap(a, b string) bool {
 	return a == b || strings.HasPrefix(a, strings.TrimRight(b, `\`)+`\`) || strings.HasPrefix(b, strings.TrimRight(a, `\`)+`\`)
 }
 func targetObjectsOverlap(a, b *transferRoots) bool {
-	if a.target.key == b.target.key {
+	if a.target.Key == b.target.Key {
 		return true
 	}
 	for _, d := range a.ancestors {
-		if d.key == b.target.key {
+		if d.Key == b.target.Key {
 			return true
 		}
 	}
 	for _, d := range b.ancestors {
-		if d.key == a.target.key {
+		if d.Key == a.target.Key {
 			return true
 		}
 	}
@@ -96,13 +97,13 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 			err = errors.Join(err, p.close(ctx))
 		}
 	}()
-	if p.source, err = openDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {
+	if p.source, err = winutil.OpenDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {
 		return nil, fmt.Errorf("源文件夹: %w", err)
 	}
-	if err = ordinaryDirectory(p.source.handle); err != nil {
+	if err = ordinaryDirectory(p.source.Handle); err != nil {
 		return nil, err
 	}
-	if p.sourceAncestors, err = openAncestors(ctx, p.source.path, ""); err != nil {
+	if p.sourceAncestors, err = openAncestors(ctx, p.source.Path, ""); err != nil {
 		return nil, err
 	}
 	seen := map[taskconfig.ID]bool{}
@@ -114,7 +115,7 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 			return nil, errors.New("目标 ID 缺失或重复")
 		}
 		seen[d.ID] = true
-		if obviousPathOverlap(q.Source, d.Path) || obviousPathOverlap(p.source.path, d.Path) {
+		if obviousPathOverlap(q.Source, d.Path) || obviousPathOverlap(p.source.Path, d.Path) {
 			return nil, fmt.Errorf("%w: %s", errTransferOverlap, d.Name)
 		}
 		for _, other := range q.Destinations[:i] {
@@ -143,7 +144,7 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 			}
 		}
 		// Keep every validated object and ancestor pinned for the entire job.
-		p.requests[d.ID] = manualRequest{Source: r.source.path, Target: r.target.path}
+		p.requests[d.ID] = manualRequest{Source: r.source.Path, Target: r.target.Path}
 	}
 	return p, nil
 }

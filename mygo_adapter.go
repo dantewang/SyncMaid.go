@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/egoist/mygo"
+	"syncmaid/internal/winutil"
 )
 
 // MyGo v0.8.3 NewWindow panics on a backend creation error instead of
@@ -36,5 +37,5 @@ func redrawWindow(w *mygo.Window) {
 // openShellPath converts native extended paths to human-readable DOS/UNC spelling
 // before handing them off to MyGo's Shell opener.
 func openShellPath(nativePath string) error {
-	return mygo.Shell.OpenPath(pathLabel(nativePath))
+	return mygo.Shell.OpenPath(winutil.PathLabel(nativePath))
 }

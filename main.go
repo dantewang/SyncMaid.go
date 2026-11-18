@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syncmaid/internal/taskconfig"
+	"syncmaid/internal/winutil"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -28,12 +29,12 @@ type application struct {
 	importPreview      *legacyImport
 	importPrevious     manualPhase
 	importError        error
-	common             *commonSettingsStore
-	commonValue        commonSettings
+	common             *winutil.CommonSettingsStore
+	commonValue        winutil.CommonSettings
 	commonBusy         bool
 	commonError        error
-	startupEntry       startupEntry
-	startupStatus      startupStatus
+	startupEntry       winutil.StartupEntry
+	startupStatus      winutil.StartupStatus
 	startupError       error
 	history            *runHistoryStore
 	historyView        runHistoryData
@@ -51,7 +52,7 @@ type application struct {
 	languageBusy       bool
 	languageError      error
 	locale             string // Native-thread snapshot of MyGo's language, not a second setting.
-	installation       installation
+	installation       winutil.Installation
 	lifecycle          lifecycle
 	manual             manualSession
 	window             *mygo.Window
@@ -66,64 +67,64 @@ func (a *application) view(c *ui.Context) {
 }
 
 func run() (result error) {
-	install, err := currentInstallation()
+	install, err := winutil.CurrentInstallation()
 	if err != nil {
-		return startupProblem(err, startupOwnership, "")
+		return winutil.StartupProblem(err, winutil.StartupOwnership, "")
 	}
-	owner, err := acquireOwnership(install)
-	if errors.Is(err, errOccupied) {
+	owner, err := winutil.AcquireOwnership(install)
+	if errors.Is(err, winutil.ErrOccupied) {
 		// Activation failure cannot grant writer status to this process.
-		if activationError := notifyInstallation(install); activationError != nil {
-			return startupProblem(activationError, startupOccupied, install.directory)
+		if activationError := winutil.NotifyInstallation(install); activationError != nil {
+			return winutil.StartupProblem(activationError, winutil.StartupOccupied, install.Directory)
 		}
-		slog.Info("ownership-occupied", "directory", install.directory)
+		slog.Info("ownership-occupied", "directory", install.Directory)
 		return nil
 	}
 	if err != nil {
-		return startupProblem(err, startupOwnership, install.data)
+		return winutil.StartupProblem(err, winutil.StartupOwnership, install.Data)
 	}
 	defer func() { result = errors.Join(result, owner.Close()) }()
 	// Use the pinned target's path, not a mutable Data junction spelling.
-	dataDirectory := owner.dataDirectory()
-	install.data = dataDirectory.path
+	dataDirectory := owner.DataDirectory()
+	install.Data = dataDirectory.Path
 	a := &application{installation: install}
-	a.common = loadCommonSettings(install.data)
-	a.commonValue, a.commonError = a.common.value, a.common.err
-	a.startupEntry, a.startupError = currentStartupEntry(install)
+	a.common = winutil.LoadCommonSettings(install.Data)
+	a.commonValue, a.commonError = a.common.Value, a.common.Err
+	a.startupEntry, a.startupError = winutil.CurrentStartupEntry(install)
 	if a.startupError == nil {
-		a.startupStatus, a.startupError = a.startupEntry.status()
+		a.startupStatus, a.startupError = a.startupEntry.Status()
 	}
 	defer a.watchWorkers.Wait()
-	activation, err := startActivation(dataDirectory.key, func() { mygo.App.WhenReady(a.lifecycle.show) })
+	activation, err := winutil.StartActivation(dataDirectory.Key, func() { mygo.App.WhenReady(a.lifecycle.show) })
 	if err != nil {
 		slog.Warn("activation-server-unavailable", "error", err)
 	} else {
 		defer func() { result = errors.Join(result, activation.Close()) }()
 	}
-	mygo.App.SetName(install.key)
+	mygo.App.SetName(install.Key)
 	// These MyGo paths are Go filesystem I/O inputs (locale_file.go and
 	// window_state.go), not Shell/UI labels. Preserve extended-length semantics.
-	mygo.App.SetPath(mygo.PathUserData, install.data)
-	mygo.App.SetPath(mygo.PathCache, filepath.Join(install.data, "cache"))
-	mygo.App.SetPath(mygo.PathLogs, filepath.Join(install.data, "logs"))
+	mygo.App.SetPath(mygo.PathUserData, install.Data)
+	mygo.App.SetPath(mygo.PathCache, filepath.Join(install.Data, "cache"))
+	mygo.App.SetPath(mygo.PathLogs, filepath.Join(install.Data, "logs"))
 	mygo.App.OnBeforeQuit(a.beforeQuit)
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.stopWatches(watchesStopped); a.lifecycle.finish() })
 	mygo.App.OnQuit(func() { slog.Info("application-exited") })
 	var startupError error
 	mygo.App.WhenReady(func() {
 		a.locale = mygo.App.Locale()
-		a.languagePreference, a.languageError = checkLanguageFile(install.data)
+		a.languagePreference, a.languageError = checkLanguageFile(install.Data)
 		offLocale := mygo.App.OnLocaleChanged(func(tag string) {
 			a.locale = tag
 			redrawWindow(a.destinationLog)
 		})
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { offLocale() })
 		tray, err := mygo.NewTray(mygo.TrayOptions{
-			ID: install.key, Icon: porcelainAppIcon, ToolTip: "SyncMaid",
+			ID: install.Key, Icon: porcelainAppIcon, ToolTip: "SyncMaid",
 		})
 		if err != nil {
 			// Without a tray there must not be an unreachable hidden app.
-			startupError = startupProblem(err, startupFramework, install.directory)
+			startupError = winutil.StartupProblem(err, winutil.StartupFramework, install.Directory)
 			mygo.App.Quit()
 			return
 		}
@@ -142,7 +143,7 @@ func run() (result error) {
 			})
 		})
 		if err != nil {
-			startupError = startupProblem(err, startupFramework, install.directory)
+			startupError = winutil.StartupProblem(err, winutil.StartupFramework, install.Directory)
 			mygo.App.Quit()
 			return
 		}
@@ -171,14 +172,14 @@ func run() (result error) {
 			defer tray.SetMenu(nil)
 			tray.PopUpMenu()
 		})
-		slog.Info("native-ready", "directory", pathLabel(install.directory), "data", pathLabel(install.data), "trayBounds", tray.Bounds())
+		slog.Info("native-ready", "directory", winutil.PathLabel(install.Directory), "data", winutil.PathLabel(install.Data), "trayBounds", tray.Bounds())
 	})
 	if err := mygo.App.Run(); err != nil {
-		return startupProblem(err, startupFramework, install.directory)
+		return winutil.StartupProblem(err, winutil.StartupFramework, install.Directory)
 	}
 	return startupError
 }
 
 func main() {
-	os.Exit(runStartup(run, showStartupNotice))
+	os.Exit(winutil.RunStartup(run, showStartupNotice))
 }

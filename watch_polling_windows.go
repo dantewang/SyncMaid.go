@@ -8,13 +8,14 @@ import (
 	"golang.org/x/sys/windows"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/windowsfs"
+	"syncmaid/internal/winutil"
 )
 
 func serveSourceWatch(ctx context.Context, path string, status func(error), changed func()) {
 	network := windowsfs.Network(path)
 	if !network {
-		if root, err := openDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES); err == nil {
-			network = root.network
+		if root, err := winutil.OpenDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES); err == nil {
+			network = root.Network
 			_ = root.Close()
 		}
 	}

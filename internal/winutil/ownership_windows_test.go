@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"bufio"
@@ -15,19 +15,19 @@ import (
 	"time"
 )
 
-func isolatedInstallation(t *testing.T) installation {
+func isolatedInstallation(t *testing.T) Installation {
 	t.Helper()
 	d := t.TempDir()
-	return installation{directory: d, data: filepath.Join(d, "Data")}
+	return Installation{Directory: d, Data: filepath.Join(d, "Data")}
 }
 
 func TestOwnershipErrorsAndRelease(t *testing.T) {
 	i := isolatedInstallation(t)
-	first, err := acquireOwnership(i)
+	first, err := AcquireOwnership(i)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acquireOwnership(i); !errors.Is(err, errOccupied) {
+	if _, err := AcquireOwnership(i); !errors.Is(err, ErrOccupied) {
 		t.Fatalf("second writer: %v", err)
 	}
 	if err := first.Close(); err != nil {
@@ -36,20 +36,20 @@ func TestOwnershipErrorsAndRelease(t *testing.T) {
 	if err := first.Close(); err != nil {
 		t.Fatal(err)
 	}
-	again, err := acquireOwnership(i)
+	again, err := AcquireOwnership(i)
 	if err != nil {
 		t.Fatal(err)
 	}
 	again.Close()
 	bad := isolatedInstallation(t)
-	if err := os.WriteFile(bad.data, []byte("not a directory"), 0600); err != nil {
+	if err := os.WriteFile(bad.Data, []byte("not a directory"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acquireOwnership(bad); err == nil {
+	if _, err := AcquireOwnership(bad); err == nil {
 		t.Fatal("bad Data accepted")
 	}
-	// A failed Data acquisition must release the installation claim too.
-	d, err := openDirectory(bad.directory)
+	// A failed Data acquisition must release the Installation claim too.
+	d, err := OpenDirectory(bad.Directory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,8 +66,8 @@ func TestOwnershipProcess(t *testing.T) {
 		return
 	}
 	d := os.Getenv("SYNCMAID_LOCK_DIRECTORY")
-	o, err := acquireOwnership(installation{directory: d, data: filepath.Join(d, "Data")})
-	if errors.Is(err, errOccupied) {
+	o, err := AcquireOwnership(Installation{Directory: d, Data: filepath.Join(d, "Data")})
+	if errors.Is(err, ErrOccupied) {
 		fmt.Println("occupied")
 		return
 	}
@@ -140,7 +140,7 @@ func TestConcurrentProcessesHaveExactlyOneWriterAndCrashReleases(t *testing.T) {
 	i := isolatedInstallation(t)
 	children := make([]*lockChild, 6)
 	for n := range children {
-		children[n] = startLockChild(t, i.directory)
+		children[n] = startLockChild(t, i.Directory)
 	}
 	var winner *lockChild
 	for _, c := range children {
@@ -166,7 +166,7 @@ func TestConcurrentProcessesHaveExactlyOneWriterAndCrashReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 	winner.cmd.Wait()
-	next := startLockChild(t, i.directory)
+	next := startLockChild(t, i.Directory)
 	if state := next.result(t); state != "owned" {
 		t.Fatal("crash left ownership:", state)
 	}
@@ -178,21 +178,21 @@ func TestConcurrentProcessesHaveExactlyOneWriterAndCrashReleases(t *testing.T) {
 
 func TestOwnershipLongPrefixAndCaseAliases(t *testing.T) {
 	i := isolatedInstallation(t)
-	o, err := acquireOwnership(i)
+	o, err := AcquireOwnership(i)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer o.Close()
-	for _, alias := range []string{strings.ToUpper(i.directory), `\\?\` + i.directory} {
-		d, err := openDirectory(alias)
+	for _, alias := range []string{strings.ToUpper(i.Directory), `\\?\` + i.Directory} {
+		d, err := OpenDirectory(alias)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d.key != o.directories[0].key {
+		if d.Key != o.directories[0].Key {
 			t.Fatal("alias changed object identity")
 		}
 		d.Close()
-		if _, err := acquireOwnership(installation{directory: alias, data: filepath.Join(alias, "Data")}); !errors.Is(err, errOccupied) {
+		if _, err := AcquireOwnership(Installation{Directory: alias, Data: filepath.Join(alias, "Data")}); !errors.Is(err, ErrOccupied) {
 			t.Fatalf("alias writer: %v", err)
 		}
 	}
@@ -214,36 +214,36 @@ func junction(t *testing.T, path, target string) {
 func TestSharedDataJunctionAndInstallationJunction(t *testing.T) {
 	a, b := isolatedInstallation(t), isolatedInstallation(t)
 	shared := t.TempDir()
-	junction(t, a.data, shared)
-	junction(t, b.data, shared)
-	first, err := acquireOwnership(a)
+	junction(t, a.Data, shared)
+	junction(t, b.Data, shared)
+	first, err := AcquireOwnership(a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first.Close()
-	if _, err := acquireOwnership(b); !errors.Is(err, errOccupied) {
+	if _, err := AcquireOwnership(b); !errors.Is(err, ErrOccupied) {
 		t.Fatalf("shared Data has second writer: %v", err)
 	}
 	alias := filepath.Join(t.TempDir(), "install-alias")
-	junction(t, alias, a.directory)
-	d, err := openDirectory(alias)
+	junction(t, alias, a.Directory)
+	d, err := OpenDirectory(alias)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.key != first.directories[0].key {
+	if d.Key != first.directories[0].Key {
 		t.Fatal("junction changed identity")
 	}
 	d.Close()
-	if _, err := acquireOwnership(installation{directory: alias, data: filepath.Join(alias, "Data")}); !errors.Is(err, errOccupied) {
+	if _, err := AcquireOwnership(Installation{Directory: alias, Data: filepath.Join(alias, "Data")}); !errors.Is(err, ErrOccupied) {
 		t.Fatalf("junction writer: %v", err)
 	}
 	// A nonexistent activation listener cannot give a second process ownership.
-	notifyInstallation(b)
-	if _, err := acquireOwnership(b); !errors.Is(err, errOccupied) {
+	NotifyInstallation(b)
+	if _, err := AcquireOwnership(b); !errors.Is(err, ErrOccupied) {
 		t.Fatalf("failed activation bypassed ownership: %v", err)
 	}
 	first.Close()
-	next, err := acquireOwnership(b)
+	next, err := AcquireOwnership(b)
 	if err != nil {
 		t.Fatalf("failed second Data claim leaked install ownership: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestSharedDataJunctionAndInstallationJunction(t *testing.T) {
 
 func TestShortNameIdentityWhenAvailable(t *testing.T) {
 	i := isolatedInstallation(t)
-	p, err := windows.UTF16PtrFromString(i.directory)
+	p, err := windows.UTF16PtrFromString(i.Directory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,34 +262,34 @@ func TestShortNameIdentityWhenAvailable(t *testing.T) {
 		t.Skipf("short names unavailable: %v", err)
 	}
 	short := windows.UTF16ToString(buf[:n])
-	if strings.EqualFold(short, i.directory) {
+	if strings.EqualFold(short, i.Directory) {
 		t.Skip("8.3 alias not created on this volume")
 	}
-	d, err := openDirectory(i.directory)
+	d, err := OpenDirectory(i.Directory)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	s, err := openDirectory(short)
+	s, err := OpenDirectory(short)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if d.key != s.key {
+	if d.Key != s.Key {
 		t.Fatal("short-name identity mismatch")
 	}
 }
 
 func TestCoordinationHardlinkRejected(t *testing.T) {
 	i := isolatedInstallation(t)
-	original := filepath.Join(i.directory, "unrelated")
+	original := filepath.Join(i.Directory, "unrelated")
 	if err := os.WriteFile(original, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Link(original, filepath.Join(i.directory, ".syncmaid-owner.lock")); err != nil {
+	if err := os.Link(original, filepath.Join(i.Directory, ".syncmaid-owner.lock")); err != nil {
 		t.Skipf("hardlink unavailable: %v", err)
 	}
-	if _, err := acquireOwnership(i); err == nil || errors.Is(err, errOccupied) {
+	if _, err := AcquireOwnership(i); err == nil || errors.Is(err, ErrOccupied) {
 		t.Fatalf("unsafe coordination object accepted: %v", err)
 	}
 }
@@ -300,23 +300,23 @@ func TestRemoteOwnershipNotYetSupported(t *testing.T) {
 
 func TestDifferentInstallationsOwnIndependentDataSimultaneously(t *testing.T) {
 	a, b := isolatedInstallation(t), isolatedInstallation(t)
-	first, err := acquireOwnership(a)
+	first, err := AcquireOwnership(a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first.Close()
-	second, err := acquireOwnership(b)
+	second, err := AcquireOwnership(b)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer second.Close()
-	if first.dataDirectory().key == second.dataDirectory().key {
+	if first.DataDirectory().Key == second.DataDirectory().Key {
 		t.Fatal("distinct Data objects collided")
 	}
-	if _, err := acquireOwnership(a); !errors.Is(err, errOccupied) {
+	if _, err := AcquireOwnership(a); !errors.Is(err, ErrOccupied) {
 		t.Fatalf("first not protected: %v", err)
 	}
-	if _, err := acquireOwnership(b); !errors.Is(err, errOccupied) {
+	if _, err := AcquireOwnership(b); !errors.Is(err, ErrOccupied) {
 		t.Fatalf("second not protected: %v", err)
 	}
 }
@@ -324,8 +324,8 @@ func TestDifferentInstallationsOwnIndependentDataSimultaneously(t *testing.T) {
 func TestCoordinationReparseRejected(t *testing.T) {
 	i := isolatedInstallation(t)
 	// A directory junction needs no symlink privilege on this test host.
-	junction(t, filepath.Join(i.directory, ".syncmaid-owner.lock"), t.TempDir())
-	if _, err := acquireOwnership(i); err == nil || errors.Is(err, errOccupied) {
+	junction(t, filepath.Join(i.Directory, ".syncmaid-owner.lock"), t.TempDir())
+	if _, err := AcquireOwnership(i); err == nil || errors.Is(err, ErrOccupied) {
 		t.Fatalf("reparse coordination object accepted: %v", err)
 	}
 }
@@ -336,10 +336,10 @@ func TestCoordinationFileSymlinkRejectedWhenPermitted(t *testing.T) {
 	if err := os.WriteFile(target, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, filepath.Join(i.directory, ".syncmaid-owner.lock")); err != nil {
+	if err := os.Symlink(target, filepath.Join(i.Directory, ".syncmaid-owner.lock")); err != nil {
 		t.Skipf("file symlink unavailable: %v", err)
 	}
-	if _, err := acquireOwnership(i); err == nil || errors.Is(err, errOccupied) {
+	if _, err := AcquireOwnership(i); err == nil || errors.Is(err, ErrOccupied) {
 		t.Fatalf("file symlink accepted: %v", err)
 	}
 }

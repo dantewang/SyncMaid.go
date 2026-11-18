@@ -126,7 +126,7 @@ func runMultipleConfirmed(ctx context.Context, q manualTaskRequest, notify func(
 			if e == nil {
 				if !sourceScanned {
 					sourceScanned = true
-					sourceInv, sourceScanErr = fileinventory.Scan(ctx, plan.source.path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+					sourceInv, sourceScanErr = fileinventory.Scan(ctx, plan.source.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
 				}
 				if sourceScanErr != nil {
 					e = sourceScanErr

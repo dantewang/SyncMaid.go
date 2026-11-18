@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"errors"
@@ -10,11 +10,11 @@ import (
 	"golang.org/x/text/language"
 )
 
-var errLegacyInstance = errors.New("Rust 旧版 SyncMaid 正在使用此 Data 目录")
+var ErrLegacyInstance = errors.New("Rust 旧版 SyncMaid 正在使用此 Data 目录")
 
 // Rust derives this Local mutex name from the spelling of its Data path.
 // The Go file claims remain the authority for Go-to-Go aliases and sessions.
-func legacyMutexName(path string) string {
+func LegacyMutexName(path string) string {
 	caser := cases.Upper(language.Und)
 	h := fnv.New64a()
 	for _, r := range path {
@@ -23,14 +23,14 @@ func legacyMutexName(path string) string {
 	return fmt.Sprintf("Local\\SyncMaid-%016x", h.Sum64())
 }
 
-func (o *ownership) claimLegacyPaths(paths ...string) error {
+func (o *Ownership) claimLegacyPaths(paths ...string) error {
 	claimed := map[string]bool{}
 	for _, path := range paths {
 		if path == "" {
 			continue
 		}
-		for _, spelling := range []string{path, pathLabel(path)} {
-			name := legacyMutexName(spelling)
+		for _, spelling := range []string{path, PathLabel(path)} {
+			name := LegacyMutexName(spelling)
 			if claimed[name] {
 				continue
 			}
@@ -43,7 +43,7 @@ func (o *ownership) claimLegacyPaths(paths ...string) error {
 				o.claims = append(o.claims, h)
 			}
 			if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
-				return errLegacyInstance
+				return ErrLegacyInstance
 			}
 			if err != nil {
 				return err

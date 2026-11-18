@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"golang.org/x/sys/windows"
@@ -7,8 +7,8 @@ import (
 )
 
 func TestCommonSettingsLockedSaveKeepsPreviousValue(t *testing.T) {
-	s := loadCommonSettings(t.TempDir())
-	if err := s.save(commonSettings{}); err != nil {
+	s := LoadCommonSettings(t.TempDir())
+	if err := s.Save(CommonSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(s.path)
@@ -23,12 +23,12 @@ func TestCommonSettingsLockedSaveKeepsPreviousValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	saveErr := s.save(commonSettings{true, true})
+	saveErr := s.Save(CommonSettings{true, true})
 	closeErr := windows.CloseHandle(h)
 	if closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	if saveErr == nil || s.err == nil || s.value != (commonSettings{}) {
+	if saveErr == nil || s.Err == nil || s.Value != (CommonSettings{}) {
 		t.Fatal("failed save accepted", saveErr)
 	}
 	after, err := os.ReadFile(s.path)

@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"encoding/json"
@@ -8,41 +8,41 @@ import (
 	"syncmaid/internal/atomicfile"
 )
 
-type commonSettings struct {
+type CommonSettings struct {
 	CloseToTray    bool
 	StartMinimized bool
 }
-type commonSettingsStore struct {
+type CommonSettingsStore struct {
 	path     string
-	value    commonSettings
+	Value    CommonSettings
 	baseline atomicfile.Version
-	err      error
+	Err      error
 }
 
-func loadCommonSettings(data string) *commonSettingsStore {
-	s := &commonSettingsStore{path: filepath.Join(data, "settings-go.json")}
-	s.baseline, s.err = atomicfile.ReadRegular(s.path, 4096)
-	if s.err != nil || s.baseline.Info == nil {
+func LoadCommonSettings(data string) *CommonSettingsStore {
+	s := &CommonSettingsStore{path: filepath.Join(data, "settings-go.json")}
+	s.baseline, s.Err = atomicfile.ReadRegular(s.path, 4096)
+	if s.Err != nil || s.baseline.Info == nil {
 		return s
 	}
-	value, err := atomicfile.DecodeStrictJSONObject[commonSettings](s.baseline.Data)
+	value, err := atomicfile.DecodeStrictJSONObject[CommonSettings](s.baseline.Data)
 	if err != nil {
-		s.err = err
+		s.Err = err
 		return s
 	}
-	s.value = *value
+	s.Value = *value
 	return s
 }
-func (s *commonSettingsStore) save(value commonSettings) error {
-	if s.err != nil {
-		return s.err
+func (s *CommonSettingsStore) Save(value CommonSettings) error {
+	if s.Err != nil {
+		return s.Err
 	}
 	current, err := atomicfile.ReadRegular(s.path, 4096)
 	if err == nil && !atomicfile.SameVersion(current, s.baseline) {
 		err = errors.New("settings changed externally; reload before saving")
 	}
 	if err != nil {
-		s.err = err
+		s.Err = err
 		return err
 	}
 	body, err := json.MarshalIndent(value, "", "  ")
@@ -51,10 +51,10 @@ func (s *commonSettingsStore) save(value commonSettings) error {
 	}
 	info, err := atomicfile.Publish(s.path, body, ".syncmaid-settings-*.tmp", nil)
 	if err != nil {
-		s.err = err
+		s.Err = err
 		return err
 	}
-	s.value = value
+	s.Value = value
 	s.baseline = atomicfile.Version{Data: body, Info: info}
 	return nil
 }

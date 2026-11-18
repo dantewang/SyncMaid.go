@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"syncmaid/internal/atomicfile"
+	"syncmaid/internal/winutil"
 )
 
 func (a *application) openDestinationLog(task, destination taskconfig.ID) {
@@ -47,7 +48,7 @@ func (a *application) openDestinationLog(task, destination taskconfig.ID) {
 }
 
 func (a *application) destinationLogPath() string {
-	return filepath.Join(a.installation.data, runHistoryFile)
+	return filepath.Join(a.installation.Data, runHistoryFile)
 }
 
 func inspectDestinationLogFile(path string) error {
@@ -86,14 +87,14 @@ func (a *application) openDestinationLogFile(open func(string) error) {
 	}
 	// The Shell expects a DOS/UNC spelling. File inspection above uses the
 	// original native path; the display spelling is only for this handoff.
-	a.logOpenError = open(pathLabel(path))
+	a.logOpenError = open(winutil.PathLabel(path))
 }
 func (a *application) refreshDestinationLog() {
 	if a.logReading {
 		return
 	}
 	a.logReading = true
-	data := a.installation.data
+	data := a.installation.Data
 	path := a.destinationLogPath()
 	go func() {
 		history := loadRunHistory(data)
@@ -138,7 +139,7 @@ func (a *application) destinationLogView(c *ui.Context) {
 			ui.Text(c, name).FontSize(16).MaxLines(2).TextColor(porcelain.TextMuted).Tooltip(name)
 			if a.logDetails {
 				ui.Text(c, string(a.logTask)).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
-				porcelainPath(c, pathLabel(filepath.Join(a.installation.data, runHistoryFile)))
+				porcelainPath(c, winutil.PathLabel(filepath.Join(a.installation.Data, runHistoryFile)))
 			}
 		})
 		if a.historyError != nil {

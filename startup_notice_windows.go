@@ -4,16 +4,17 @@ import (
 	"errors"
 
 	"golang.org/x/sys/windows"
+	"syncmaid/internal/winutil"
 )
 
 // A synchronous Win32 message box needs no MyGo event loop, config path or
 // application-owned Data. Called on main after run returns and releases locks.
-func showStartupNotice(notice startupNotice) error {
-	text, err := windows.UTF16PtrFromString(notice.message)
+func showStartupNotice(notice winutil.StartupNotice) error {
+	text, err := windows.UTF16PtrFromString(notice.Message)
 	if err != nil {
 		return err
 	}
-	title, err := windows.UTF16PtrFromString(notice.title)
+	title, err := windows.UTF16PtrFromString(notice.Title)
 	if err != nil {
 		return err
 	}

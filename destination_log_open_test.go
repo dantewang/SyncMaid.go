@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"syncmaid/internal/winutil"
 )
 
 func TestDestinationLogOpenUsesShellPathAndKeepsHistoryError(t *testing.T) {
@@ -18,7 +19,7 @@ func TestDestinationLogOpenUsesShellPathAndKeepsHistoryError(t *testing.T) {
 	}
 	historyErr := errors.New("existing history diagnostic")
 	a := &application{
-		installation:     installation{data: "\\\\?\\" + dir},
+		installation:     winutil.Installation{Data: "\\\\?\\" + dir},
 		logFileAvailable: true, historyError: historyErr, locale: "zh-Hans",
 	}
 	openErr := errors.New("no file association")
@@ -45,7 +46,7 @@ func TestDestinationLogOpenUsesShellPathAndKeepsHistoryError(t *testing.T) {
 }
 
 func TestDestinationLogMissingFileNeverReachesShell(t *testing.T) {
-	a := &application{installation: installation{data: t.TempDir()}}
+	a := &application{installation: winutil.Installation{Data: t.TempDir()}}
 	if err := inspectDestinationLogFile(a.destinationLogPath()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("missing file probe: %v", err)
 	}

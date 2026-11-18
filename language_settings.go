@@ -10,6 +10,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"syncmaid/internal/atomicfile"
+	"syncmaid/internal/winutil"
 )
 
 var languageChoices = []struct{ tag, name string }{
@@ -37,7 +38,7 @@ func checkLanguageFile(data string) (string, error) {
 		return "", err
 	}
 	if !atomicfile.IsRegularFile(info) {
-		return "", fmt.Errorf("language file is not an ordinary file: %s", pathLabel(path))
+		return "", fmt.Errorf("language file is not an ordinary file: %s", winutil.PathLabel(path))
 	}
 	if info.Size() > 128 {
 		return "", errors.New("language file exceeds 128 bytes; preserve and repair it before changing language")
@@ -53,7 +54,7 @@ func checkLanguageFile(data string) (string, error) {
 	}
 	tag := strings.TrimSpace(string(b))
 	if len(b) > 128 || !supportedLanguage(tag) {
-		return "", fmt.Errorf("unsupported or damaged language choice in %s", pathLabel(path))
+		return "", fmt.Errorf("unsupported or damaged language choice in %s", winutil.PathLabel(path))
 	}
 	return tag, nil
 }
@@ -91,7 +92,7 @@ func (a *application) changeLanguage(tag string) {
 		return
 	}
 	a.languageBusy = true
-	data := a.installation.data
+	data := a.installation.Data
 	go func() {
 		err := prepareLanguageChange(data, tag)
 		a.window.Update(func() {

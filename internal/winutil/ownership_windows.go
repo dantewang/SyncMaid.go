@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"errors"
@@ -11,32 +11,32 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-var errOccupied = errors.New("installation or Data is already owned")
+var ErrOccupied = errors.New("installation or Data is already owned")
 
-func prepareDataDirectory(path string) error { return os.MkdirAll(path, 0o755) }
+func PrepareDataDirectory(path string) error { return os.MkdirAll(path, 0o755) }
 
-// directoryObject pins the directory against rename/deletion until Close.
+// DirectoryObject pins the directory against rename/deletion until Close.
 // Its identity is diagnostic/activation data; exclusion uses the actual file
 // object, not a hash of its pathname or a Windows session's object namespace.
-type directoryObject struct {
-	handle    windows.Handle
-	path      string // Native operation path, including extended-length prefix.
-	key       string
-	network   bool
-	fat       bool
-	removable bool
+type DirectoryObject struct {
+	Handle    windows.Handle
+	Path      string // Native operation path, including extended-length prefix.
+	Key       string
+	Network   bool
+	Fat       bool
+	Removable bool
 }
 
-func openDirectory(path string) (*directoryObject, error) {
-	d, err := openDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
-	if err == nil && d.network {
-		err = errors.Join(fmt.Errorf("%w: installation and Data must be local", errUnsupportedLocation), d.Close())
+func OpenDirectory(path string) (*DirectoryObject, error) {
+	d, err := OpenDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
+	if err == nil && d.Network {
+		err = errors.Join(fmt.Errorf("%w: installation and Data must be local", ErrUnsupportedLocation), d.Close())
 		return nil, err
 	}
 	return d, err
 }
 
-func openDirectoryAccess(path string, access uint32) (*directoryObject, error) {
+func OpenDirectoryAccess(path string, access uint32) (*DirectoryObject, error) {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, err
@@ -79,9 +79,9 @@ func openDirectoryAccess(path string, access uint32) (*directoryObject, error) {
 	network := windowsfs.Network(final) || windowsfs.Network(path)
 	removable := false
 	if !network {
-		volume := filepath.VolumeName(pathLabel(final))
+		volume := filepath.VolumeName(PathLabel(final))
 		if len(volume) != 2 || volume[1] != ':' {
-			return nil, fmt.Errorf("%w: directory has no local DOS volume path", errUnsupportedLocation)
+			return nil, fmt.Errorf("%w: directory has no local DOS volume path", ErrUnsupportedLocation)
 		}
 		root, err := windows.UTF16PtrFromString(volume + "\\")
 		if err != nil {
@@ -92,7 +92,7 @@ func openDirectoryAccess(path string, access uint32) (*directoryObject, error) {
 		case windows.DRIVE_REMOVABLE:
 			removable = true
 		default:
-			return nil, fmt.Errorf("%w: directory drive type", errUnsupportedLocation)
+			return nil, fmt.Errorf("%w: directory drive type", ErrUnsupportedLocation)
 		}
 	}
 	kind, _, err := windowsfs.Volume(h)
@@ -101,32 +101,32 @@ func openDirectoryAccess(path string, access uint32) (*directoryObject, error) {
 	}
 	fat := !network && windowsfs.FAT(kind)
 	if !network && !fat && kind != "NTFS" && kind != "REFS" {
-		return nil, fmt.Errorf("%w: filesystem %q", errUnsupportedLocation, kind)
+		return nil, fmt.Errorf("%w: filesystem %q", ErrUnsupportedLocation, kind)
 	}
 	id, err := windowsfs.FileIdentity(h, fat)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errUnreliableIdentity, err)
+		return nil, fmt.Errorf("%w: %w", ErrUnreliableIdentity, err)
 	}
 	ok = true
-	return &directoryObject{handle: h, path: final, key: fmt.Sprintf("%016x-%x", id.Volume, id.File),
-		network: network, fat: fat, removable: removable}, nil
+	return &DirectoryObject{Handle: h, Path: final, Key: fmt.Sprintf("%016x-%x", id.Volume, id.File),
+		Network: network, Fat: fat, Removable: removable}, nil
 }
 
-func (d *directoryObject) Close() error { return windows.CloseHandle(d.handle) }
+func (d *DirectoryObject) Close() error { return windows.CloseHandle(d.Handle) }
 
 // A persistent, non-reparse coordination file is opened WITHOUT sharing.
 // Windows enforces ownership across processes, users and sessions accessing
 // this file. There is no thread-owned mutex, stale-file deletion, or timeout
 // takeover. A crash closes the kernel handle; the filename remains reusable.
-func claimDirectory(d *directoryObject) (windows.Handle, error) {
-	path, err := windows.UTF16PtrFromString(filepath.Join(d.path, ".syncmaid-owner.lock"))
+func claimDirectory(d *DirectoryObject) (windows.Handle, error) {
+	path, err := windows.UTF16PtrFromString(filepath.Join(d.Path, ".syncmaid-owner.lock"))
 	if err != nil {
 		return 0, err
 	}
 	h, err := windows.CreateFile(path, windows.GENERIC_READ|windows.GENERIC_WRITE, 0, nil,
 		windows.OPEN_ALWAYS, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
-		return 0, errOccupied
+		return 0, ErrOccupied
 	}
 	if err != nil {
 		return 0, fmt.Errorf("claim directory ownership: %w", err)
@@ -143,18 +143,18 @@ func claimDirectory(d *directoryObject) (windows.Handle, error) {
 	return h, nil
 }
 
-// ownership is a resource receipt: only a successfully returned value permits
+// Ownership is a resource receipt: only a successfully returned value permits
 // application writes. Acquisition rolls back all handles on every error.
-type ownership struct {
-	directories []*directoryObject
+type Ownership struct {
+	directories []*DirectoryObject
 	claims      []windows.Handle
-	data        *directoryObject
+	data        *DirectoryObject
 }
 
-// dataDirectory returns the pinned Data object while this receipt is held.
-func (o *ownership) dataDirectory() *directoryObject { return o.data }
+// DataDirectory returns the pinned Data object while this receipt is held.
+func (o *Ownership) DataDirectory() *DirectoryObject { return o.data }
 
-func (o *ownership) Close() error {
+func (o *Ownership) Close() error {
 	var result error
 	for i := len(o.claims) - 1; i >= 0; i-- {
 		result = errors.Join(result, windows.CloseHandle(o.claims[i]))
@@ -167,37 +167,37 @@ func (o *ownership) Close() error {
 	return result
 }
 
-func acquireOwnership(install installation) (_ *ownership, result error) {
-	o := &ownership{}
+func AcquireOwnership(install Installation) (_ *Ownership, result error) {
+	o := &Ownership{}
 	defer func() {
 		if result != nil {
 			result = errors.Join(result, o.Close())
 		}
 	}()
-	for _, path := range []string{install.directory, install.data} {
+	for _, path := range []string{install.Directory, install.Data} {
 		// Data creation is coordination metadata, after install exclusion,
 		// before any configuration/log/UI framework write is allowed.
-		if path == install.data {
-			if err := prepareDataDirectory(path); err != nil {
-				return nil, &locationError{path: path, cause: err}
+		if path == install.Data {
+			if err := PrepareDataDirectory(path); err != nil {
+				return nil, &LocationError{Path: path, Cause: err}
 			}
 		}
-		d, err := openDirectory(path)
+		d, err := OpenDirectory(path)
 		if err != nil {
-			return nil, &locationError{path: path, cause: err}
+			return nil, &LocationError{Path: path, Cause: err}
 		}
 		o.directories = append(o.directories, d)
-		if path == install.data {
+		if path == install.Data {
 			o.data = d
 		}
 		h, err := claimDirectory(d)
 		if err != nil {
-			return nil, &locationError{path: path, cause: err}
+			return nil, &LocationError{Path: path, Cause: err}
 		}
 		o.claims = append(o.claims, h)
 	}
-	if err := o.claimLegacyPaths(install.data, o.data.path, install.legacyData); err != nil {
-		return nil, &locationError{path: install.data, cause: err}
+	if err := o.claimLegacyPaths(install.Data, o.data.Path, install.LegacyData); err != nil {
+		return nil, &LocationError{Path: install.Data, Cause: err}
 	}
 	return o, nil
 }

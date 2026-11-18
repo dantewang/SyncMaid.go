@@ -1,4 +1,4 @@
-package main
+package winutil
 
 import (
 	"os"
@@ -22,32 +22,32 @@ func executableIn(t *testing.T, directory, name string) string {
 
 func TestInstallationUsesDirectoryNotExecutableNameOrWorkingDirectory(t *testing.T) {
 	directory := t.TempDir()
-	first, err := installationForExecutable(executableIn(t, directory, "one.exe"))
+	first, err := InstallationForExecutable(executableIn(t, directory, "one.exe"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := installationForExecutable(executableIn(t, directory, "two.exe"))
+	second, err := InstallationForExecutable(executableIn(t, directory, "two.exe"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first != second || first.data != filepath.Join(first.directory, "Data") {
-		t.Fatalf("same installation resolved differently: %+v %+v", first, second)
+	if first != second || first.Data != filepath.Join(first.Directory, "Data") {
+		t.Fatalf("same Installation resolved differently: %+v %+v", first, second)
 	}
 	// Changing cwd must have no bearing on an already absolute executable path.
 	t.Chdir(t.TempDir())
-	again, err := installationForExecutable(filepath.Join(directory, "one.exe"))
+	again, err := InstallationForExecutable(filepath.Join(directory, "one.exe"))
 	if err != nil || again != first {
-		t.Fatalf("cwd changed installation: %+v %v", again, err)
+		t.Fatalf("cwd changed Installation: %+v %v", again, err)
 	}
-	other, err := installationForExecutable(executableIn(t, t.TempDir(), "one.exe"))
-	if err != nil || other.key == first.key || other.data == first.data {
+	other, err := InstallationForExecutable(executableIn(t, t.TempDir(), "one.exe"))
+	if err != nil || other.Key == first.Key || other.Data == first.Data {
 		t.Fatalf("different installations collide: %+v %v", other, err)
 	}
 }
 
 func TestInstallationRejectsUnknownLocationInsteadOfUsingCwd(t *testing.T) {
 	for _, path := range []string{"", "relative.exe", filepath.Join(t.TempDir(), "missing.exe")} {
-		if _, err := installationForExecutable(path); err == nil {
+		if _, err := InstallationForExecutable(path); err == nil {
 			t.Errorf("accepted unknown executable location %q", path)
 		}
 	}
@@ -58,12 +58,12 @@ func TestInstallationWindowsCase(t *testing.T) {
 		t.Skip("Windows case-insensitive identity")
 	}
 	path := executableIn(t, t.TempDir(), "App.exe")
-	first, err := installationForExecutable(path)
+	first, err := InstallationForExecutable(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := installationForExecutable(strings.ToUpper(path))
-	if err != nil || second.key != first.key {
+	second, err := InstallationForExecutable(strings.ToUpper(path))
+	if err != nil || second.Key != first.Key {
 		t.Fatalf("path case changed identity: %+v %v", second, err)
 	}
 }
@@ -75,12 +75,12 @@ func TestInstallationResolvesDirectoryAlias(t *testing.T) {
 	if err := os.Symlink(filepath.Dir(path), alias); err != nil {
 		t.Skipf("directory symlink unavailable: %v", err)
 	}
-	first, err := installationForExecutable(path)
+	first, err := InstallationForExecutable(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := installationForExecutable(filepath.Join(alias, "app.exe"))
+	second, err := InstallationForExecutable(filepath.Join(alias, "app.exe"))
 	if err != nil || first != second {
-		t.Fatalf("alias creates duplicate installation: %+v %+v %v", first, second, err)
+		t.Fatalf("alias creates duplicate Installation: %+v %+v %v", first, second, err)
 	}
 }

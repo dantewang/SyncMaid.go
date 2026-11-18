@@ -77,5 +77,5 @@ func validateManual(ctx context.Context, q manualRequest) (result manualRequest,
 		return result, err
 	}
 	defer func() { err = errors.Join(err, r.close(ctx)) }()
-	return manualRequest{Source: r.source.path, Target: r.target.path}, nil
+	return manualRequest{Source: r.source.Path, Target: r.target.Path}, nil
 }
