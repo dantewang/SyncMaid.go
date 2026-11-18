@@ -225,8 +225,10 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 	}
 	history := a.history
 	active := []taskconfig.ID(nil)
+	var taskSnapshot []taskconfig.Task
 	if a.tasks != nil {
-		active = taskIDs(a.tasks.tasks)
+		taskSnapshot = a.tasks.tasks
+		active = taskIDs(taskSnapshot)
 	}
 	recordStart, recordStartErr := newRunRecord(id, name, q, automatic, time.Now())
 	go func() {
@@ -256,6 +258,9 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q manualTaskRe
 		historyView, recordEnd, results, err, historyErr := executeRecordedRun(history, recordStart, recordStartErr, active, func() (multipleResult, error) {
 			var results multipleResult
 			err := interruptibleIO(ctx, func(ctx context.Context) error {
+				if err := validateCrossTaskPaths(ctx, id, q, taskSnapshot); err != nil {
+					return err
+				}
 				var e error
 				results, e = runMultipleConfirmed(ctx, q, notify, a.confirmMirror)
 				return e

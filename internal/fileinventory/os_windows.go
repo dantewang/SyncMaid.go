@@ -4,9 +4,10 @@ package fileinventory
 
 import (
 	"errors"
-	"fmt"
+
 	"io/fs"
 	"os"
+	"syncmaid/internal/windowsfs"
 	"syscall"
 	"unsafe"
 
@@ -89,21 +90,8 @@ func openChildDirectory(parent windows.Handle, name string) (windows.Handle, err
 	return h, nil
 }
 
-type fileCaseSensitiveInfo struct{ Flags uint32 }
-
 func (d *osDirectory) CaseSensitive() (bool, error) {
-	var info fileCaseSensitiveInfo
-	err := windows.GetFileInformationByHandleEx(windows.Handle(d.file.Fd()), windows.FileCaseSensitiveInfo,
-		(*byte)(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
-	switch {
-	case err == nil:
-		return info.Flags&windows.FILE_CS_FLAG_CASE_SENSITIVE_DIR != 0, nil
-	case errors.Is(err, windows.ERROR_INVALID_PARAMETER), errors.Is(err, windows.ERROR_INVALID_FUNCTION),
-		errors.Is(err, windows.ERROR_NOT_SUPPORTED), errors.Is(err, windows.ERROR_INVALID_LEVEL):
-		// FAT/exFAT and some redirectors cannot answer.
-		return false, fmt.Errorf("%w: %v", errors.ErrUnsupported, err)
-	}
-	return false, err
+	return windowsfs.CaseSensitive(windows.Handle(d.file.Fd()))
 }
 
 // reparseStatus reports the FILE_ATTRIBUTE_REPARSE_POINT bit and whether the

@@ -66,6 +66,10 @@ func (a *application) settingsView(c *ui.Context) {
 					ui.Text(c, a.tr("无法打开数据目录：%s", a.openDataError.Error())).TextColor(porcelain.Danger)
 				}
 				porcelainPath(c, pathLabel(a.installation.data))
+				porcelainButton(c, a.tr("打开旧版设置或记录")).Disabled(a.commonBusy || a.manual.busy() || a.languageBusy).OnClick(a.openLegacyData)
+				if a.legacyDataError != nil {
+					ui.Text(c, a.tr("无法打开旧版设置或记录：%s", a.legacyDataError.Error())).TextColor(porcelain.Danger)
+				}
 			})
 			porcelainSection(c, a.tr("关于"), func() {
 				ui.Row(c).Gap(14).Padding(11, 0).Children(func() {

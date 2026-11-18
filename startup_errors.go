@@ -79,13 +79,17 @@ func noticeForStartup(err error) startupNotice {
 	var message string
 	switch failure.kind {
 	case startupUnsupported:
-		message = "当前位置暂不受当前版本支持。\n请将程序和 Data 一起放到可写的本地固定 NTFS/ReFS 磁盘目录后重试。USB 和网络位置的便携运行仍待支持。"
+		message = "当前位置暂不受当前版本支持。\n请将程序和 Data 一起放到可写的本地 NTFS、ReFS 或 FAT/exFAT 卷后重试。共享目录只能作为同步端点。"
 	case startupPermission:
 		message = "无法访问或写入安装目录或 Data。\n请关闭可能占用文件的程序，并将 SyncMaid 和 Data 一起放到您有读写权限的目录后重试。"
 	case startupOccupied:
 		message = "已有 SyncMaid 实例可能正在运行或启动，但本次未能确认窗口已恢复。\n请查看已有窗口，或稍后重试、使用托盘图标恢复。不要删除锁文件；本次启动不会接管或写入 Data。"
 	case startupOwnership:
-		message = "无法确认安装目录或 Data 的安全访问状态，程序已停止启动以保护数据。\n请确认 Data 是可访问的目录，并将程序和 Data 一起放到可写的本地固定 NTFS/ReFS 磁盘目录后重试。不要删除正在使用的锁文件。"
+		if errors.Is(err, errLegacyInstance) {
+			message = "此目录的旧版 SyncMaid 正在运行。请先退出旧版，再启动新版。"
+		} else {
+			message = "无法确认安装目录或 Data 的安全访问状态，程序已停止启动以保护数据。\n请确认 Data 可访问，并将程序和 Data 放在可写的本地磁盘。不要删除正在使用的锁文件。"
+		}
 	default:
 		message = "原生界面未能启动或正常结束。\n请关闭其他 SyncMaid 窗口后重新启动；若仍失败，请保留现有 Data 并反馈此问题。"
 	}

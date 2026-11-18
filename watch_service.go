@@ -148,7 +148,7 @@ func (a *application) syncWatches() {
 			a.watchWorkers.Add(1)
 			go func() {
 				defer a.watchWorkers.Done()
-				serveNativeWatch(ctx, t.SourcePath, func(e error) {
+				serveSourceWatch(ctx, t.SourcePath, func(e error) {
 					post(func() {
 						if !a.liveWatch(w) {
 							return

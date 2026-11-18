@@ -1,4 +1,11 @@
 {
+  "导入": "Import",
+  "关闭": "Off",
+  "开启": "On",
+  "关闭到托盘：%s；启动时最小化：%s": "Close to tray: %s · Start minimized: %s",
+  "只导入关闭到托盘和启动时最小化。旧文件、语言和开机自启保持不变。": "Import only close to tray and start minimized. Legacy files, language and autostart stay unchanged.",
+  "无法打开旧版设置或记录：%s": "Could not open legacy settings or records: %s",
+  "打开旧版设置或记录": "Open legacy settings or records",
   "无法打开日志文件：%s": "Could not open the log file: %s",
   "%s 原文件：%s": "%s Original file: %s",
   "恢复未能确认，请重新载入任务核对：%s": "Restore could not be confirmed. Reload tasks to check: %s",

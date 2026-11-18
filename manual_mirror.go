@@ -94,7 +94,10 @@ func runMirrorWith(ctx context.Context, q manualRequest, d manualDestination, no
 	}
 	preview := mirrorPreview{DestinationID: d.ID, Name: d.Name, Target: pathLabel(roots.target.path), Mode: destinationDeleteMode(d), Paths: paths}
 	if len(preview.Paths) == 0 {
-		return p, nil
+		return p, restoreMirrorDirectories(ctx, roots.target, source.Dirs)
+	}
+	if preview.Mode == taskconfig.Recycle && (roots.target.network || roots.target.removable || roots.target.fat) {
+		return p, errors.New("此目标不支持回收确认；多余文件未移除。若需要，请明确选择永久删除后重新运行。")
 	}
 	p.Stage = "等待删除确认"
 	if notify != nil {
@@ -140,5 +143,5 @@ func runMirrorWith(ctx context.Context, q manualRequest, d manualDestination, no
 			notify(p)
 		}
 	}
-	return p, nil
+	return p, restoreMirrorDirectories(ctx, roots.target, source.Dirs)
 }

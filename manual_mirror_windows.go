@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"unsafe"
+	"syncmaid/internal/windowsfs"
 
 	"github.com/egoist/mygo"
 	"golang.org/x/sys/windows"
@@ -15,10 +16,7 @@ import (
 )
 
 type mirrorStamp struct {
-	ID struct {
-		Volume uint64
-		File   [16]byte
-	}
+	ID       windowsfs.Identity
 	Size     int64
 	Modified windows.Filetime
 }
@@ -68,9 +66,9 @@ func openMirrorFile(root windows.Handle, rel string, access uint32) (f *os.File,
 	}
 	return
 }
-func mirrorFileStamp(f *os.File) (s mirrorStamp, err error) {
+func mirrorFileStamp(f *os.File, fat bool) (s mirrorStamp, err error) {
 	h := windows.Handle(f.Fd())
-	if err = windows.GetFileInformationByHandleEx(h, windows.FileIdInfo, (*byte)(unsafe.Pointer(&s.ID)), uint32(unsafe.Sizeof(s.ID))); err != nil {
+	if s.ID, err = windowsfs.FileIdentity(h, fat); err != nil {
 		return
 	}
 	var b windows.ByHandleFileInformation
@@ -95,7 +93,7 @@ func scanMirror(ctx context.Context, root *directoryObject) (out mirrorListing, 
 		if e != nil {
 			return out, e
 		}
-		stamp, e := mirrorFileStamp(f)
+		stamp, e := mirrorFileStamp(f, root.fat)
 		e = errors.Join(e, close())
 		if e != nil {
 			return out, e
@@ -106,6 +104,47 @@ func scanMirror(ctx context.Context, root *directoryObject) (out mirrorListing, 
 		out.Files[entry.Path] = stamp
 	}
 	return out, nil
+}
+
+// restoreMirrorDirectories creates missing source directories and preserves their
+// timestamps after file publication and any confirmed removal. Extra folders
+// are left alone; this never turns a file-only approval into folder deletion.
+func restoreMirrorDirectories(ctx context.Context, root *directoryObject, dirs []fileinventory.Directory) error {
+	for i := len(dirs) - 1; i >= 0; i-- {
+		d := dirs[i]
+		if err := protectedTransferIO(ctx, func() error {
+			return restoreMirrorDirectory(ctx, root.handle, d)
+		}); err != nil {
+			return fmt.Errorf("恢复目标目录 %s: %w", d.Path, err)
+		}
+	}
+	return nil
+}
+
+func restoreMirrorDirectory(ctx context.Context, root windows.Handle, d fileinventory.Directory) (err error) {
+	var parents []*os.File
+	defer func() {
+		for i := len(parents) - 1; i >= 0; i-- {
+			err = errors.Join(err, parents[i].Close())
+		}
+	}()
+	for _, name := range strings.Split(d.Path, "/") {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "\\:") {
+			return errors.New("非法相对目录路径")
+		}
+		dir, err := openTransferChild(root, name, true, windows.FILE_OPEN_IF,
+			windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
+		if err != nil {
+			return err
+		}
+		parents = append(parents, dir)
+		root = windows.Handle(dir.Fd())
+	}
+	mtime := windows.NsecToFiletime(d.Modified.UnixNano())
+	return windows.SetFileTime(root, nil, nil, &mtime)
 }
 
 // The reusable copy service finishes first: any copy failure prevents planning
@@ -168,7 +207,7 @@ func removeMirrorCandidate(ctx context.Context, roots *transferRoots, rel string
 	if e != nil {
 		return e
 	}
-	stamp, e := mirrorFileStamp(f)
+	stamp, e := mirrorFileStamp(f, roots.target.fat)
 	if e == nil && stamp != expected {
 		e = errMirrorChanged
 	}

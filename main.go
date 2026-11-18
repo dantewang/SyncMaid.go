@@ -46,6 +46,7 @@ type application struct {
 	watchActivity      localizedMessage
 	settingsOpen       bool
 	openDataError      error
+	legacyDataError    error
 	languagePreference string
 	languageBusy       bool
 	languageError      error

@@ -68,7 +68,7 @@ func openMultiplePlan(ctx context.Context, q manualTaskRequest) (plan *multipleP
 			err = errors.Join(err, protectedTransferIO(ctx, p.Close))
 		}
 	}()
-	if p.source, err = openDirectory(q.Source); err != nil {
+	if p.source, err = openDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {
 		return nil, fmt.Errorf("源文件夹: %w", err)
 	}
 	if err = ordinaryDirectory(p.source.handle); err != nil {

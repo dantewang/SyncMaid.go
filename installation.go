@@ -11,9 +11,10 @@ import (
 type installation struct {
 	// Native operation paths; UI uses pathLabel. A future configuration
 	// schema must explicitly choose its representation instead of saving these.
-	directory string
-	data      string
-	key       string
+	directory  string
+	data       string
+	key        string
+	legacyData string
 }
 
 func currentInstallation() (installation, error) {
@@ -39,8 +40,9 @@ func installationForExecutable(exe string) (installation, error) {
 	}
 	defer object.Close()
 	return installation{
-		directory: object.path,
-		data:      filepath.Join(object.path, "Data"),
-		key:       "SyncMaid-" + object.key,
+		directory:  object.path,
+		data:       filepath.Join(object.path, "Data"),
+		key:        "SyncMaid-" + object.key,
+		legacyData: filepath.Join(filepath.Dir(exe), "Data"),
 	}, nil
 }

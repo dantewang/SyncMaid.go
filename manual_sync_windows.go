@@ -69,7 +69,7 @@ func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess 
 			err = errors.Join(err, protectedTransferIO(ctx, r.Close))
 		}
 	}()
-	if r.source, err = openDirectory(q.Source); err != nil {
+	if r.source, err = openDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {
 		return nil, fmt.Errorf("源文件夹: %w", err)
 	}
 	if r.target, err = openDirectoryAccess(q.Target, targetAccess); err != nil {
@@ -82,12 +82,13 @@ func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess 
 		if err = ordinaryDirectory(pair[0].handle); err != nil {
 			return nil, err
 		}
-		for path := filepath.Dir(pair[0].path); ; path = filepath.Dir(path) {
+		for child := pair[0].path; filepath.Dir(child) != child; {
+			path := filepath.Dir(child)
 			if err = ctx.Err(); err != nil {
 				return nil, err
 			}
 			var parent *directoryObject
-			parent, err = openDirectory(path)
+			parent, err = openDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
 			if err != nil {
 				return nil, err
 			}
@@ -95,9 +96,7 @@ func openTransferRootsAccess(ctx context.Context, q manualRequest, targetAccess 
 			if parent.key == pair[1].key {
 				return nil, fmt.Errorf("%w: 源与目标互相包含（包括目录别名）", errTransferOverlap)
 			}
-			if filepath.Dir(path) == path {
-				break
-			}
+			child = path
 		}
 	}
 	return r, nil
@@ -258,7 +257,9 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	if expected != nil {
 		access |= windows.DELETE
 	}
-	source, e := openTransferChild(sp, name, false, windows.FILE_OPEN, access, windows.FILE_SHARE_READ)
+	source, e := retryTransferOpen(ctx, func() (*os.File, error) {
+		return openTransferChild(sp, name, false, windows.FILE_OPEN, access, windows.FILE_SHARE_READ)
+	})
 	if e != nil {
 		return false, e
 	}
@@ -271,7 +272,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 		return false, errors.New("源文件已在扫描后改变，请重新运行")
 	}
 	if expected != nil {
-		actual, e := mirrorFileStamp(source)
+		actual, e := mirrorFileStamp(source, roots.source.fat)
 		if e != nil {
 			return false, e
 		}
@@ -294,7 +295,9 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 	replace := false
 	suffix := expected != nil && ops.collision == taskconfig.Suffix
 	if !suffix {
-		existing, e = openTransferChild(dp, name, false, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
+		existing, e = retryTransferOpen(ctx, func() (*os.File, error) {
+			return openTransferChild(dp, name, false, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
+		})
 		if e == nil {
 			if expected != nil {
 				return false, existing.Close()
@@ -384,7 +387,7 @@ func transferFileTo(ctx context.Context, roots *transferRoots, entry fileinvento
 			if e := ctx.Err(); e != nil {
 				return e
 			}
-			actual, e := mirrorFileStamp(source)
+			actual, e := mirrorFileStamp(source, roots.source.fat)
 			if e != nil {
 				return e
 			}

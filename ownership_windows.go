@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"unsafe"
+
+	"syncmaid/internal/windowsfs"
 
 	"golang.org/x/sys/windows"
 )
@@ -19,13 +19,21 @@ func prepareDataDirectory(path string) error { return os.MkdirAll(path, 0o755) }
 // Its identity is diagnostic/activation data; exclusion uses the actual file
 // object, not a hash of its pathname or a Windows session's object namespace.
 type directoryObject struct {
-	handle windows.Handle
-	path   string // Native operation path, including extended-length prefix.
-	key    string
+	handle    windows.Handle
+	path      string // Native operation path, including extended-length prefix.
+	key       string
+	network   bool
+	fat       bool
+	removable bool
 }
 
 func openDirectory(path string) (*directoryObject, error) {
-	return openDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
+	d, err := openDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
+	if err == nil && d.network {
+		err = errors.Join(fmt.Errorf("%w: installation and Data must be local", errUnsupportedLocation), d.Close())
+		return nil, err
+	}
+	return d, err
 }
 
 func openDirectoryAccess(path string, access uint32) (*directoryObject, error) {
@@ -68,42 +76,40 @@ func openDirectoryAccess(path string, access uint32) (*directoryObject, error) {
 	if final == "" {
 		return nil, errors.New("directory final path too long")
 	}
-	// Network/offline filesystem coordination is deliberately unsupported until
-	// tested. A failure here never falls back to the original pathname.
-	display := strings.TrimPrefix(final, `\\?\`)
-	if strings.HasPrefix(strings.ToUpper(display), `UNC\`) {
-		return nil, fmt.Errorf("%w: network directory", errUnsupportedLocation)
+	network := windowsfs.Network(final) || windowsfs.Network(path)
+	removable := false
+	if !network {
+		volume := filepath.VolumeName(pathLabel(final))
+		if len(volume) != 2 || volume[1] != ':' {
+			return nil, fmt.Errorf("%w: directory has no local DOS volume path", errUnsupportedLocation)
+		}
+		root, err := windows.UTF16PtrFromString(volume + "\\")
+		if err != nil {
+			return nil, err
+		}
+		switch windows.GetDriveType(root) {
+		case windows.DRIVE_FIXED:
+		case windows.DRIVE_REMOVABLE:
+			removable = true
+		default:
+			return nil, fmt.Errorf("%w: directory drive type", errUnsupportedLocation)
+		}
 	}
-	volume := filepath.VolumeName(display)
-	if len(volume) != 2 || volume[1] != ':' {
-		return nil, fmt.Errorf("%w: directory has no local DOS volume path", errUnsupportedLocation)
-	}
-	root, err := windows.UTF16PtrFromString(volume + `\`)
+	kind, _, err := windowsfs.Volume(h)
 	if err != nil {
 		return nil, err
 	}
-	if windows.GetDriveType(root) != windows.DRIVE_FIXED {
-		return nil, fmt.Errorf("%w: ownership requires a local fixed volume", errUnsupportedLocation)
-	}
-	var fs [256]uint16
-	if err := windows.GetVolumeInformationByHandle(h, nil, 0, nil, nil, nil, &fs[0], uint32(len(fs))); err != nil {
-		return nil, err
-	}
-	if kind := windows.UTF16ToString(fs[:]); kind != "NTFS" && kind != "ReFS" {
+	fat := !network && windowsfs.FAT(kind)
+	if !network && !fat && kind != "NTFS" && kind != "REFS" {
 		return nil, fmt.Errorf("%w: filesystem %q", errUnsupportedLocation, kind)
 	}
-	var id struct {
-		Volume uint64
-		File   [16]byte
-	}
-	if err := windows.GetFileInformationByHandleEx(h, windows.FileIdInfo, (*byte)(unsafe.Pointer(&id)), uint32(unsafe.Sizeof(id))); err != nil {
+	id, err := windowsfs.FileIdentity(h, fat)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errUnreliableIdentity, err)
 	}
-	if id.File == [16]byte{} {
-		return nil, fmt.Errorf("%w: empty directory ID", errUnreliableIdentity)
-	}
 	ok = true
-	return &directoryObject{handle: h, path: final, key: fmt.Sprintf("%016x-%x", id.Volume, id.File)}, nil
+	return &directoryObject{handle: h, path: final, key: fmt.Sprintf("%016x-%x", id.Volume, id.File),
+		network: network, fat: fat, removable: removable}, nil
 }
 
 func (d *directoryObject) Close() error { return windows.CloseHandle(d.handle) }
@@ -189,6 +195,9 @@ func acquireOwnership(install installation) (_ *ownership, result error) {
 			return nil, &locationError{path: path, cause: err}
 		}
 		o.claims = append(o.claims, h)
+	}
+	if err := o.claimLegacyPaths(install.data, o.data.path, install.legacyData); err != nil {
+		return nil, &locationError{path: install.data, cause: err}
 	}
 	return o, nil
 }

@@ -1,13 +1,37 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"syncmaid/internal/windowsfs"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+// Retry only the initial open of an existing object. Never replay a write,
+// rename or delete whose result could be ambiguous.
+func retryTransferOpen(ctx context.Context, open func() (*os.File, error)) (*os.File, error) {
+	for attempt := 1; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		f, err := open()
+		if attempt == 3 || (!errors.Is(err, windows.ERROR_SHARING_VIOLATION) && !errors.Is(err, windows.ERROR_LOCK_VIOLATION)) {
+			return f, err
+		}
+		timer := time.NewTimer(time.Duration(attempt) * 200 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
 
 func ntError(err error) error {
 	if status, ok := err.(windows.NTStatus); ok {
@@ -17,11 +41,11 @@ func ntError(err error) error {
 }
 
 func ordinaryDirectory(h windows.Handle) error {
-	var flags uint32
-	if err := windows.GetFileInformationByHandleEx(h, windows.FileCaseSensitiveInfo, (*byte)(unsafe.Pointer(&flags)), 4); err != nil {
+	sensitive, err := windowsfs.CaseSensitive(h)
+	if err != nil {
 		return err
 	}
-	if flags&windows.FILE_CS_FLAG_CASE_SENSITIVE_DIR != 0 {
+	if sensitive {
 		return errors.New("暂不支持区分大小写的目录")
 	}
 	return nil
