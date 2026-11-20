@@ -47,6 +47,7 @@ type application struct {
 	watchPhase         watchServicePhase
 	watchActivity      localizedMessage
 	settingsOpen       bool
+	moreMenuOpen       bool
 	openDataError      error
 	legacyDataError    error
 	languagePreference string

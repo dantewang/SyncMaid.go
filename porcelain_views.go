@@ -87,14 +87,11 @@ func (a *application) manualView(c *ui.Context) {
 				ui.Text(c, "SYNC").FontSize(13).LineHeight(1.5).Bold().Background(porcelain.Accent).TextColor(porcelain.AccentText).Padding(4, 6)
 				ui.Text(c, "MAID").FontSize(13).Bold().Grow(1)
 				modalLocked := screen == screenMirrorConfirm || screen == screenImport || screen == screenRegex
-				var gear ui.Element
-				if screen == screenSettings {
-					gear = porcelainPrimaryIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
-				} else {
-					gear = porcelainIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
-				}
-				gear.Disabled(modalLocked || a.manual.busy()).OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false })
-				ui.MenuButton(c, "", func(m *ui.Menu) {
+				gear := porcelainSidebarIcon(c, "⚙", a.tr("设置"), modalLocked || a.manual.busy())
+				gear.OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false })
+				styleSidebarIcon(gear, a.activeScreen() == screenSettings)
+				menuBtn := porcelainSidebarIcon(c, "menu", a.tr("更多操作"), false)
+				menuBtn.PopoverMenuButton(func(m *ui.Menu) {
 					if m.Item(a.tr("运行全部")).Disabled(!a.cardActionAllowed() || modalLocked).Chosen() {
 						a.startBatch()
 					}
@@ -123,7 +120,12 @@ func (a *application) manualView(c *ui.Context) {
 					if m.Item(a.tr("Exit")).Chosen() {
 						a.requestQuit()
 					}
-				}).Label(a.tr("更多操作")).Tooltip(a.tr("更多操作")).Padding(0).Shrink(0).Size(24, 24)
+				}, ui.PopoverMenuButtonOptions{
+					At:   ui.AnchorTopStart,
+					Self: ui.AnchorBottomStart,
+					Open: &a.moreMenuOpen,
+				})
+				styleSidebarIcon(menuBtn, a.moreMenuOpen)
 			})
 		})
 		ui.Box(c).Width(1).FillHeight().Background(porcelain.Border)

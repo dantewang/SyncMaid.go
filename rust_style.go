@@ -11,7 +11,7 @@ var porcelainIcons embed.FS
 //go:embed assets/syncmaid.png
 var porcelainAppIcon []byte
 var porcelainGlyphs = func() map[string]*ui.SVG {
-	names := map[string]string{"♢": "pencil", "▷": "play", "⌄": "chevron-down", "up": "arrow-up", "›": "chevron-right", "＋": "plus", "⚙": "settings", "□": "folder", "■": "circle-stop", "×": "close", "⌫": "trash-2", "sync": "refresh-cw", "move": "split", "manual": "mouse-pointer-click", "clock": "clock", "eye": "eye", "filter": "funnel", "copy": "copy", "check": "check"}
+	names := map[string]string{"♢": "pencil", "▷": "play", "⌄": "chevron-down", "up": "arrow-up", "›": "chevron-right", "＋": "plus", "⚙": "settings", "menu": "menu", "□": "folder", "■": "circle-stop", "×": "close", "⌫": "trash-2", "sync": "refresh-cw", "move": "split", "manual": "mouse-pointer-click", "clock": "clock", "eye": "eye", "filter": "funnel", "copy": "copy", "check": "check"}
 	out := map[string]*ui.SVG{}
 	for key, name := range names {
 		data, err := porcelainIcons.ReadFile("assets/porcelain-icons/" + name + ".svg")
@@ -95,6 +95,27 @@ func porcelainIcon(c *ui.Context, glyph, label string) ui.Element {
 }
 func porcelainPrimaryIcon(c *ui.Context, glyph, label string) ui.Element {
 	return ui.PrimaryButton(c, "").Padding(0).Radius(0).Size(24, 24).Label(label).Tooltip(label).Shrink(0).Children(func() { ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16) })
+}
+func porcelainSidebarIcon(c *ui.Context, glyph, label string, disabled bool) ui.Element {
+	return ui.ButtonBase(c).Padding(0).Radius(0).Size(24, 24).Border(0, ui.Transparent).Label(label).Tooltip(label).Shrink(0).Disabled(disabled).Children(func() {
+		ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16)
+	})
+}
+func styleSidebarIcon(b ui.Element, active bool) {
+	bg, fg := ui.Transparent, porcelain.Text
+	if active {
+		bg, fg = porcelain.Accent, porcelain.AccentText
+		if b.Pressed() {
+			bg = porcelain.AccentPressed
+		} else if b.Hovered() {
+			bg = porcelain.AccentHover
+		}
+	} else if b.Pressed() {
+		bg = porcelain.Border
+	} else if b.Hovered() {
+		bg = ui.Color{R: 248, G: 250, B: 251, A: 204}
+	}
+	b.Background(bg).TextColor(fg)
 }
 func porcelainTag(c *ui.Context, text string, primary bool) {
 	pip := rgb(0x5B666E)

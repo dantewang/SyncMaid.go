@@ -4,12 +4,47 @@ package e2e
 
 import (
 	"encoding/json"
+	"image/color"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func movePointer(c *autoClient, winID int, x, y float64) {
+	c.t.Helper()
+	c.must("input", map[string]any{
+		"window": winID,
+		"events": []any{map[string]any{"type": "pointerMove", "x": x, "y": y}},
+	}, nil)
+	c.idle(winID)
+}
+
+func assertPixelNear(t *testing.T, imgPixel color.Color, wantR, wantG, wantB uint8, tol int, label string) {
+	t.Helper()
+	got := color.NRGBAModel.Convert(imgPixel).(color.NRGBA)
+	diff := func(a, b uint8) int {
+		if a > b {
+			return int(a - b)
+		}
+		return int(b - a)
+	}
+	if diff(got.R, wantR) > tol || diff(got.G, wantG) > tol || diff(got.B, wantB) > tol {
+		t.Fatalf("%s pixel = rgb(%d,%d,%d), want near rgb(%d,%d,%d) (tol=%d)", label, got.R, got.G, got.B, wantR, wantG, wantB, tol)
+	}
+}
+
+func sampleNodeCorner(c *autoClient, winID int, content autoRect, b autoRect) color.Color {
+	c.t.Helper()
+	img, w, h := c.capture(winID)
+	scaleX := float64(w) / content.Width
+	scaleY := float64(h) / content.Height
+	px := int(math.Round((b.X + 2) * scaleX))
+	py := int(math.Round((b.Y + 2) * scaleY))
+	return img.At(px, py)
+}
 
 func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 	inst := newE2EInstall(t)
@@ -55,6 +90,65 @@ func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 		b, err := os.ReadFile(settingsPath)
 		return err == nil && strings.Contains(string(b), `"CloseToTray": true`) || strings.Contains(string(b), `"CloseToTray":true`)
 	})
+
+	// Verify sidebar footer icon buttons: unified size, borderless transparent rest, hover, active state, and upward popover menu.
+	gearZh := c.waitNode(win.ID, 5*time.Second, "settings button zh", func(n autoNode) bool {
+		return n.Role == "button" && n.Label == "设置" && !n.disabled()
+	})
+	more := c.waitNode(win.ID, 5*time.Second, "more menu button", func(n autoNode) bool {
+		return n.Role == "menuButton" && n.Label == "更多操作" && !n.disabled()
+	})
+	if math.Abs(gearZh.Bounds.Width-24) > 0.5 || math.Abs(gearZh.Bounds.Height-24) > 0.5 ||
+		math.Abs(gearZh.Bounds.Width-more.Bounds.Width) > 0.5 ||
+		math.Abs(gearZh.Bounds.Height-more.Bounds.Height) > 0.5 ||
+		math.Abs(gearZh.Bounds.Y-more.Bounds.Y) > 0.5 {
+		t.Fatalf("sidebar footer buttons geometry mismatch: gear=%+v more=%+v", gearZh.Bounds, more.Bounds)
+	}
+
+	movePointer(c, win.ID, 8, 8)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 25, 28, 34, 4, "gear active rest")
+	movePointer(c, win.ID, gearZh.Bounds.X+gearZh.Bounds.Width/2, gearZh.Bounds.Y+gearZh.Bounds.Height/2)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 17, 111, 142, 4, "gear active hover")
+
+	c.pressNode(win.ID, gearZh)
+	c.waitNoText(win.ID, "关闭到托盘", 5*time.Second)
+
+	movePointer(c, win.ID, 8, 8)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 217, 223, 227, 4, "gear inactive rest")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 217, 223, 227, 4, "more inactive rest")
+
+	movePointer(c, win.ID, gearZh.Bounds.X+gearZh.Bounds.Width/2, gearZh.Bounds.Y+gearZh.Bounds.Height/2)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 242, 245, 246, 4, "gear inactive hover")
+	movePointer(c, win.ID, more.Bounds.X+more.Bounds.Width/2, more.Bounds.Y+more.Bounds.Height/2)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 242, 245, 246, 4, "more inactive hover")
+
+	c.pressNode(win.ID, more)
+	c.waitNode(win.ID, 5*time.Second, "more menu Exit item", func(n autoNode) bool {
+		return n.Role == "menuItem" && n.Label == "退出"
+	})
+	menuNode := c.waitNode(win.ID, 5*time.Second, "more popover menu container", func(n autoNode) bool {
+		return n.Role == "menu"
+	})
+	if menuNode.Bounds.Y < 0 || menuNode.Bounds.X < 0 ||
+		menuNode.Bounds.X+menuNode.Bounds.Width > win.ContentBounds.Width+1 ||
+		menuNode.Bounds.Y+menuNode.Bounds.Height > more.Bounds.Y {
+		t.Fatalf("expected menu to pop up above button inside window: menu=%+v more=%+v content=%+v", menuNode.Bounds, more.Bounds, win.ContentBounds)
+	}
+
+	// Open popover menu casts a soft downward shadow across the top edge of the trigger button.
+	movePointer(c, win.ID, 8, 8)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 25, 28, 34, 10, "more active rest")
+	movePointer(c, win.ID, more.Bounds.X+more.Bounds.Width/2, more.Bounds.Y+more.Bounds.Height/2)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 17, 111, 142, 10, "more active hover")
+
+	c.must("input", map[string]any{
+		"window": win.ID,
+		"events": []any{map[string]any{"type": "key", "key": "Escape"}},
+	}, nil)
+	c.idle(win.ID)
+	c.waitNoText(win.ID, "退出", 5*time.Second)
+	movePointer(c, win.ID, 8, 8)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 217, 223, 227, 4, "more closed rest")
 
 	if err := sendWMClose(proc.pid(), "SyncMaid"); err != nil {
 		t.Fatal(err)
