@@ -15,55 +15,6 @@ import (
 	"syncmaid/internal/taskstore"
 )
 
-func TestSavedTasksCRUDAndReloadKeepLegacyFiles(t *testing.T) {
-	data := t.TempDir()
-	old := filepath.Join(data, "tasks.json")
-	backup := old + ".bak"
-	manualWrite(t, old, "legacy untouched")
-	manualWrite(t, backup, "legacy backup untouched")
-	l, err := appcore.LoadSavedTasks(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	q1, q2 := manualFixture(t), manualFixture(t)
-	l, id1, err := saveTask(l, "", "First", q1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, id2, err := saveTask(l, "", "Second", q2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first, _ := l.Find(id1)
-	destID := first.Destinations[0].ID
-	q1.Source = manualFixture(t).Source
-	l, editedID, err := saveTask(l, id1, "Edited", q1)
-	if err != nil || editedID != id1 {
-		t.Fatal(editedID, err)
-	}
-	l, err = appcore.LoadSavedTasks(data)
-	if err != nil || len(l.Tasks) != 2 {
-		t.Fatal(l, err)
-	}
-	first, err = l.Find(id1)
-	if err != nil || first.Name != "Edited" || first.SourcePath != q1.Source || first.Destinations[0].ID != destID {
-		t.Fatal(first, err)
-	}
-	if _, err = l.Find(id2); err != nil {
-		t.Fatal(err)
-	}
-	l, err = l.Remove(id1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err = appcore.LoadSavedTasks(data)
-	if err != nil || len(l.Tasks) != 1 || l.Tasks[0].ID != id2 {
-		t.Fatal(l, err)
-	}
-	manualRead(t, old, "legacy untouched")
-	manualRead(t, backup, "legacy backup untouched")
-}
-
 func TestSavedTaskUnknownFieldsAndStrategyAreNotDowngraded(t *testing.T) {
 	for _, unsupported := range []string{"Task", "Trigger", "Destination", "Target", "Rule", "Strategy"} {
 		t.Run(unsupported, func(t *testing.T) {

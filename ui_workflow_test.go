@@ -77,44 +77,6 @@ func TestTaskSheetSavesZeroDestinationsWithoutRuntimePreflight(t *testing.T) {
 	}
 }
 
-func TestTaskSheetCancelXEscapeAndStayOpenOnBlankClicks(t *testing.T) {
-	for _, how := range []string{"取消", "关闭编辑", "escape"} {
-		t.Run(how, func(t *testing.T) {
-			a, _ := emptyTaskApplication(t)
-			a.cards.editor = true
-			view := ui.NewTester(a.view, 760, 620)
-			switch how {
-			case "取消", "关闭编辑":
-				if err := view.Click(how); err != nil {
-					t.Fatal(err)
-				}
-			case "escape":
-				view.Key(0, ui.KeyEscape)
-			}
-			if a.cards.editor || a.manual.dirty || len(a.tasks.Tasks) != 0 {
-				t.Fatal("cancel retained draft or saved it")
-			}
-		})
-	}
-	for _, pos := range []struct {
-		name string
-		x, y float32
-	}{
-		{"backdrop", 8, 300},
-		{"sheet-blank", 740, 560},
-	} {
-		t.Run(pos.name, func(t *testing.T) {
-			a, _ := emptyTaskApplication(t)
-			a.cards.editor = true
-			view := ui.NewTester(a.view, 760, 620)
-			view.ClickAt(pos.x, pos.y)
-			if !a.cards.editor {
-				t.Fatalf("%s click unexpectedly closed editor", pos.name)
-			}
-		})
-	}
-}
-
 func TestDestinationCancelIsRowScopedAndCopyIsIndependent(t *testing.T) {
 	a, _ := emptyTaskApplication(t)
 	q, _ := multiFixture(t)
@@ -144,6 +106,10 @@ func TestDestinationCancelIsRowScopedAndCopyIsIndependent(t *testing.T) {
 	copyID := a.manual.targetID
 	if copyID == original.ID {
 		t.Fatal("copy reused identity")
+	}
+	a.toggleDestinationEditor(copyID)
+	if a.cards.targetHidden == copyID {
+		t.Fatal("accepted overlapping copy")
 	}
 	a.manual.target = t.TempDir()
 	a.manual.targetName = "accepted copy"

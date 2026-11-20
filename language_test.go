@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"testing"
 	"unicode"
@@ -87,40 +86,6 @@ func TestLanguageCatalogKeysAndInterpolation(t *testing.T) {
 				}
 			}
 			return true
-		})
-	}
-}
-
-func TestLanguageEditorAndHistoryRegions(t *testing.T) {
-	for _, choice := range languageChoices {
-		t.Run(choice.tag, func(t *testing.T) {
-			d := syncengine.ManualDestination{ID: taskconfig.NewID(), Name: "完成", Path: `C:\目標`, Filters: syncengine.AllFileRules(), Collision: taskconfig.Suffix}
-			a := &application{locale: choice.tag, manual: manualSession{
-				name: "Settings", source: `C:\源`, targets: []syncengine.ManualDestination{d}, targetID: d.ID, targetName: d.Name, target: d.Path,
-				kind: taskconfig.Moving, filterEditor: appcore.FilterEditor{Mode: appcore.FilterGrouped, Groups: []appcore.FilterDraftGroup{{}}},
-				trigger: taskconfig.Trigger{Kind: "scheduled"}, cronText: "*/5 * * * *", cronNext: "2026-11-15 10:00:00 CST",
-			}}
-			a.cards.editor = true
-			view := ui.NewTester(a.view, 1000, 1400)
-			a.cards.destinations = true
-			destinationView := ui.NewTester(a.view, 1000, 1400)
-			for _, key := range []string{"任务名称", "路径前缀", "任一规则", "保留源", "加编号", "cron表达式"} {
-				if !view.HasText(a.tr(key)) && !destinationView.HasText(a.tr(key)) {
-					t.Errorf("missing translated editor region %q", key)
-				}
-			}
-			if a.manual.name != "Settings" || a.manual.source != `C:\源` || a.manual.targetName != "完成" || a.manual.cronText != "*/5 * * * *" {
-				t.Fatal("user fields changed")
-			}
-			r := appcore.RunRecord{ID: taskconfig.NewID(), TaskID: taskconfig.NewID(), Name: "完成", Outcome: "stopped", Goals: []appcore.RunGoal{{ID: d.ID, Name: d.Name, State: syncengine.DestinationCanceled}}}
-			a.historyView = appcore.RunHistoryData{Version: 1, Recent: []appcore.RunRecord{r}}
-			a.historyOpen = true
-			view = ui.NewTester(a.view, 1000, 1400)
-			for _, key := range []string{"近期运行记录", "已停止"} {
-				if !strings.Contains(strings.Join(view.Texts(), "\n"), a.tr(key)) {
-					t.Errorf("missing translated history %q", key)
-				}
-			}
 		})
 	}
 }

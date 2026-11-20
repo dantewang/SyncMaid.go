@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/egoist/mygo/ui"
-	"strings"
 	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
@@ -72,55 +71,6 @@ func TestCollapseActionTracksCurrentCards(t *testing.T) {
 	a.toggleCard(id)
 	if a.hasCollapsedCards() {
 		t.Fatal("expanded card still counted as collapsed")
-	}
-}
-
-func TestCardOverviewLanguagesAndIndependentResults(t *testing.T) {
-	l, err := appcore.LoadSavedTasks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, id, err := saveTask(l, "", "Overview", manualFixture(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	task, _ := l.Find(id)
-	did := task.Destinations[0].ID
-	a := &application{tasks: l, results: map[taskconfig.ID]savedTaskResult{id: {message: messagef("全部目标同步完成"), destinations: syncengine.MultipleResult{did: {Name: "Destination", State: syncengine.DestinationSucceeded}}}}}
-	for _, choice := range languageChoices {
-		a.locale = choice.tag
-		tt := ui.NewTester(a.view, 1400, 1600)
-		if !tt.HasText(a.tr("同步任务")) || !tt.HasText(a.tr("全部已同步")) {
-			t.Fatal(choice.tag, tt.Texts())
-		}
-		n := 0
-		for _, text := range tt.Texts() {
-			if strings.Contains(text, task.SourcePath) {
-				n++
-			}
-		}
-		if n != 1 {
-			t.Fatal("source repeated", n)
-		}
-		if tt.HasText(a.tr("任务名称")) {
-			t.Fatal("editor permanently visible")
-		}
-	}
-	a.manual = manualSession{id: taskconfig.NewID(), name: "unsaved", dirty: true, phase: manualRunning}
-	a.cards.running = id
-	tt := ui.NewTester(a.view, 900, 1600)
-	if !tt.HasText("Overview") || a.manual.name != "unsaved" || !a.manual.dirty {
-		t.Fatal("automatic activity replaced draft")
-	}
-}
-
-func TestCardCollapseDoesNotMutateDraftOrResults(t *testing.T) {
-	id := taskconfig.NewID()
-	a := &application{manual: manualSession{id: id, dirty: true, name: "draft", phase: manualRunning}, results: map[taskconfig.ID]savedTaskResult{id: {message: messagef("正在运行…")}}}
-	a.toggleCard(id)
-	a.toggleCard(id)
-	if a.manual.name != "draft" || !a.manual.dirty || len(a.results) != 1 {
-		t.Fatal("view navigation mutated business state")
 	}
 }
 

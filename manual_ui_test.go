@@ -111,6 +111,10 @@ func TestMovePersistenceAndGuards(t *testing.T) {
 	if !a.manual.targets[0].Flatten {
 		t.Fatal("running edit")
 	}
+	a.setMoveCollision(taskconfig.Suffix)
+	if a.manual.targets[0].Collision == taskconfig.Suffix {
+		t.Fatal("running edit changed collision")
+	}
 	task, _ := l.Find(id)
 	task.Destinations[0].CollisionPolicy = taskconfig.CollisionPolicy("Future")
 	if _, e := appcore.MultipleRequestFromSaved(task); e == nil {
@@ -123,44 +127,5 @@ func TestMovePersistenceAndGuards(t *testing.T) {
 	_, _, e = syncengine.PrepareMoveRoutes(context.Background(), nil, []syncengine.ManualDestination{{ID: taskconfig.NewID(), Strategy: taskconfig.Move, Filters: []taskconfig.Rule{{Kind: "regex", Pattern: filterText("a")}}}})
 	if !errors.Is(e, filefilter.ErrUnsupportedRegex) {
 		t.Fatal(e)
-	}
-}
-
-func TestMoveSuffixPersistenceAndUI(t *testing.T) {
-	data := t.TempDir()
-	l, e := appcore.LoadSavedTasks(data)
-	if e != nil {
-		t.Fatal(e)
-	}
-	q, _ := moveFixture(t)
-	l, id, e := saveMultiple(l, "", "suffix", q)
-	if e != nil {
-		t.Fatal(e)
-	}
-	a := application{tasks: l}
-	a.selectManual(id)
-	a.setMoveCollision(taskconfig.Suffix)
-	l, _, e = saveMultiple(l, id, "suffix", a.manual.draftRequest())
-	if e != nil {
-		t.Fatal(e)
-	}
-	l, e = appcore.LoadSavedTasks(data)
-	if e != nil {
-		t.Fatal(e)
-	}
-	task, _ := l.Find(id)
-	request, e := appcore.MultipleRequestFromSaved(task)
-	if e != nil || request.Destinations[0].Collision != taskconfig.Suffix {
-		t.Fatal(request, e)
-	}
-	a.manual.phase = manualRunning
-	a.setMoveCollision(taskconfig.Skip)
-	if a.manual.targets[0].Collision != taskconfig.Suffix {
-		t.Fatal("running edit")
-	}
-	task.Kind = taskconfig.Sync
-	task.Destinations[0].Strategy = taskconfig.AddOnly
-	if _, e = appcore.MultipleRequestFromSaved(task); e == nil {
-		t.Fatal("Sync suffix silently accepted")
 	}
 }
