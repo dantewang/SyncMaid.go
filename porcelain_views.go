@@ -39,6 +39,7 @@ func (a *application) activeScreen() uiScreen {
 
 func (a *application) manualView(c *ui.Context) {
 	c.SetTheme(&porcelain)
+	e2eConfigureView(c)
 	width, height := c.Size()
 	s := &a.manual
 	screen := a.activeScreen()
@@ -86,9 +87,11 @@ func (a *application) manualView(c *ui.Context) {
 				ui.Text(c, "SYNC").FontSize(13).LineHeight(1.5).Bold().Background(porcelain.Accent).TextColor(porcelain.AccentText).Padding(4, 6)
 				ui.Text(c, "MAID").FontSize(13).Bold().Grow(1)
 				modalLocked := screen == screenMirrorConfirm || screen == screenImport || screen == screenRegex
-				gear := porcelainIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
+				var gear ui.Element
 				if screen == screenSettings {
 					gear = porcelainPrimaryIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
+				} else {
+					gear = porcelainIcon(c, "⚙", a.tr("设置")).Border(0, ui.Transparent)
 				}
 				gear.Disabled(modalLocked || a.manual.busy()).OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false })
 				ui.MenuButton(c, "", func(m *ui.Menu) {

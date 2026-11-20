@@ -353,7 +353,7 @@ func (a *application) confirmRemoveManualTarget() {
 	id := s.targetID
 	options := mygo.MessageOptions{Parent: a.window, Type: mygo.MessageWarning, Title: a.tr("移除目标（仅配置）"), Message: a.tr("确认移除目标「%s」？", s.targetName), Detail: a.tr("只移除此目标配置，不删除文件；其他目标的编辑保留。"), Buttons: []string{a.tr("取消"), a.tr("删除")}, CancelButton: 0, DefaultButton: 0, DestructiveButtons: []int{1}}
 	runDialog(a, func() (mygo.MessageResult, error) {
-		return mygo.Dialog.Message(options)
+		return e2eDialogMessage(options)
 	}, func(answer mygo.MessageResult, err error) {
 		if !s.quitPending && err == nil && answer.Button == 1 && s.targetID == id {
 			a.removeManualTarget()

@@ -19,7 +19,7 @@ func (a *application) beginImport() {
 		preview *appcore.LegacyImport
 	}
 	runDialog(a, func() (importChoice, error) {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: a.window, Title: title})
+		paths, err := e2eDialogOpen(mygo.OpenDialogOptions{Parent: a.window, Title: title})
 		var out importChoice
 		if err == nil && len(paths) > 0 {
 			out.preview, err = appcore.ReadLegacyImport(paths[0], library)

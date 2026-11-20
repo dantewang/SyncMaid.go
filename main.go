@@ -188,6 +188,10 @@ func main() {
 // A synchronous Win32 message box needs no MyGo event loop, config path or
 // application-owned Data. Called on main after run returns and releases locks.
 func showStartupNotice(notice winutil.StartupNotice) error {
+	if e2eSuppressStartupNotice() {
+		slog.Error("startup-notice-suppressed", "title", notice.Title, "message", notice.Message)
+		return nil
+	}
 	text, err := windows.UTF16PtrFromString(notice.Message)
 	if err != nil {
 		return err

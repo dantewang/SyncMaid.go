@@ -216,7 +216,7 @@ func (a *application) confirmDeleteManual() {
 	s.phase = manualChoosing
 	options := mygo.MessageOptions{Parent: a.window, Type: mygo.MessageWarning, Title: a.tr("删除任务"), Message: a.tr("确认删除任务「%s」？", name), Detail: a.tr("只删除任务记录，不删除源或目标文件。未保存编辑也会放弃。"), Buttons: []string{a.tr("取消"), a.tr("删除")}, DefaultButton: 0, CancelButton: 0, DestructiveButtons: []int{1}}
 	go func() {
-		result, err := mygo.Dialog.Message(options)
+		result, err := e2eDialogMessage(options)
 		a.window.Update(func() {
 			s.phase = previous
 			if s.quitPending {
@@ -316,7 +316,7 @@ func (a *application) confirmTaskRecovery(backup *taskstore.LoadError) {
 			})
 			return
 		}
-		result, dialogErr := mygo.Dialog.Message(options)
+		result, dialogErr := e2eDialogMessage(options)
 		a.window.Update(func() {
 			s.phase = previous
 			if s.quitPending {

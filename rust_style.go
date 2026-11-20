@@ -29,7 +29,7 @@ func rgb(v uint32) ui.Color {
 }
 
 func porcelainChoice(c *ui.Context, glyph, title, body string, selected, disabled bool, choose func()) ui.Element {
-	e := ui.ButtonBase(c).FillWidth().Justify(ui.Start).Gap(12).Padding(12).MinHeight(72).Border(1, porcelain.Border).Disabled(disabled)
+	e := ui.ButtonBase(c).Label(title).FillWidth().Justify(ui.Start).Gap(12).Padding(12).MinHeight(72).Border(1, porcelain.Border).Disabled(disabled)
 	if selected {
 		e = e.Background(rgb(0xDEF0F4)).Border(1, porcelain.Text)
 	}

@@ -180,7 +180,7 @@ func (a *application) chooseFolder(source bool) {
 	}
 	title := a.tr("选择文件夹")
 	runDialog(a, func() ([]string, error) {
-		return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: a.window, Title: title, Directory: true})
+		return e2eDialogOpen(mygo.OpenDialogOptions{Parent: a.window, Title: title, Directory: true})
 	}, func(paths []string, err error) {
 		if err != nil {
 			s.message = messagef("选择失败: %s", err.Error())

@@ -239,7 +239,7 @@ func (a *application) openLegacyData() {
 	on, off := a.tr("开启"), a.tr("关闭")
 	ok, cancel := a.tr("导入"), a.tr("取消")
 	go func() {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: a.window, Title: title})
+		paths, err := e2eDialogOpen(mygo.OpenDialogOptions{Parent: a.window, Title: title})
 		var settings *winutil.CommonSettings
 		var diagnostic string
 		if err == nil && len(paths) == 1 {
@@ -256,7 +256,7 @@ func (a *application) openLegacyData() {
 						return off
 					}
 					message := messagef("关闭到托盘：%s；启动时最小化：%s", state(value.CloseToTray), state(value.StartMinimized))
-					result, dialogErr := mygo.Dialog.Message(mygo.MessageOptions{Parent: a.window, Title: title, Message: message.render(locale), Detail: detail, Buttons: []string{cancel, ok}, DefaultButton: 0, CancelButton: 0})
+					result, dialogErr := e2eDialogMessage(mygo.MessageOptions{Parent: a.window, Title: title, Message: message.render(locale), Detail: detail, Buttons: []string{cancel, ok}, DefaultButton: 0, CancelButton: 0})
 					err = dialogErr
 					if err == nil && result.Button == 1 {
 						settings = &value
