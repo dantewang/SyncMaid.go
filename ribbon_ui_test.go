@@ -203,3 +203,34 @@ func TestSourcePreviewTaskPanelProfileAndBuckets(t *testing.T) {
 		t.Fatalf("expected bucket headings in Sampled Buckets view, got %v", panel.Texts())
 	}
 }
+
+func TestPorcelainScrollDynamicGutter(t *testing.T) {
+	var state ui.ScrollState
+	contentHeight := float32(80)
+	view := func(c *ui.Context) {
+		porcelainScroll(c, &state, func() {
+			ui.Box(c).FillWidth().Height(contentHeight).Label("inner-content")
+		}).Size(300, 160)
+	}
+
+	tt := ui.NewTester(view, 300, 160)
+	tt.Frame()
+	if state.MaxY != 0 {
+		t.Fatalf("expected no overflow for short content, got MaxY=%v", state.MaxY)
+	}
+	rc, ok := tt.Find("inner-content")
+	if !ok || rc.W != 300 {
+		t.Fatalf("expected full width 300 without scrollbar gutter, got ok=%v rect=%+v", ok, rc)
+	}
+
+	contentHeight = 320
+	tt.Frame()
+	if state.MaxY <= 0 {
+		t.Fatalf("expected overflow MaxY > 0 after content grew, got %v", state.MaxY)
+	}
+	tt.Frame()
+	rc, ok = tt.Find("inner-content")
+	if !ok || rc.W != 300-scrollbarGutterWidth {
+		t.Fatalf("expected width %v when scrollbar gutter active, got ok=%v rect=%+v", 300-scrollbarGutterWidth, ok, rc)
+	}
+}

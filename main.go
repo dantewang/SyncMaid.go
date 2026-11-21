@@ -14,8 +14,26 @@ import (
 	"syncmaid/internal/winutil"
 )
 
+type appScrollStates struct {
+	taskList      ui.ScrollState
+	taskDetail    ui.ScrollState
+	previewPanel  ui.ScrollState
+	previewModal  ui.ScrollState
+	taskModal     ui.ScrollState
+	destModal     ui.ScrollState
+	settings      ui.ScrollState
+	historyList   ui.ScrollState
+	historyDetail ui.ScrollState
+	destLog       ui.ScrollState
+	mirrorConfirm ui.ScrollState
+	legacyImport  ui.ScrollState
+	regexList     ui.ScrollState
+	regexDetail   ui.ScrollState
+}
+
 type application struct {
 	sourcePreview      sourcePreviewSession
+	scrolls            appScrollStates
 	batch              manualBatch
 	destinationLog     *mygo.Window
 	logTask            taskconfig.ID

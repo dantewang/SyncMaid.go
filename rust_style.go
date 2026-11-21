@@ -105,11 +105,16 @@ func paintRibbonStripe(e ui.Element) ui.Element {
 }
 
 func porcelainChoice(c *ui.Context, glyph, title, body string, selected, disabled bool, choose func()) ui.Element {
-	e := ui.ButtonBase(c).Label(title).FillWidth().Justify(ui.Start).Gap(12).Padding(10, 12).MinHeight(68).Border(1, porcelain.Border).Background(porcelain.Surface).Disabled(disabled)
+	e := ui.ButtonBase(c).Label(title).FillWidth().Justify(ui.Start).Gap(12).Padding(10, 12).MinHeight(68).Disabled(disabled)
+	bg, border := porcelain.Surface, porcelain.Border
 	if selected {
-		e = e.Background(ribbonBlueSoft).Border(1, porcelain.Text)
+		bg, border = ribbonBlueSoft, porcelain.Text
+	} else if e.Pressed() {
+		bg = porcelain.SurfacePressed
+	} else if e.Hovered() {
+		bg = porcelain.SurfaceHover
 	}
-	return e.Children(func() {
+	return e.Border(1, border).Background(bg).Children(func() {
 		ui.Icon(c, porcelainGlyphs[glyph]).Size(22, 22)
 		ui.Column(c).Grow(1).Shrink(1).Gap(4).Children(func() {
 			ui.Text(c, title).Bold()
@@ -153,25 +158,53 @@ func porcelainCompactButton(c *ui.Context, text string) ui.Element {
 }
 
 func ribbonDangerButton(c *ui.Context, text string) ui.Element {
-	return ui.ButtonBase(c).Label(text).Radius(0).Padding(5, 12).Border(1, porcelain.Danger).Background(rgb(0xFBECEE)).TextColor(porcelain.Danger).Children(func() {
-		ui.Text(c, text).FontSize(14).FontWeight(600)
+	b := ui.ButtonBase(c).Label(text).Radius(0).Padding(5, 12)
+	bg, border, fg := rgb(0xFBECEE), porcelain.Danger, porcelain.Danger
+	if b.Pressed() {
+		bg, border, fg = rgb(0x9E222D), rgb(0x9E222D), porcelain.AccentText
+	} else if b.Hovered() {
+		bg, border, fg = porcelain.Danger, porcelain.Danger, porcelain.AccentText
+	}
+	return b.Border(1, border).Background(bg).TextColor(fg).Children(func() {
+		ui.Text(c, text).FontSize(14).FontWeight(600).TextColor(fg)
 	})
 }
 
 func porcelainSegment(c *ui.Context, text string, selected bool, glyph ...string) ui.Element {
-	bg := porcelain.Surface
-	border := porcelain.Border
-	fg := porcelain.TextMuted
+	b := ui.ButtonBase(c).Label(text).Selected(selected).Gap(6).Padding(5, 10)
+	bg, border, fg := porcelain.Surface, porcelain.Border, porcelain.TextMuted
 	if selected {
-		bg = ribbonBlueSoft
-		border = ribbonBlue
-		fg = porcelain.Text
+		bg, border, fg = ribbonBlueSoft, ribbonBlue, porcelain.Text
+	} else if b.Pressed() {
+		bg, fg = porcelain.SurfacePressed, porcelain.Text
+	} else if b.Hovered() {
+		bg, fg = porcelain.SurfaceHover, porcelain.Text
 	}
-	return ui.ButtonBase(c).Label(text).Selected(selected).Gap(6).Padding(5, 10).Border(1, border).Background(bg).TextColor(fg).Children(func() {
+	return b.Border(1, border).Background(bg).TextColor(fg).Children(func() {
 		if len(glyph) > 0 && porcelainGlyphs[glyph[0]] != nil {
 			ui.Icon(c, porcelainGlyphs[glyph[0]]).Size(15, 15)
 		}
-		ui.Text(c, text).FontSize(14)
+		ui.Text(c, text).FontSize(14).TextColor(fg)
+	})
+}
+
+const scrollbarGutterWidth float32 = 12
+
+// porcelainScroll attaches TrackScroll and reserves a dedicated lane for
+// MyGo's overlay scrollbar only while content overflows (state.MaxY > 0),
+// keeping full width when unscrollable while preventing scrollbar overlap.
+func porcelainScroll(c *ui.Context, state *ui.ScrollState, body func()) ui.Element {
+	sc := ui.Scroll(c)
+	if state != nil {
+		sc = sc.TrackScroll(state)
+	}
+	return sc.Children(func() {
+		ui.Row(c).FillWidth().Gap(0).Children(func() {
+			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(body)
+			if state != nil && state.MaxY > 0 {
+				ui.Box(c).Width(scrollbarGutterWidth).Shrink(0)
+			}
+		})
 	})
 }
 

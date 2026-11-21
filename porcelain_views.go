@@ -179,7 +179,7 @@ func (a *application) tasksMasterDetailView(c *ui.Context, width float32) {
 				})
 			})
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
-			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+			porcelainScroll(c, &a.scrolls.taskList, func() {
 				ui.Column(c).FillWidth().Gap(0).Children(func() {
 					if a.tasks == nil {
 						return
@@ -222,7 +222,7 @@ func (a *application) tasksMasterDetailView(c *ui.Context, width float32) {
 						})
 					}
 				})
-			})
+			}).Grow(1).FillWidth()
 		})
 		ui.Box(c).Width(1).FillHeight().Background(porcelain.Border)
 
@@ -382,7 +382,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 			})
 		}
 
-		ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
+		porcelainScroll(c, &a.scrolls.taskDetail, func() {
 			ui.Column(c).FillWidth().Padding(14, 16).Gap(8).Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 					ui.Text(c, fmt.Sprintf("%s (%d)", a.tr("目标"), len(t.Destinations))).FontSize(13).FontWeight(600).TextColor(porcelain.TextMuted).Grow(1)
@@ -402,7 +402,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 					a.destinationRowCard(c, t, d, i, running, result, now)
 				}
 			})
-		})
+		}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
 	}
 
 	if a.sourcePreview.open {

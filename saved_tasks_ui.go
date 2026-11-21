@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 	"strings"
 	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
@@ -28,6 +29,9 @@ func (a *application) newManual() {
 		return
 	}
 	a.sourcePreview.resetSnapshot()
+	a.scrolls.taskModal = ui.ScrollState{}
+	a.scrolls.destModal = ui.ScrollState{}
+	a.scrolls.previewModal = ui.ScrollState{}
 	a.manual = manualSession{onEdit: a.manualEdited, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending}
 }
 func (a *application) selectManual(id taskconfig.ID) {
@@ -40,6 +44,10 @@ func (a *application) selectManual(id taskconfig.ID) {
 		return
 	}
 	sameSource := a.manual.id == id && a.manual.source == t.SourcePath && a.sourcePreview.cachedSnapshot != nil && a.sourcePreview.cachedSnapshot.Source == t.SourcePath
+	if a.manual.id != id {
+		a.scrolls.taskDetail = ui.ScrollState{}
+		a.scrolls.previewPanel = ui.ScrollState{}
+	}
 	if !sameSource {
 		a.sourcePreview.resetSnapshot()
 	}

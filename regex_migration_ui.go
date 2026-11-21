@@ -143,7 +143,7 @@ func (a *application) regexMigrationView(c *ui.Context) {
 	s := a.regexSession
 	e := &s.edits[s.selected]
 	locked := a.manual.phase != manualReviewing
-	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+	porcelainScroll(c, &a.scrolls.regexDetail, func() {
 		ui.Column(c).FillWidth().Gap(8).Padding(20).Children(func() {
 			ui.Text(c, a.tr("旧正则迁移")).FontSize(22).Bold()
 			ui.Text(c, s.task.Name)
@@ -155,7 +155,7 @@ func (a *application) regexMigrationView(c *ui.Context) {
 				ui.Button(c, a.tr("预览新正则")).Disabled(locked || a.taskError != nil).OnClick(a.previewRegex)
 				ui.Button(c, a.tr("确认新语义并保存")).Disabled(locked || a.taskError != nil || e.preview == nil).OnClick(a.confirmRegexMigration)
 			})
-			ui.Scroll(c).Height(85).Children(func() {
+			porcelainScroll(c, &a.scrolls.regexList, func() {
 				ui.Column(c).FillWidth().Children(func() {
 					for i, edit := range s.edits {
 						index := i
@@ -163,7 +163,7 @@ func (a *application) regexMigrationView(c *ui.Context) {
 						ui.Button(c, label).Selected(i == s.selected).Disabled(locked).OnClick(func() { s.selected = index })
 					}
 				})
-			})
+			}).Height(85)
 			ui.Text(c, a.tr("旧表达式：")+e.spec.Origin().LegacyPattern)
 			ui.Text(c, "Profile: "+string(filefilter.GoRegexpV1)).FontSize(12)
 			ui.Text(c, a.tr("新表达式")+":")
@@ -187,5 +187,5 @@ func (a *application) regexMigrationView(c *ui.Context) {
 				}
 			}
 		})
-	})
+	}).Grow(1).FillWidth()
 }

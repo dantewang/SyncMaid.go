@@ -215,7 +215,7 @@ func (a *application) mirrorPreviewView(c *ui.Context) {
 				porcelainSegment(c, a.tr("全部路径"), a.manual.mirrorShowAll).OnClick(func() { a.manual.mirrorShowAll = true })
 			})
 		}
-		ui.Scroll(c).Grow(1).FillWidth().Border(1, porcelain.Border).Background(porcelain.Surface).Children(func() {
+		porcelainScroll(c, &a.scrolls.mirrorConfirm, func() {
 			ui.Column(c).FillWidth().Padding(10).Gap(4).Children(func() {
 				if large && !a.manual.mirrorShowAll {
 					for _, g := range groupMirrorPaths(p.Paths) {
@@ -241,7 +241,7 @@ func (a *application) mirrorPreviewView(c *ui.Context) {
 					ui.Text(c, a.tr("仅显示前 %d / 共 %d 项", limit, len(p.Paths))).FontSize(12).TextColor(porcelain.TextMuted)
 				}
 			})
-		})
+		}).Grow(1).FillWidth().Border(1, porcelain.Border).Background(porcelain.Surface)
 		ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Children(func() {
 			porcelainButton(c, a.tr("取消本次移除")).OnClick(func() { a.answerMirror(false) })
 			ribbonDangerButton(c, a.tr("确认本次移除")).OnClick(func() { a.answerMirror(true) })

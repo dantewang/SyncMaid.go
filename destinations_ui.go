@@ -124,22 +124,22 @@ func (a *application) destinationModalView(c *ui.Context, locked bool, modalWidt
 	s := &a.manual
 	if modalWidth >= 660 {
 		ui.Row(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Gap(14).Children(func() {
-			ui.Scroll(c).Grow(1).Shrink(1).MinWidth(0).FillHeight().Children(func() {
-				ui.Column(c).FillWidth().Gap(8).Padding(0, 4, 8, 0).Children(func() {
+			porcelainScroll(c, &a.scrolls.destModal, func() {
+				ui.Column(c).FillWidth().Gap(8).Padding(0, 0, 8, 0).Children(func() {
 					a.selectedTargetEditor(c, locked)
 					if s.message.key != "" {
 						ui.Text(c, a.render(s.message)).FontSize(12).TextColor(porcelain.Danger)
 					}
 				})
-			})
+			}).Grow(1).Shrink(1).MinWidth(0).FillHeight()
 			ui.Box(c).Width(248).FillHeight().Children(func() {
 				a.sourcePreviewModalPane(c, s.targetID)
 			})
 		})
 		return
 	}
-	ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().Gap(8).Padding(0, 4, 8, 0).Children(func() {
+	porcelainScroll(c, &a.scrolls.destModal, func() {
+		ui.Column(c).FillWidth().Gap(8).Padding(0, 0, 8, 0).Children(func() {
 			a.selectedTargetEditor(c, locked)
 			if s.message.key != "" {
 				ui.Text(c, a.render(s.message)).FontSize(12).TextColor(porcelain.Danger)
@@ -148,7 +148,7 @@ func (a *application) destinationModalView(c *ui.Context, locked bool, modalWidt
 				a.sourcePreviewModalPane(c, s.targetID)
 			})
 		})
-	})
+	}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
 }
 
 func (a *application) manualTargetsView(c *ui.Context, locked bool) {

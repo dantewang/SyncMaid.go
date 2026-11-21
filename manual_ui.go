@@ -133,8 +133,8 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 		})
 		return
 	}
-	ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().Gap(8).Padding(12, 4, 12, 0).Children(func() {
+	porcelainScroll(c, &a.scrolls.taskModal, func() {
+		ui.Column(c).FillWidth().Gap(8).Padding(12, 0, 12, 0).Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Children(func() {
 				ui.Text(c, a.tr("名称"))
 				ui.TextInput(c, &s.name).Height(32).Label(a.tr("任务名称")).ReadOnly(locked).OnChange(s.edited)
@@ -154,7 +154,7 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 				ui.Text(c, a.render(s.message)).FontSize(12).TextColor(porcelain.TextMuted)
 			}
 		})
-	})
+	}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
 	ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(10, 0, 0, 0).Children(func() {
 		if s.id != "" {

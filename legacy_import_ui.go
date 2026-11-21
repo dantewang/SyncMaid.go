@@ -83,7 +83,7 @@ func (a *application) confirmImport() {
 }
 func (a *application) importView(c *ui.Context) {
 	p := a.importPreview
-	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+	porcelainScroll(c, &a.scrolls.legacyImport, func() {
 		ui.Column(c).FillWidth().Gap(10).Padding(20).Children(func() {
 			ui.Text(c, a.tr("旧任务导入预览")).FontSize(22).Bold()
 			ui.Text(c, p.Path)
@@ -112,5 +112,5 @@ func (a *application) importView(c *ui.Context) {
 				ui.Button(c, a.tr("确认追加并设为手动")).Disabled(a.manual.phase != manualImporting || a.taskError != nil).OnClick(a.confirmImport)
 			})
 		})
-	})
+	}).Grow(1).FillWidth()
 }

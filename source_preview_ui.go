@@ -419,8 +419,8 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 		}
 
-		ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
-			ui.Column(c).FillWidth().Padding(0, 12, 8, 0).Gap(0).Children(func() {
+		porcelainScroll(c, &a.scrolls.previewPanel, func() {
+			ui.Column(c).FillWidth().Padding(0, 0, 8, 0).Gap(0).Children(func() {
 				q := strings.TrimSpace(p.searchQuery)
 				if q != "" && r.Snapshot != nil {
 					matches, total := appcore.SearchSnapshotPaths(r.Snapshot, q, 50)
@@ -544,7 +544,7 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 					ui.Text(c, a.tr("多规则匹配: %s", item.Path)).FontSize(12).TextColor(porcelain.Warning).Padding(4, 12).SingleLine().Ellipsis("…")
 				}
 			})
-		})
+		}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
 	})
 }
 
@@ -560,7 +560,7 @@ func (a *application) sourcePreviewModalPane(c *ui.Context, targetID taskconfig.
 			porcelainButton(c, btnLabel).Padding(3, 8).FontSize(12).Disabled(a.manual.busy() || a.manual.quitPending || p.job != nil || a.taskError != nil).OnClick(a.startSourcePreview)
 		})
 		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
-		ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+		porcelainScroll(c, &a.scrolls.previewModal, func() {
 			ui.Column(c).FillWidth().Padding(8, 10).Gap(6).Children(func() {
 				a.sourcePreviewStatusText(c)
 				if p.phase == previewReady && p.result != nil {
@@ -574,6 +574,6 @@ func (a *application) sourcePreviewModalPane(c *ui.Context, targetID taskconfig.
 					}
 				}
 			})
-		})
+		}).Grow(1).FillWidth()
 	})
 }

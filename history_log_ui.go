@@ -50,7 +50,7 @@ func (a *application) historyViewContent(c *ui.Context) {
 			ui.Text(c, a.tr("记录不可用或未保存：")+appcore.HistoryText(a.historyError.Error(), appcore.HistoryErrorBytes)).TextColor(porcelain.Danger)
 			ui.Text(c, a.tr("已发生的文件执行结果不变。请保留并修复记录文件后重新载入。")).FontSize(13).TextColor(porcelain.TextMuted)
 		}
-		ui.Scroll(c).Height(165).Border(1, porcelain.Border).Background(ribbonSidebarBg).Children(func() {
+		porcelainScroll(c, &a.scrolls.historyList, func() {
 			ui.Column(c).FillWidth().Gap(0).Children(func() {
 				for i := len(a.historyView.Recent) - 1; i >= 0; i-- {
 					r := a.historyView.Recent[i]
@@ -66,13 +66,13 @@ func (a *application) historyViewContent(c *ui.Context) {
 					}).OnClick(func() { a.historySelected = id })
 				}
 			})
-		})
+		}).Height(165).Border(1, porcelain.Border).Background(ribbonSidebarBg)
 		r, ok := a.selectedHistory()
 		if !ok {
 			ui.Text(c, a.tr("暂无可用运行记录。")).TextColor(porcelain.TextMuted)
 			return
 		}
-		ui.Scroll(c).Grow(1).FillWidth().Border(1, porcelain.Border).Background(porcelain.Surface).Children(func() {
+		porcelainScroll(c, &a.scrolls.historyDetail, func() {
 			ui.Column(c).FillWidth().Padding(14).Gap(8).Children(func() {
 				ui.Text(c, r.Name+a.tr(" · ")+a.tr(appcore.RunOutcome(r))).FontSize(15).Bold()
 				if a.historyDetails {
@@ -109,7 +109,7 @@ func (a *application) historyViewContent(c *ui.Context) {
 					}
 				}
 			})
-		})
+		}).Grow(1).FillWidth().Border(1, porcelain.Border).Background(porcelain.Surface)
 	})
 }
 
@@ -318,7 +318,7 @@ func (a *application) destinationLogView(c *ui.Context) {
 		if a.logOpenError != nil {
 			ui.Text(c, a.tr("无法打开日志文件：%s", a.logOpenError.Error())).TextColor(porcelain.Danger)
 		}
-		ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Background(rgb(0xECECEE)).Children(func() {
+		porcelainScroll(c, &a.scrolls.destLog, func() {
 			ui.Column(c).FillWidth().Padding(10).Gap(6).Children(func() {
 				count := 0
 				for _, r := range records {
@@ -358,7 +358,7 @@ func (a *application) destinationLogView(c *ui.Context) {
 					ui.Text(c, a.tr("暂无可用运行记录。")).TextColor(porcelain.TextMuted)
 				}
 			})
-		})
+		}).Grow(1).Shrink(1).MinHeight(0).FillWidth().Background(rgb(0xECECEE))
 		ui.Row(c).FillWidth().Gap(10).Children(func() {
 			porcelainButton(c, a.tr("诊断详情")).Height(32).MinWidth(96).OnClick(func() { a.logDetails = !a.logDetails })
 			ui.Box(c).Grow(1)

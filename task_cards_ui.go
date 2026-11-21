@@ -44,6 +44,9 @@ func (a *application) editCard(id, destination taskconfig.ID) {
 	}
 	a.cards.destinations = destination != ""
 	a.cards.editor = true
+	a.scrolls.taskModal = ui.ScrollState{}
+	a.scrolls.destModal = ui.ScrollState{}
+	a.scrolls.previewModal = ui.ScrollState{}
 }
 
 func (a *application) openAddDestination(id taskconfig.ID) {
@@ -110,6 +113,9 @@ func (a *application) closeTaskEditor() {
 		a.refreshPreviewFromSnapshot()
 	}
 	a.cards.editor = false
+	a.scrolls.taskModal = ui.ScrollState{}
+	a.scrolls.destModal = ui.ScrollState{}
+	a.scrolls.previewModal = ui.ScrollState{}
 }
 
 func (a *application) toggleCard(id taskconfig.ID) {

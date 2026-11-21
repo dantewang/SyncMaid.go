@@ -37,7 +37,7 @@ func porcelainSettingRow(c *ui.Context, title string, controls func()) {
 	})
 }
 func (a *application) settingsView(c *ui.Context) {
-	ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
+	porcelainScroll(c, &a.scrolls.settings, func() {
 		ui.Column(c).FillWidth().LineHeight(1.5).Gap(22).Padding(16, 22).Children(func() {
 			ui.Text(c, a.tr("设置")).FontSize(18).FontWeight(500).Padding(0, 0, 6, 0)
 			porcelainSection(c, a.tr("常规"), func() {
@@ -105,7 +105,7 @@ func (a *application) settingsView(c *ui.Context) {
 			})
 
 		})
-	})
+	}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
 }
 func porcelainBoundSwitch(c *ui.Context, value bool, label string, disabled bool, onToggle func(bool)) {
 	state := value

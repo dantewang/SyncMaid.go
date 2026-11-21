@@ -92,6 +92,25 @@ func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 		return err == nil && strings.Contains(string(b), `"CloseToTray": true`) || strings.Contains(string(b), `"CloseToTray":true`)
 	})
 
+	// Verify danger button ("退出") rest and hover states.
+	exitBtn := c.waitNode(win.ID, 5*time.Second, "settings exit danger button", func(n autoNode) bool {
+		return n.Role == "button" && n.Label == "退出" && !n.disabled()
+	})
+	for _, act := range exitBtn.Actions {
+		if act == "scrollIntoView" {
+			c.must("act", map[string]any{"window": win.ID, "id": exitBtn.ID, "action": "scrollIntoView"}, nil)
+			c.idle(win.ID)
+			exitBtn = c.waitNode(win.ID, 5*time.Second, "settings exit danger button after scroll", func(n autoNode) bool {
+				return n.Role == "button" && n.Label == "退出" && !n.disabled()
+			})
+			break
+		}
+	}
+	movePointer(c, win.ID, 8, 8)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, exitBtn.Bounds), 251, 236, 238, 4, "danger button rest")
+	movePointer(c, win.ID, exitBtn.Bounds.X+exitBtn.Bounds.Width/2, exitBtn.Bounds.Y+exitBtn.Bounds.Height/2)
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, exitBtn.Bounds), 198, 47, 60, 4, "danger button hover")
+
 	// Verify unified stacked rail nav buttons (Tasks, Topology, History, Settings): uniform 64x54 size, neutral rail/hover gray, active white surface.
 	tasksNav := c.waitNode(win.ID, 5*time.Second, "tasks nav button", func(n autoNode) bool {
 		return n.Role == "button" && n.Label == "任务" && !n.disabled()
