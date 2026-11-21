@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"image/color"
 	"math"
 	"os"
@@ -98,7 +99,7 @@ func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 	more := c.waitNode(win.ID, 5*time.Second, "more menu button", func(n autoNode) bool {
 		return n.Role == "menuButton" && n.Label == "更多操作" && !n.disabled()
 	})
-	if math.Abs(gearZh.Bounds.Width-24) > 0.5 || math.Abs(gearZh.Bounds.Height-24) > 0.5 ||
+	if math.Abs(gearZh.Bounds.Width-28) > 0.5 || math.Abs(gearZh.Bounds.Height-28) > 0.5 ||
 		math.Abs(gearZh.Bounds.Width-more.Bounds.Width) > 0.5 ||
 		math.Abs(gearZh.Bounds.Height-more.Bounds.Height) > 0.5 ||
 		math.Abs(gearZh.Bounds.Y-more.Bounds.Y) > 0.5 {
@@ -108,19 +109,19 @@ func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 	movePointer(c, win.ID, 8, 8)
 	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 25, 28, 34, 4, "gear active rest")
 	movePointer(c, win.ID, gearZh.Bounds.X+gearZh.Bounds.Width/2, gearZh.Bounds.Y+gearZh.Bounds.Height/2)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 17, 111, 142, 4, "gear active hover")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 11, 122, 144, 4, "gear active hover")
 
 	c.pressNode(win.ID, gearZh)
 	c.waitNoText(win.ID, "关闭到托盘", 5*time.Second)
 
 	movePointer(c, win.ID, 8, 8)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 217, 223, 227, 4, "gear inactive rest")
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 217, 223, 227, 4, "more inactive rest")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 234, 239, 243, 4, "gear inactive rest")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 234, 239, 243, 4, "more inactive rest")
 
 	movePointer(c, win.ID, gearZh.Bounds.X+gearZh.Bounds.Width/2, gearZh.Bounds.Y+gearZh.Bounds.Height/2)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 242, 245, 246, 4, "gear inactive hover")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 231, 237, 241, 4, "gear inactive hover")
 	movePointer(c, win.ID, more.Bounds.X+more.Bounds.Width/2, more.Bounds.Y+more.Bounds.Height/2)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 242, 245, 246, 4, "more inactive hover")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 231, 237, 241, 4, "more inactive hover")
 
 	c.pressNode(win.ID, more)
 	c.waitNode(win.ID, 5*time.Second, "more menu Exit item", func(n autoNode) bool {
@@ -139,7 +140,7 @@ func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 	movePointer(c, win.ID, 8, 8)
 	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 25, 28, 34, 10, "more active rest")
 	movePointer(c, win.ID, more.Bounds.X+more.Bounds.Width/2, more.Bounds.Y+more.Bounds.Height/2)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 17, 111, 142, 10, "more active hover")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 11, 122, 144, 10, "more active hover")
 
 	c.must("input", map[string]any{
 		"window": win.ID,
@@ -148,7 +149,15 @@ func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 	c.idle(win.ID)
 	c.waitNoText(win.ID, "退出", 5*time.Second)
 	movePointer(c, win.ID, 8, 8)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 217, 223, 227, 4, "more closed rest")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 234, 239, 243, 4, "more closed rest")
+
+	// Verify Level 1 icon rail navigation across Tasks, Topology, and History.
+	c.press(win.ID, "button", "拓扑")
+	c.waitText(win.ID, "暂无同步任务", 5*time.Second)
+	c.press(win.ID, "button", "历史")
+	c.waitText(win.ID, "近期运行记录", 5*time.Second)
+	c.press(win.ID, "button", "任务")
+	c.waitText(win.ID, "＋ 新建任务", 5*time.Second)
 
 	if err := sendWMClose(proc.pid(), "SyncMaid"); err != nil {
 		t.Fatal(err)
@@ -191,7 +200,7 @@ func TestE2ETaskLifecyclePreviewRestartSyncAndLogWindow(t *testing.T) {
 	c := proc.client
 	win := c.waitWindow("SyncMaid", boolPtr(true), 15*time.Second)
 	c.idle(win.ID)
-	c.waitText(win.ID, "同步任务", 5*time.Second)
+	c.waitText(win.ID, "＋ 新建任务", 5*time.Second)
 
 	// Verify blank backdrop click keeps the editor open, while Escape and Cancel discard the draft.
 	c.press(win.ID, "button", "＋ 新建任务")
@@ -231,20 +240,25 @@ func TestE2ETaskLifecyclePreviewRestartSyncAndLogWindow(t *testing.T) {
 	c.setValue(win.ID, "新规则", "txt")
 	c.press(win.ID, "button", "添加")
 	c.waitText(win.ID, "扩展名 txt", 5*time.Second)
-	c.press(win.ID, "button", "应用修改 TextOnly")
+	c.press(win.ID, "button", "保存")
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
 	c.press(win.ID, "button", "添加目标")
 	c.setValue(win.ID, "目标名称", "AllFiles")
 	c.setValue(win.ID, "目标文件夹路径", targetAll)
-	c.press(win.ID, "button", "应用修改 AllFiles")
 
-	c.press(win.ID, "button", "源预览")
+	c.press(win.ID, "button", "扫描")
 	c.waitText(win.ID, "源文件: 3", 10*time.Second)
-	c.waitText(win.ID, "预览匹配: 2", 5*time.Second)
 	c.waitText(win.ID, "预览匹配: 3", 5*time.Second)
 
 	c.press(win.ID, "button", "保存")
-	c.waitNoText(win.ID, "源预览", 10*time.Second)
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
+	c.press(win.ID, "button", "源预览")
+	c.waitText(win.ID, "源文件: 3", 5*time.Second)
+	c.waitText(win.ID, "2 (66.7%)", 5*time.Second)
+	c.waitText(win.ID, "3 (100.0%)", 5*time.Second)
+	c.press(win.ID, "button", "源预览")
+	c.waitNoText(win.ID, "仅扫描源端", 5*time.Second)
 	c.waitText(win.ID, "TextOnly", 5*time.Second)
 	c.waitText(win.ID, "AllFiles", 5*time.Second)
 
@@ -320,9 +334,8 @@ func TestE2EMirrorConfirmDeclineCloseAndDelete(t *testing.T) {
 	c.setValue(win.ID, "目标文件夹路径", targetPerm)
 	c.press(win.ID, "button", "镜像")
 	c.press(win.ID, "button", "永久删除")
-	c.press(win.ID, "button", "应用修改 PermDest")
 	c.press(win.ID, "button", "保存")
-	c.waitNoText(win.ID, "源预览", 10*time.Second)
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
 	// 1) Decline via button.
 	c.pressAfter(win.ID, "E2E Mirror", "button", "运行")
@@ -346,7 +359,7 @@ func TestE2EMirrorConfirmDeclineCloseAndDelete(t *testing.T) {
 	}
 	c.waitWindow("SyncMaid", boolPtr(true), 10*time.Second)
 	c.waitNoText(win.ID, "确认本次Mirror", 10*time.Second)
-	c.waitText(win.ID, "同步任务", 5*time.Second)
+	c.waitText(win.ID, "＋ 新建任务", 5*time.Second)
 	if got := readTestFile(t, extraPerm); got != "delete-me" {
 		t.Fatalf("WM_CLOSE did not decline removal: %q", got)
 	}
@@ -367,9 +380,8 @@ func TestE2EMirrorConfirmDeclineCloseAndDelete(t *testing.T) {
 	c.setValue(win.ID, "目标名称", "RecycleDest")
 	c.setValue(win.ID, "目标文件夹路径", targetRecycle)
 	c.press(win.ID, "button", "镜像")
-	c.press(win.ID, "button", "应用修改 RecycleDest")
 	c.press(win.ID, "button", "保存")
-	c.waitNoText(win.ID, "源预览", 10*time.Second)
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
 	c.pressAfter(win.ID, "E2E Mirror", "button", "运行")
 	c.waitText(win.ID, "确认本次Mirror", 10*time.Second)
@@ -422,14 +434,14 @@ func TestE2EMoveRoutingSuffixAndStop(t *testing.T) {
 	c.setValue(win.ID, "新规则", "txt")
 	c.press(win.ID, "button", "添加")
 	c.waitText(win.ID, "扩展名 txt", 5*time.Second)
-	c.press(win.ID, "button", "应用修改 Texts")
+	c.press(win.ID, "button", "保存")
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
 	c.press(win.ID, "button", "添加目标")
 	c.setValue(win.ID, "目标名称", "Rest")
 	c.setValue(win.ID, "目标文件夹路径", restTarget)
-	c.press(win.ID, "button", "应用修改 Rest")
 	c.press(win.ID, "button", "保存")
-	c.waitNoText(win.ID, "源预览", 10*time.Second)
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
 	c.pressAfter(win.ID, "E2E Move", "button", "运行")
 	c.waitText(win.ID, "全部已同步", 15*time.Second)
@@ -474,9 +486,8 @@ func TestE2EMoveRoutingSuffixAndStop(t *testing.T) {
 	c.setValue(win.ID, "目标文件夹路径", mirrorDst)
 	c.press(win.ID, "button", "镜像")
 	c.press(win.ID, "button", "永久删除")
-	c.press(win.ID, "button", "应用修改 MirrorDst")
 	c.press(win.ID, "button", "保存")
-	c.waitNoText(win.ID, "源预览", 10*time.Second)
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
 	c.press(win.ID, "button", "＋ 新建任务")
 	c.setValue(win.ID, "任务名称", "After Stop")
@@ -486,16 +497,15 @@ func TestE2EMoveRoutingSuffixAndStop(t *testing.T) {
 	c.pressAfter(win.ID, "After Stop", "button", "添加目标")
 	c.setValue(win.ID, "目标名称", "AfterDst")
 	c.setValue(win.ID, "目标文件夹路径", afterDst)
-	c.press(win.ID, "button", "应用修改 AfterDst")
 	c.press(win.ID, "button", "保存")
-	c.waitNoText(win.ID, "源预览", 10*time.Second)
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
 	c.press(win.ID, "button", "▷ 运行全部")
 	c.waitText(win.ID, "确认本次Mirror", 10*time.Second)
 	c.waitText(win.ID, "批次余下 1 项", 5*time.Second)
 	c.press(win.ID, "button", "停止")
 	c.waitNoText(win.ID, "确认本次Mirror", 10*time.Second)
-	c.waitText(win.ID, "同步任务", 5*time.Second)
+	c.waitText(win.ID, "＋ 新建任务", 5*time.Second)
 	c.waitNode(win.ID, 10*time.Second, "enabled Run all button after stop", func(n autoNode) bool {
 		return n.Role == "button" && n.Label == "▷ 运行全部" && !n.disabled()
 	})
@@ -536,9 +546,8 @@ func TestE2ERealWatchFilesTriggerAndPause(t *testing.T) {
 	c.pressAfter(win.ID, "E2E Watch", "button", "添加目标")
 	c.setValue(win.ID, "目标名称", "WatchedTarget")
 	c.setValue(win.ID, "目标文件夹路径", targetDir)
-	c.press(win.ID, "button", "应用修改 WatchedTarget")
 	c.press(win.ID, "button", "保存")
-	c.waitNoText(win.ID, "源预览", 10*time.Second)
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
 	waitUntil(t, 15*time.Second, "initial watch-triggered sync", func() bool {
 		b, err := os.ReadFile(filepath.Join(targetDir, "initial.txt"))
@@ -714,7 +723,7 @@ func TestE2ELegacyImportAndRegexMigration(t *testing.T) {
 	c.waitText(win.ID, "旧任务导入预览", 10*time.Second)
 	c.waitText(win.ID, "Legacy Regex Task", 5*time.Second)
 	c.press(win.ID, "button", "确认追加并设为手动")
-	c.waitText(win.ID, "同步任务", 10*time.Second)
+	c.waitText(win.ID, "＋ 新建任务", 10*time.Second)
 	c.waitText(win.ID, "Legacy Regex Task", 5*time.Second)
 	c.waitText(win.ID, "手动", 5*time.Second)
 
@@ -735,7 +744,7 @@ func TestE2ELegacyImportAndRegexMigration(t *testing.T) {
 	c.press(win.ID, "button", "确认新语义并保存")
 	c.waitText(win.ID, "确认已保存", 10*time.Second)
 	c.press(win.ID, "button", "返回任务编辑")
-	c.waitText(win.ID, "同步任务", 5*time.Second)
+	c.waitText(win.ID, "＋ 新建任务", 5*time.Second)
 
 	c.pressAfter(win.ID, "Legacy Regex Task", "button", "运行")
 	c.waitText(win.ID, "全部已同步", 15*time.Second)
@@ -743,6 +752,130 @@ func TestE2ELegacyImportAndRegexMigration(t *testing.T) {
 		t.Fatalf("match.txt = %q", got)
 	}
 	assertNoFile(t, filepath.Join(targetDir, "skip.bin"))
+
+	c.chooseMoreMenu(win.ID, "更多操作", "退出", true)
+}
+
+func TestE2ELargeSourcePreviewProfileAndTopologyCascade(t *testing.T) {
+	inst := newE2EInstall(t)
+	inst.seedLocale("zh-Hans")
+
+	root := t.TempDir()
+	sourceDir := filepath.Join(root, "BigSource")
+	for i := 1; i <= 12; i++ {
+		writeTestFile(t, filepath.Join(sourceDir, "Media", fmt.Sprintf("photo%02d.jpg", i)), "img")
+	}
+	for i := 1; i <= 10; i++ {
+		writeTestFile(t, filepath.Join(sourceDir, "Docs", fmt.Sprintf("doc%02d.txt", i)), "doc")
+	}
+	for i := 1; i <= 4; i++ {
+		writeTestFile(t, filepath.Join(sourceDir, fmt.Sprintf("note%02d.md", i)), "note")
+	}
+
+	mirrorDir := filepath.Join(root, "SMBMirror")
+	for i := 1; i <= 15; i++ {
+		writeTestFile(t, filepath.Join(mirrorDir, "OldA", fmt.Sprintf("old%02d.txt", i)), "stale-a")
+	}
+	for i := 1; i <= 10; i++ {
+		writeTestFile(t, filepath.Join(mirrorDir, "OldB", fmt.Sprintf("bak%02d.txt", i)), "stale-b")
+	}
+
+	txtTargetDir := filepath.Join(root, "DocsOnlyTarget")
+	cascadeDestDir := filepath.Join(root, "CascadeArchive")
+	for _, dir := range []string{txtTargetDir, cascadeDestDir} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	proc := inst.start()
+	c := proc.client
+	win := c.waitWindow("SyncMaid", boolPtr(true), 15*time.Second)
+	c.idle(win.ID)
+
+	// 1. Create "Big Mirror" Sync task with all-files Mirror destination.
+	c.press(win.ID, "button", "＋ 新建任务")
+	c.setValue(win.ID, "任务名称", "Big Mirror")
+	c.setValue(win.ID, "源文件夹路径", sourceDir)
+	c.press(win.ID, "button", "保存任务")
+	c.waitNoText(win.ID, "保存任务", 10*time.Second)
+
+	c.pressAfter(win.ID, "Big Mirror", "button", "添加目标")
+	c.setValue(win.ID, "目标名称", "SMB Mirror")
+	c.setValue(win.ID, "目标文件夹路径", mirrorDir)
+	c.press(win.ID, "button", "镜像")
+	c.press(win.ID, "button", "永久删除")
+	c.press(win.ID, "button", "保存")
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
+
+	// 2. Open Source Preview panel: all-files mode renders TopDirs + Extensions Profile & instant search.
+	c.press(win.ID, "button", "源预览")
+	c.press(win.ID, "button", "扫描源目录")
+	c.waitText(win.ID, "顶层目录分布", 10*time.Second)
+	c.waitText(win.ID, "Media/", 5*time.Second)
+	c.waitText(win.ID, "Docs/", 5*time.Second)
+	c.waitText(win.ID, "高频扩展名", 5*time.Second)
+	c.waitText(win.ID, ".jpg", 5*time.Second)
+
+	c.setValue(win.ID, "搜索源路径", "photo01")
+	c.waitText(win.ID, "命中 1 项", 5*time.Second)
+	c.waitText(win.ID, "Media/photo01.jpg", 5*time.Second)
+	c.press(win.ID, "button", "清除")
+	c.waitText(win.ID, "顶层目录分布", 5*time.Second)
+
+	// 3. Adding a filtered Add-only target switches the open panel from Profile to Sampled Buckets.
+	c.pressAfter(win.ID, "Big Mirror", "button", "添加目标")
+	c.setValue(win.ID, "目标名称", "Docs Only")
+	c.setValue(win.ID, "目标文件夹路径", txtTargetDir)
+	c.press(win.ID, "button", "仅匹配")
+	c.press(win.ID, "button", "扩展名")
+	c.setValue(win.ID, "新规则", "txt")
+	c.press(win.ID, "button", "添加")
+	c.waitText(win.ID, "扩展名 txt", 5*time.Second)
+	c.press(win.ID, "button", "保存")
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
+
+	c.waitNoText(win.ID, "顶层目录分布", 5*time.Second)
+	c.waitText(win.ID, "10 (38.5%)", 5*time.Second)
+	c.press(win.ID, "button", "源预览")
+	c.waitNoText(win.ID, "仅扫描源端", 5*time.Second)
+
+	// 4. Mirror confirmation with >20 extra files defaults to directory summary & toggles all paths.
+	c.pressAfter(win.ID, "Big Mirror", "button", "运行")
+	c.waitText(win.ID, "确认本次Mirror", 10*time.Second)
+	c.waitText(win.ID, "按目录汇总", 5*time.Second)
+	c.waitText(win.ID, "OldA/", 5*time.Second)
+	c.waitText(win.ID, "OldB/", 5*time.Second)
+	c.waitNoText(win.ID, "OldA/old01.txt", 3*time.Second)
+
+	c.press(win.ID, "button", "全部路径")
+	c.waitText(win.ID, "OldA/old01.txt", 5*time.Second)
+	c.press(win.ID, "button", "取消本次移除")
+	c.waitNoText(win.ID, "确认本次Mirror", 10*time.Second)
+
+	// 5. Create downstream task sourced from mirrorDir & verify cascade link + Topology view.
+	c.press(win.ID, "button", "＋ 新建任务")
+	c.setValue(win.ID, "任务名称", "Downstream Sync")
+	c.setValue(win.ID, "源文件夹路径", mirrorDir)
+	c.press(win.ID, "button", "保存任务")
+	c.waitNoText(win.ID, "保存任务", 10*time.Second)
+
+	c.pressAfter(win.ID, "Downstream Sync", "button", "添加目标")
+	c.setValue(win.ID, "目标名称", "Archive")
+	c.setValue(win.ID, "目标文件夹路径", cascadeDestDir)
+	c.press(win.ID, "button", "保存")
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
+
+	c.waitText(win.ID, "↳ 接力自 Big Mirror", 5*time.Second)
+
+	c.press(win.ID, "button", "拓扑")
+	c.waitText(win.ID, "Big Mirror", 5*time.Second)
+	c.waitText(win.ID, "SMB Mirror", 5*time.Second)
+	c.waitText(win.ID, "Docs Only", 5*time.Second)
+	c.waitText(win.ID, "Archive", 5*time.Second)
+	c.press(win.ID, "button", "Archive")
+	c.waitText(win.ID, "↳ 接力自 Big Mirror", 5*time.Second)
+	c.waitText(win.ID, "＋ 新建任务", 5*time.Second)
 
 	c.chooseMoreMenu(win.ID, "更多操作", "退出", true)
 }
