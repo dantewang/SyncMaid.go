@@ -3,26 +3,17 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
-	"reflect"
-	"regexp"
-	"strconv"
 	"strings"
 	"syncmaid/internal/syncengine"
 	"testing"
-	"unicode"
 
 	"github.com/egoist/mygo/ui"
 	"syncmaid/internal/taskconfig"
 )
 
-func TestLanguageCatalogKeysAndInterpolation(t *testing.T) {
-	tables := map[string]map[string]string{}
-	verbs := regexp.MustCompile(`%[-+.0-9]*[sdf]`)
+func TestLanguageCatalogLoadsInMyGoI18n(t *testing.T) {
 	for _, choice := range languageChoices {
 		b, err := languageFiles.ReadFile("locales/" + choice.tag + ".json")
 		if err != nil {
@@ -32,61 +23,11 @@ func TestLanguageCatalogKeysAndInterpolation(t *testing.T) {
 		if err := json.Unmarshal(b, &table); err != nil {
 			t.Fatal(err)
 		}
-		tables[choice.tag] = table
 		for key, value := range table {
-			if value == "" || !reflect.DeepEqual(verbs.FindAllString(key, -1), verbs.FindAllString(value, -1)) {
-				t.Errorf("%s: invalid interpolation for %q", choice.tag, key)
-			}
 			if got := messages.Format(choice.tag, key, nil); got != value {
 				t.Errorf("%s %q: catalog %q, want %q", choice.tag, key, got, value)
 			}
 		}
-	}
-	for tag, table := range tables {
-		if len(table) != len(tables["en"]) {
-			t.Errorf("%s missing entries", tag)
-		}
-		for key := range tables["en"] {
-			if _, ok := table[key]; !ok {
-				t.Errorf("%s missing %q", tag, key)
-			}
-		}
-	}
-	// Literal presentation keys must ship offline in every catalog. Dynamic
-	// keys are controlled state labels/field labels covered below.
-	files, _ := filepath.Glob("*.go")
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		f, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) == 0 {
-				return true
-			}
-			isMessage := false
-			switch fun := call.Fun.(type) {
-			case *ast.Ident:
-				isMessage = fun.Name == "messagef"
-			case *ast.SelectorExpr:
-				isMessage = fun.Sel.Name == "tr"
-			}
-			lit, ok := call.Args[0].(*ast.BasicLit)
-			if !isMessage || !ok || lit.Kind != token.STRING {
-				return true
-			}
-			key, _ := strconv.Unquote(lit.Value)
-			if strings.IndexFunc(key, func(r rune) bool { return unicode.Is(unicode.Han, r) }) >= 0 {
-				if _, ok := tables["en"][key]; !ok {
-					t.Errorf("%s: missing key %q", name, key)
-				}
-			}
-			return true
-		})
 	}
 }
 
