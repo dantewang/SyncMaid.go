@@ -54,43 +54,43 @@ var porcelainGlyphs = func() map[string]*ui.SVG {
 	return out
 }()
 
-// Ribbon Minimal tokens anchored on the silver/ink/cyan maid emblem.
+// Ribbon Minimal tokens anchored on International Klein Blue (#002FA7) and cool silver.
 func rgb(v uint32) ui.Color {
 	return ui.Color{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 255}
 }
 
 var (
-	ribbonRailBg      = rgb(0xEAEFF3)
-	ribbonSidebarBg   = rgb(0xF2F5F8)
+	ribbonRailBg      = rgb(0xEBEEF5)
+	ribbonSidebarBg   = rgb(0xF3F5FA)
 	ribbonSurfaceCard = rgb(0xFFFFFF)
-	ribbonCyan        = rgb(0x0E8FA8)
-	ribbonCyanHover   = rgb(0x0B7A90)
-	ribbonCyanPressed = rgb(0x085E70)
-	ribbonCyanSoft    = rgb(0xE6F4F7)
+	ribbonBlue        = rgb(0x002FA7)
+	ribbonBlueHover   = rgb(0x002585)
+	ribbonBluePressed = rgb(0x001B63)
+	ribbonBlueSoft    = rgb(0xEAF0FF)
 	ribbonSuccess     = rgb(0x16794B)
-	ribbonMove        = rgb(0x0F766E)
+	ribbonMove        = rgb(0x3154E8)
 	ribbonWarnSoft    = rgb(0xFDF6EB)
 )
 
 var porcelain = func() ui.Theme {
 	t := ui.LightTheme()
-	t.Background = rgb(0xF8FAFB)
+	t.Background = rgb(0xF8F9FC)
 	t.Surface = ribbonSurfaceCard
-	t.SurfaceHover = rgb(0xE7EDF1)
-	t.SurfacePressed = rgb(0xDAE2E7)
+	t.SurfaceHover = rgb(0xE6EBF5)
+	t.SurfacePressed = rgb(0xD8E0F0)
 	t.Text = rgb(0x191C22)
-	t.TextMuted = rgb(0x64707A)
-	t.Border = rgb(0xCBD3D9)
+	t.TextMuted = rgb(0x5E677A)
+	t.Border = rgb(0xCCD2DF)
 	t.Accent = t.Text
 	t.InactiveAccent = t.Accent
 	t.AccentText = rgb(0xF7FAFC)
-	t.AccentHover = ribbonCyanHover
-	t.AccentPressed = ribbonCyanPressed
+	t.AccentHover = ribbonBlueHover
+	t.AccentPressed = ribbonBluePressed
 	t.Danger = rgb(0xC62F3C)
 	t.Warning = rgb(0xB4690E)
 	t.Success = ribbonSuccess
-	t.Focus = ribbonCyan
-	t.Selection = rgb(0xA5E5EF)
+	t.Focus = ribbonBlue
+	t.Selection = rgb(0xB9CCFF)
 	t.FontSize = 15
 	t.Radius = 0
 	t.Spacing = 4
@@ -100,14 +100,14 @@ var porcelain = func() ui.Theme {
 func paintRibbonStripe(e ui.Element) ui.Element {
 	return e.DrawOver(func(p *ui.Painter, r ui.Rect) {
 		p.Fill(ui.Rect{X: r.X, Y: r.Y, W: 1.5, H: r.H}, porcelain.Text, 0)
-		p.Fill(ui.Rect{X: r.X + 2.5, Y: r.Y, W: 1.5, H: r.H}, ribbonCyan, 0)
+		p.Fill(ui.Rect{X: r.X + 2.5, Y: r.Y, W: 1.5, H: r.H}, ribbonBlue, 0)
 	})
 }
 
 func porcelainChoice(c *ui.Context, glyph, title, body string, selected, disabled bool, choose func()) ui.Element {
 	e := ui.ButtonBase(c).Label(title).FillWidth().Justify(ui.Start).Gap(12).Padding(10, 12).MinHeight(68).Border(1, porcelain.Border).Background(porcelain.Surface).Disabled(disabled)
 	if selected {
-		e = e.Background(ribbonCyanSoft).Border(1, porcelain.Text)
+		e = e.Background(ribbonBlueSoft).Border(1, porcelain.Text)
 	}
 	return e.Children(func() {
 		ui.Icon(c, porcelainGlyphs[glyph]).Size(22, 22)
@@ -123,9 +123,16 @@ func porcelainButton(c *ui.Context, text string) ui.Element {
 }
 
 func porcelainPrimaryButton(c *ui.Context, text string) ui.Element {
-	return ui.ButtonBase(c).Label(text).Radius(0).Padding(5, 12).Border(1, ribbonCyan).Background(ribbonCyan).TextColor(porcelain.AccentText).Children(func() {
+	b := ui.ButtonBase(c).Label(text).Radius(0).Padding(5, 12).TextColor(porcelain.AccentText).Children(func() {
 		ui.Text(c, text).FontSize(14).FontWeight(600)
 	})
+	bg := ribbonBlue
+	if b.Pressed() {
+		bg = ribbonBluePressed
+	} else if b.Hovered() {
+		bg = ribbonBlueHover
+	}
+	return b.Border(1, bg).Background(bg)
 }
 
 func ribbonInkButton(c *ui.Context, text string) ui.Element {
@@ -143,8 +150,8 @@ func porcelainSegment(c *ui.Context, text string, selected bool, glyph ...string
 	border := porcelain.Border
 	fg := porcelain.TextMuted
 	if selected {
-		bg = ribbonCyanSoft
-		border = ribbonCyan
+		bg = ribbonBlueSoft
+		border = ribbonBlue
 		fg = porcelain.Text
 	}
 	return ui.ButtonBase(c).Label(text).Selected(selected).Gap(6).Padding(5, 10).Border(1, border).Background(bg).TextColor(fg).Children(func() {
@@ -156,9 +163,9 @@ func porcelainSegment(c *ui.Context, text string, selected bool, glyph ...string
 }
 
 func porcelainSwitch(c *ui.Context, on *bool) ui.Element {
-	bg, align := rgb(0xC2CBD1), ui.Start
+	bg, align := rgb(0xC3C9D9), ui.Start
 	if *on {
-		bg = ribbonCyan
+		bg = ribbonBlue
 		align = ui.End
 	}
 	return ui.SwitchBase(c, on).Size(36, 20).Padding(2).Justify(align).Background(bg).Children(func() {

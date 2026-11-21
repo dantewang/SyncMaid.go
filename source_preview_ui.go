@@ -424,7 +424,7 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 						selected := p.selectedPath == fp
 						row := ui.ButtonBase(c).Label(fp).FillWidth().Justify(ui.Start).Padding(6, 10).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border)
 						if selected {
-							row = row.Background(ribbonCyanSoft)
+							row = row.Background(ribbonBlueSoft)
 						}
 						row.Children(func() {
 							ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(2).Children(func() {
@@ -471,7 +471,7 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 									if w > 0 && w < 3 {
 										w = 3
 									}
-									pt.Fill(ui.Rect{X: rc.X, Y: rc.Y, W: w, H: rc.H}, ribbonCyan, 0)
+									pt.Fill(ui.Rect{X: rc.X, Y: rc.Y, W: w, H: rc.H}, ribbonBlue, 0)
 								})
 							})
 						})

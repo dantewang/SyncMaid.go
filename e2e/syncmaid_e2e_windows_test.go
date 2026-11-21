@@ -109,19 +109,19 @@ func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 	movePointer(c, win.ID, 8, 8)
 	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 25, 28, 34, 4, "gear active rest")
 	movePointer(c, win.ID, gearZh.Bounds.X+gearZh.Bounds.Width/2, gearZh.Bounds.Y+gearZh.Bounds.Height/2)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 11, 122, 144, 4, "gear active hover")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 0, 37, 133, 4, "gear active hover")
 
 	c.pressNode(win.ID, gearZh)
 	c.waitNoText(win.ID, "关闭到托盘", 5*time.Second)
 
 	movePointer(c, win.ID, 8, 8)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 234, 239, 243, 4, "gear inactive rest")
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 234, 239, 243, 4, "more inactive rest")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 235, 238, 245, 4, "gear inactive rest")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 235, 238, 245, 4, "more inactive rest")
 
 	movePointer(c, win.ID, gearZh.Bounds.X+gearZh.Bounds.Width/2, gearZh.Bounds.Y+gearZh.Bounds.Height/2)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 231, 237, 241, 4, "gear inactive hover")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, gearZh.Bounds), 230, 235, 245, 4, "gear inactive hover")
 	movePointer(c, win.ID, more.Bounds.X+more.Bounds.Width/2, more.Bounds.Y+more.Bounds.Height/2)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 231, 237, 241, 4, "more inactive hover")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 230, 235, 245, 4, "more inactive hover")
 
 	c.pressNode(win.ID, more)
 	c.waitNode(win.ID, 5*time.Second, "more menu Exit item", func(n autoNode) bool {
@@ -140,7 +140,7 @@ func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 	movePointer(c, win.ID, 8, 8)
 	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 25, 28, 34, 10, "more active rest")
 	movePointer(c, win.ID, more.Bounds.X+more.Bounds.Width/2, more.Bounds.Y+more.Bounds.Height/2)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 11, 122, 144, 10, "more active hover")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 0, 37, 133, 10, "more active hover")
 
 	c.must("input", map[string]any{
 		"window": win.ID,
@@ -149,7 +149,7 @@ func TestE2EStartupSingleInstanceTrayAndExit(t *testing.T) {
 	c.idle(win.ID)
 	c.waitNoText(win.ID, "退出", 5*time.Second)
 	movePointer(c, win.ID, 8, 8)
-	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 234, 239, 243, 4, "more closed rest")
+	assertPixelNear(t, sampleNodeCorner(c, win.ID, win.ContentBounds, more.Bounds), 235, 238, 245, 4, "more closed rest")
 
 	// Verify Level 1 icon rail navigation across Tasks, Topology, and History.
 	c.press(win.ID, "button", "拓扑")

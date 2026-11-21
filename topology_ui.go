@@ -43,7 +43,7 @@ func topologyDestColor(kind taskconfig.TaskKind, d taskconfig.Destination) ui.Co
 	if d.Strategy == taskconfig.Mirror {
 		return porcelain.Warning
 	}
-	return ribbonCyan
+	return ribbonBlue
 }
 
 func buildTopologyLayout(tasks []taskconfig.Task) topologyLayout {
@@ -86,7 +86,7 @@ func buildTopologyLayout(tasks []taskconfig.Task) topologyLayout {
 		nDest := max(1, len(t.Destinations))
 		blockH := float32(nDest) * rowStep
 		srcY := yCursor + (blockH-rowStep)/2
-		srcColor := ribbonCyan
+		srcColor := ribbonBlue
 		if t.Kind == taskconfig.Moving {
 			srcColor = ribbonMove
 		}
@@ -162,12 +162,12 @@ func buildTopologyLayout(tasks []taskconfig.Task) topologyLayout {
 		if len(ct.Destinations) == 0 {
 			layout.Nodes = append(layout.Nodes, topologyNode{
 				X: casX, Y: startY, W: dstW, H: nodeH,
-				TaskID: ct.ID, Title: ct.Name, Subtitle: ct.SourcePath, Accent: ribbonCyan, IsCascade: true,
+				TaskID: ct.ID, Title: ct.Name, Subtitle: ct.SourcePath, Accent: ribbonBlue, IsCascade: true,
 			})
 			if ok {
 				layout.Edges = append(layout.Edges, topologyEdge{
 					X1: a.x, Y1: a.y, X2: casX, Y2: startY + nodeH/2,
-					Color: ribbonCyan, Dashed: true, CascadeLabel: ct.Name,
+					Color: ribbonBlue, Dashed: true, CascadeLabel: ct.Name,
 				})
 			}
 		}
@@ -229,7 +229,7 @@ func (a *application) topologyView(c *ui.Context) {
 					label string
 					color ui.Color
 				}{
-					{"Sync", ribbonCyan},
+					{"Sync", ribbonBlue},
 					{"Move", ribbonMove},
 					{"Mirror", porcelain.Warning},
 				} {
@@ -261,7 +261,7 @@ func (a *application) topologyView(c *ui.Context) {
 		layout := buildTopologyLayout(a.tasks.Tasks)
 		ui.ScrollBoth(c).Grow(1).FillWidth().Border(1, porcelain.Border).Background(ribbonSidebarBg).Children(func() {
 			ui.Box(c).Size(layout.Width, layout.Height).Draw(func(p *ui.Painter, r ui.Rect) {
-				gridColor := ui.Color{R: 203, G: 211, B: 217, A: 95}
+				gridColor := ui.Color{R: 204, G: 210, B: 223, A: 95}
 				for x := r.X + 24; x < r.X+r.W; x += 24 {
 					p.Line(x, r.Y, x, r.Y+r.H, 1, gridColor)
 				}
@@ -280,7 +280,7 @@ func (a *application) topologyView(c *ui.Context) {
 					arrow := new(ui.Path).MoveTo(x2, y2).LineTo(x2-7, y2-4).LineTo(x2-7, y2+4).Close()
 					p.FillPath(arrow, e.Color)
 					if e.CascadeLabel != "" {
-						p.Text(midX-28, min(y1, y2)-14, "↳ "+e.CascadeLabel, 12, ribbonCyan)
+						p.Text(midX-28, min(y1, y2)-14, "↳ "+e.CascadeLabel, 12, ribbonBlue)
 					}
 				}
 			}).Children(func() {

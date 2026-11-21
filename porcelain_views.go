@@ -141,7 +141,7 @@ func (a *application) manualView(c *ui.Context) {
 		// Main Stage
 		ui.Column(c).Grow(1).FillHeight().Gap(0).Children(func() {
 			if s.phase == manualRunning || s.phase == manualChecking || s.phase == manualStopping {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(8, 16).Background(ribbonCyanSoft).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(8, 16).Background(ribbonBlueSoft).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
 					activity := a.render(a.watchActivity)
 					if s.phase == manualStopping {
 						activity = a.render(s.message)
@@ -242,7 +242,7 @@ func (a *application) tasksMasterDetailView(c *ui.Context, width float32) {
 						}
 						_, health := a.taskHealth(t)
 						kindTag := "SYNC"
-						kindColor := ribbonCyan
+						kindColor := ribbonBlue
 						if t.Kind == taskconfig.Moving {
 							kindTag = "MOVE"
 							kindColor = ribbonMove
@@ -356,7 +356,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 	status, healthColor := a.taskHealth(t)
 	result := a.results[id]
 	kindTag := "SYNC"
-	kindColor := ribbonCyan
+	kindColor := ribbonBlue
 	if t.Kind == taskconfig.Moving {
 		kindTag = "MOVE"
 		kindColor = ribbonMove
@@ -371,7 +371,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 				if parent, hasParent := a.findCascadeParent(t); hasParent {
 					parentID := parent.ID
 					ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ "+a.tr("接力自 %s", parent.Name)).Background(ui.Transparent).Children(func() {
-						ui.Text(c, "↳ "+a.tr("接力自 %s", parent.Name)).FontSize(12).TextColor(ribbonCyan)
+						ui.Text(c, "↳ "+a.tr("接力自 %s", parent.Name)).FontSize(12).TextColor(ribbonBlue)
 					}).Disabled(!a.cardActionAllowed()).OnClick(func() { a.selectManual(parentID) })
 				}
 			})
@@ -402,7 +402,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 			})
 			previewBtn := porcelainButton(c, a.tr("源预览"))
 			if a.sourcePreview.open {
-				previewBtn = previewBtn.Background(ribbonCyanSoft).Border(1, ribbonCyan).TextColor(porcelain.Text)
+				previewBtn = previewBtn.Background(ribbonBlueSoft).Border(1, ribbonBlue).TextColor(porcelain.Text)
 			}
 			previewBtn.Disabled(!a.cardActionAllowed() && !a.sourcePreview.open).OnClick(func() {
 				if a.manual.id != id && a.cardActionAllowed() {
@@ -491,8 +491,8 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 	}
 
 	strategyLabel := "ADD-ONLY"
-	strategyColor := ribbonCyan
-	stripeColor := ribbonCyan
+	strategyColor := ribbonBlue
+	stripeColor := ribbonBlue
 	if t.Kind == taskconfig.Moving {
 		strategyLabel = "MOVE"
 		strategyColor = ribbonMove
@@ -538,8 +538,8 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 	cardBg := porcelain.Surface
 	cardBorder := porcelain.Border
 	if isOwner {
-		cardBg = ribbonCyanSoft
-		cardBorder = ribbonCyan
+		cardBg = ribbonBlueSoft
+		cardBorder = ribbonBlue
 	} else if interceptedBy > 0 {
 		cardBg = ribbonWarnSoft
 		cardBorder = porcelain.Warning
@@ -562,7 +562,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 				ui.Text(c, d.Name).FontSize(14).FontWeight(600).SingleLine().Ellipsis("…").Tooltip(d.Name)
 				ui.Text(c, strategyLabel).Font("Consolas").FontSize(12).TextColor(strategyColor)
 				if isOwner {
-					ui.Text(c, "● "+a.tr("命中")).FontSize(12).FontWeight(600).TextColor(ribbonCyan)
+					ui.Text(c, "● "+a.tr("命中")).FontSize(12).FontWeight(600).TextColor(ribbonBlue)
 				} else if interceptedBy > 0 {
 					ui.Text(c, a.tr("已被 %02d 拦截", interceptedBy)).FontSize(12).TextColor(porcelain.Warning)
 				}
@@ -570,7 +570,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 				if len(children) > 0 {
 					childID := children[0].ID
 					ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ "+a.tr("级联至 %s", children[0].Name)).Background(ui.Transparent).Children(func() {
-						ui.Text(c, "↳ "+a.tr("级联至 %s", children[0].Name)).FontSize(12).TextColor(ribbonCyan)
+						ui.Text(c, "↳ "+a.tr("级联至 %s", children[0].Name)).FontSize(12).TextColor(ribbonBlue)
 					}).Disabled(!a.cardActionAllowed()).OnClick(func() { a.selectManual(childID) })
 				}
 			})
