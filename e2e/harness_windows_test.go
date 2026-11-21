@@ -617,6 +617,36 @@ func (c *autoClient) chooseMoreMenu(winID int, moreLabel, itemLabel string, expe
 	c.pressNode(winID, item)
 }
 
+func (c *autoClient) quitViaSettings(winID int, settingsLabel, exitLabel string) {
+	c.t.Helper()
+	alreadyOnSettings := false
+	for _, n := range c.tree(winID) {
+		if n.Role == "button" && n.Label == exitLabel && !n.disabled() {
+			alreadyOnSettings = true
+			break
+		}
+	}
+	if !alreadyOnSettings {
+		c.press(winID, "button", settingsLabel)
+	}
+	btn := c.waitNode(winID, 5*time.Second, fmt.Sprintf("exit button %q", exitLabel), func(n autoNode) bool {
+		return n.Role == "button" && n.Label == exitLabel && !n.disabled()
+	})
+	if slices.Contains(btn.Actions, "press") {
+		c.writeReq("act", map[string]any{"window": winID, "id": btn.ID, "action": "press"})
+	} else {
+		c.writeReq("input", map[string]any{
+			"window": winID,
+			"events": []any{map[string]any{
+				"type": "click",
+				"x":    btn.Bounds.X + btn.Bounds.Width/2,
+				"y":    btn.Bounds.Y + btn.Bounds.Height/2,
+			}},
+		})
+	}
+	c.proc.waitExit(15 * time.Second)
+}
+
 func (c *autoClient) capture(winID int) (image.Image, int, int) {
 	c.t.Helper()
 	var res struct {

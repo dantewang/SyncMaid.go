@@ -75,15 +75,32 @@ func (a *application) settingsView(c *ui.Context) {
 					ui.Text(c, a.tr("无法打开旧版设置或记录：%s", a.legacyDataError.Error())).TextColor(porcelain.Danger)
 				}
 			})
+			porcelainSection(c, a.tr("任务与迁移"), func() {
+				porcelainSettingRow(c, a.tr("导入旧任务"), func() {
+					porcelainButton(c, a.tr("导入旧任务")).Disabled(!a.cardActionAllowed()).OnClick(a.beginImport)
+				})
+				ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+				porcelainSettingRow(c, a.tr("旧正则迁移"), func() {
+					porcelainButton(c, a.tr("旧正则迁移")).Disabled(!a.cardActionAllowed() || a.manual.id == "").OnClick(a.beginRegexMigration)
+				})
+				ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+				porcelainSettingRow(c, a.tr("重新载入"), func() {
+					ui.Row(c).Gap(8).Children(func() {
+						porcelainButton(c, a.tr("重新载入")).Disabled(a.manual.busy()).OnClick(a.reloadTasks)
+						porcelainButton(c, a.tr("重新载入设置")).Disabled(a.commonBusy).OnClick(a.reloadCommon)
+					})
+				})
+			})
 			porcelainSection(c, a.tr("关于"), func() {
-				ui.Row(c).Gap(14).AlignItems(ui.Center).Padding(11, 0).Children(func() {
+				ui.Row(c).Gap(14).AlignItems(ui.Center).Padding(11, 0).FillWidth().Children(func() {
 					if maidAvatar != nil {
 						ui.Image(c, maidAvatar).Size(40, 40)
 					}
-					ui.Column(c).Gap(2).Children(func() {
+					ui.Column(c).Gap(2).Grow(1).Children(func() {
 						ui.Text(c, "SyncMaid").Bold()
 						ui.Text(c, appVersion).Font("Consolas").FontSize(14).TextColor(porcelain.TextMuted)
 					})
+					ribbonDangerButton(c, a.tr("Exit")).OnClick(a.requestQuit)
 				})
 			})
 

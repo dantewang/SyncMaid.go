@@ -175,7 +175,7 @@ func (a *application) addFilterRule(group int) {
 func filterSegment(c *ui.Context, text string, selected bool) ui.Element {
 	bg := porcelain.Background
 	if selected {
-		bg = rgb(0xDCE1EC)
+		bg = rgb(0xE2E2E5)
 	}
 	return ui.ButtonBase(c).Label(text).Selected(selected).Padding(3, 6).Border(1, porcelain.Border).Background(bg).TextColor(porcelain.Text).Children(func() { ui.Text(c, text).FontSize(12).TextColor(porcelain.Text) })
 }

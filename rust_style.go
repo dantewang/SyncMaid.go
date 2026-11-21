@@ -54,19 +54,19 @@ var porcelainGlyphs = func() map[string]*ui.SVG {
 	return out
 }()
 
-// Ribbon Minimal tokens anchored on International Klein Blue (#002FA7) and cool silver.
+// Ribbon Minimal tokens anchored on International Klein Blue (#002FA7) and neutral grays.
 func rgb(v uint32) ui.Color {
 	return ui.Color{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 255}
 }
 
 var (
-	ribbonRailBg      = rgb(0xEBEEF5)
-	ribbonSidebarBg   = rgb(0xF3F5FA)
+	ribbonRailBg      = rgb(0xF2F2F3)
+	ribbonSidebarBg   = rgb(0xF6F6F7)
 	ribbonSurfaceCard = rgb(0xFFFFFF)
 	ribbonBlue        = rgb(0x002FA7)
-	ribbonBlueHover   = rgb(0x002585)
-	ribbonBluePressed = rgb(0x001B63)
-	ribbonBlueSoft    = rgb(0xEAF0FF)
+	ribbonBlueHover   = rgb(0x1B4FD8)
+	ribbonBluePressed = rgb(0x00217A)
+	ribbonBlueSoft    = rgb(0xEEF3FF)
 	ribbonSuccess     = rgb(0x16794B)
 	ribbonMove        = rgb(0x3154E8)
 	ribbonWarnSoft    = rgb(0xFDF6EB)
@@ -74,23 +74,23 @@ var (
 
 var porcelain = func() ui.Theme {
 	t := ui.LightTheme()
-	t.Background = rgb(0xF8F9FC)
+	t.Background = rgb(0xF5F5F6)
 	t.Surface = ribbonSurfaceCard
-	t.SurfaceHover = rgb(0xE6EBF5)
-	t.SurfacePressed = rgb(0xD8E0F0)
-	t.Text = rgb(0x191C22)
-	t.TextMuted = rgb(0x5E677A)
-	t.Border = rgb(0xCCD2DF)
-	t.Accent = t.Text
-	t.InactiveAccent = t.Accent
-	t.AccentText = rgb(0xF7FAFC)
+	t.SurfaceHover = rgb(0xEAEAEB)
+	t.SurfacePressed = rgb(0xDFDFE1)
+	t.Text = rgb(0x18181B)
+	t.TextMuted = rgb(0x66666B)
+	t.Border = rgb(0xD8D8DC)
+	t.Accent = ribbonBlue
+	t.InactiveAccent = ribbonBlue
+	t.AccentText = rgb(0xFFFFFF)
 	t.AccentHover = ribbonBlueHover
 	t.AccentPressed = ribbonBluePressed
 	t.Danger = rgb(0xC62F3C)
 	t.Warning = rgb(0xB4690E)
 	t.Success = ribbonSuccess
 	t.Focus = ribbonBlue
-	t.Selection = rgb(0xB9CCFF)
+	t.Selection = rgb(0xC2D4FF)
 	t.FontSize = 15
 	t.Radius = 0
 	t.Spacing = 4
@@ -136,7 +136,20 @@ func porcelainPrimaryButton(c *ui.Context, text string) ui.Element {
 }
 
 func ribbonInkButton(c *ui.Context, text string) ui.Element {
-	return ui.PrimaryButton(c, text).Radius(0).Padding(5, 12).FontSize(14)
+	return porcelainPrimaryButton(c, text)
+}
+
+func porcelainCompactButton(c *ui.Context, text string) ui.Element {
+	b := ui.ButtonBase(c).Label(text).Radius(0).Height(28).Padding(0, 10).TextColor(porcelain.Text).Children(func() {
+		ui.Text(c, text).FontSize(12)
+	})
+	bg := porcelain.Surface
+	if b.Pressed() {
+		bg = porcelain.SurfacePressed
+	} else if b.Hovered() {
+		bg = porcelain.SurfaceHover
+	}
+	return b.Border(1, porcelain.Border).Background(bg)
 }
 
 func ribbonDangerButton(c *ui.Context, text string) ui.Element {
@@ -163,7 +176,7 @@ func porcelainSegment(c *ui.Context, text string, selected bool, glyph ...string
 }
 
 func porcelainSwitch(c *ui.Context, on *bool) ui.Element {
-	bg, align := rgb(0xC3C9D9), ui.Start
+	bg, align := rgb(0xC8C8CC), ui.Start
 	if *on {
 		bg = ribbonBlue
 		align = ui.End
@@ -183,29 +196,6 @@ func porcelainPrimaryIcon(c *ui.Context, glyph, label string) ui.Element {
 	return ui.PrimaryButton(c, "").Padding(0).Radius(0).Size(24, 24).Label(label).Tooltip(label).Shrink(0).Children(func() {
 		ui.Icon(c, porcelainGlyphs[glyph]).Size(15, 15)
 	})
-}
-
-func porcelainSidebarIcon(c *ui.Context, glyph, label string, disabled bool) ui.Element {
-	return ui.ButtonBase(c).Padding(0).Radius(0).Size(28, 28).Border(0, ui.Transparent).Label(label).Tooltip(label).Shrink(0).Disabled(disabled).Children(func() {
-		ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16)
-	})
-}
-
-func styleSidebarIcon(b ui.Element, active bool) {
-	bg, fg := ui.Transparent, porcelain.Text
-	if active {
-		bg, fg = porcelain.Accent, porcelain.AccentText
-		if b.Pressed() {
-			bg = porcelain.AccentPressed
-		} else if b.Hovered() {
-			bg = porcelain.AccentHover
-		}
-	} else if b.Pressed() {
-		bg = porcelain.Border
-	} else if b.Hovered() {
-		bg = porcelain.SurfaceHover
-	}
-	b.Background(bg).TextColor(fg)
 }
 
 func porcelainPath(c *ui.Context, path string) {

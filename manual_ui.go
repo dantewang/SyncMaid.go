@@ -116,7 +116,11 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 			a.destinationModalView(c, locked, modalWidth)
 		})
 		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
-		ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Padding(10, 0, 0, 0).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(10, 0, 0, 0).Children(func() {
+			if s.targetID != "" {
+				porcelainButton(c, a.tr("复制配置")).Disabled(locked).OnClick(func() { a.copyManualTarget(s.targetID) })
+			}
+			ui.Box(c).Grow(1)
 			porcelainButton(c, a.tr("取消")).Disabled(s.busy()).OnClick(func() {
 				a.cancelDestination(s.targetID)
 				a.closeTaskEditor()
@@ -152,7 +156,11 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 		})
 	})
 	ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
-	ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Padding(10, 0, 0, 0).Children(func() {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(10, 0, 0, 0).Children(func() {
+		if s.id != "" {
+			ribbonDangerButton(c, a.tr("删除任务")).Disabled(locked || a.taskError != nil).OnClick(a.confirmDeleteManual)
+		}
+		ui.Box(c).Grow(1)
 		porcelainButton(c, a.tr("取消")).Disabled(s.busy()).OnClick(a.closeTaskEditor)
 		ribbonInkButton(c, a.tr("保存任务")).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
 	})

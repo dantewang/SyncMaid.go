@@ -248,7 +248,7 @@ func (a *application) topologyView(c *ui.Context) {
 					ui.Image(c, maidAvatar).Size(44, 44)
 				}
 				ui.Text(c, a.tr("暂无同步任务")).TextColor(porcelain.TextMuted)
-				ribbonInkButton(c, "＋ "+a.tr("新建任务")).Disabled(!a.cardActionAllowed()).OnClick(func() {
+				ribbonInkButton(c, "+ "+a.tr("新建任务")).Disabled(!a.cardActionAllowed()).OnClick(func() {
 					a.topologyOpen = false
 					a.newManual()
 					a.cards.editor = true
@@ -261,7 +261,7 @@ func (a *application) topologyView(c *ui.Context) {
 		layout := buildTopologyLayout(a.tasks.Tasks)
 		ui.ScrollBoth(c).Grow(1).FillWidth().Border(1, porcelain.Border).Background(ribbonSidebarBg).Children(func() {
 			ui.Box(c).Size(layout.Width, layout.Height).Draw(func(p *ui.Painter, r ui.Rect) {
-				gridColor := ui.Color{R: 204, G: 210, B: 223, A: 95}
+				gridColor := ui.Color{R: 212, G: 212, B: 216, A: 110}
 				for x := r.X + 24; x < r.X+r.W; x += 24 {
 					p.Line(x, r.Y, x, r.Y+r.H, 1, gridColor)
 				}

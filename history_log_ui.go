@@ -318,7 +318,7 @@ func (a *application) destinationLogView(c *ui.Context) {
 		if a.logOpenError != nil {
 			ui.Text(c, a.tr("无法打开日志文件：%s", a.logOpenError.Error())).TextColor(porcelain.Danger)
 		}
-		ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Background(rgb(0xE7EAF2)).Children(func() {
+		ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Background(rgb(0xECECEE)).Children(func() {
 			ui.Column(c).FillWidth().Padding(10).Gap(6).Children(func() {
 				count := 0
 				for _, r := range records {

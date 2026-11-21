@@ -59,19 +59,9 @@ func (a *application) manualView(c *ui.Context) {
 				})
 				ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 			}
-			for _, nav := range []struct {
-				target uiScreen
-				glyph  string
-				label  string
-				click  func()
-			}{
-				{screenTasks, "□", "任务", func() { a.settingsOpen = false; a.topologyOpen = false; a.historyOpen = false }},
-				{screenTopology, "move", "拓扑", func() { a.topologyOpen = true; a.settingsOpen = false; a.historyOpen = false }},
-				{screenHistory, "clock", "历史", func() { a.historyOpen = true; a.settingsOpen = false; a.topologyOpen = false }},
-			} {
-				item := nav
-				active := screen == item.target
-				btn := ui.ButtonBase(c).Label(a.tr(item.label)).FillWidth().Height(54).Padding(6, 2).Disabled(modalLocked || a.manual.busy())
+			railBtn := func(target uiScreen, glyph, label string, click func()) {
+				active := screen == target
+				btn := ui.ButtonBase(c).Label(a.tr(label)).FillWidth().Height(54).Padding(6, 2).Disabled(modalLocked || a.manual.busy())
 				fg := porcelain.TextMuted
 				bg := ui.Transparent
 				if active {
@@ -87,54 +77,17 @@ func (a *application) manualView(c *ui.Context) {
 				}
 				btn.Children(func() {
 					ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(3).Children(func() {
-						ui.Icon(c, porcelainGlyphs[item.glyph]).Size(16, 16)
-						ui.Text(c, a.tr(item.label)).FontSize(12).SingleLine()
+						ui.Icon(c, porcelainGlyphs[glyph]).Size(16, 16)
+						ui.Text(c, a.tr(label)).FontSize(12).SingleLine()
 					})
-				}).OnClick(item.click)
+				}).OnClick(click)
 			}
+			railBtn(screenTasks, "□", "任务", func() { a.settingsOpen = false; a.topologyOpen = false; a.historyOpen = false })
+			railBtn(screenTopology, "move", "拓扑", func() { a.topologyOpen = true; a.settingsOpen = false; a.historyOpen = false })
+			railBtn(screenHistory, "clock", "历史", func() { a.historyOpen = true; a.settingsOpen = false; a.topologyOpen = false })
 			ui.Box(c).Grow(1)
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
-			ui.Row(c).FillWidth().Justify(ui.Center).Gap(4).Padding(6, 2).Children(func() {
-				gear := porcelainSidebarIcon(c, "⚙", a.tr("设置"), modalLocked || a.manual.busy())
-				gear.OnClick(func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false; a.topologyOpen = false })
-				styleSidebarIcon(gear, screen == screenSettings)
-				menuBtn := porcelainSidebarIcon(c, "menu", a.tr("更多操作"), false)
-				menuBtn.PopoverMenuButton(func(m *ui.Menu) {
-					if m.Item(a.tr("运行全部")).Disabled(!a.cardActionAllowed() || modalLocked).Chosen() {
-						a.startBatch()
-					}
-					if m.Item(a.tr("重新载入设置")).Disabled(a.commonBusy).Chosen() {
-						a.reloadCommon()
-					}
-					if m.Item(a.tr("查看运行记录")).Disabled(modalLocked).Chosen() {
-						a.toggleHistory()
-					}
-					if m.Item(a.tr("重新载入")).Disabled(s.busy()).Chosen() {
-						a.reloadTasks()
-					}
-					if m.Item(a.tr("导入旧任务")).Disabled(!a.cardActionAllowed() || modalLocked).Chosen() {
-						a.beginImport()
-					}
-					if m.Item(a.tr("旧正则迁移")).Disabled(!a.cardActionAllowed() || modalLocked || s.id == "").Chosen() {
-						a.beginRegexMigration()
-					}
-					if m.Item(a.tr("暂停自动触发")).Disabled(a.watchPhase != watchesServing).Chosen() {
-						a.stopWatches(watchesPaused)
-					}
-					if m.Item(a.tr("恢复自动触发")).Disabled(a.watchPhase != watchesPaused).Chosen() {
-						a.resumeWatches()
-					}
-					m.Separator()
-					if m.Item(a.tr("Exit")).Chosen() {
-						a.requestQuit()
-					}
-				}, ui.PopoverMenuButtonOptions{
-					At:   ui.AnchorTopStart,
-					Self: ui.AnchorBottomStart,
-					Open: &a.moreMenuOpen,
-				})
-				styleSidebarIcon(menuBtn, a.moreMenuOpen)
-			})
+			railBtn(screenSettings, "⚙", "设置", func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false; a.topologyOpen = false })
 		})
 		ui.Box(c).Width(1).FillHeight().Background(porcelain.Border)
 
@@ -211,13 +164,13 @@ func (a *application) tasksMasterDetailView(c *ui.Context, width float32) {
 		// Level 2 Left: Task List Column
 		ui.Column(c).Width(listW).FillHeight().Background(ribbonSidebarBg).Gap(0).Children(func() {
 			ui.Column(c).FillWidth().Padding(10).Gap(6).Children(func() {
-				ribbonInkButton(c, "＋ "+a.tr("新建任务")).FillWidth().Height(32).Disabled(!a.cardActionAllowed()).OnClick(func() {
+				ribbonInkButton(c, "+ "+a.tr("新建任务")).FillWidth().Height(32).Disabled(!a.cardActionAllowed()).OnClick(func() {
 					a.newManual()
 					a.cards.editor = true
 					a.cards.destinations = false
 				})
 				ui.Row(c).FillWidth().Gap(6).Children(func() {
-					porcelainButton(c, "▷ "+a.tr("运行全部")).Grow(1).Padding(4, 6).FontSize(12).Disabled(!a.cardActionAllowed()).Tooltip(a.tr("按已保存顺序串行运行；停止会丢弃余下任务。")).OnClick(a.startBatch)
+					porcelainButton(c, a.tr("全部运行")).Grow(1).Padding(4, 6).FontSize(12).Disabled(!a.cardActionAllowed()).Tooltip(a.tr("按已保存顺序串行运行；停止会丢弃余下任务。")).OnClick(a.startBatch)
 					if a.watchPhase == watchesPaused {
 						porcelainButton(c, a.tr("恢复自动")).Grow(1).Padding(4, 6).FontSize(12).Disabled(!a.cardActionAllowed()).OnClick(a.resumeWatches)
 					} else {
@@ -282,7 +235,7 @@ func (a *application) tasksMasterDetailView(c *ui.Context, width float32) {
 						ui.Image(c, maidAvatar).Size(48, 48)
 					}
 					ui.Text(c, a.tr("暂无同步任务")).FontSize(15).TextColor(porcelain.TextMuted)
-					ribbonInkButton(c, "＋ "+a.tr("新建任务")).Disabled(!a.cardActionAllowed()).OnClick(func() {
+					ribbonInkButton(c, "+ "+a.tr("新建任务")).Disabled(!a.cardActionAllowed()).OnClick(func() {
 						a.newManual()
 						a.cards.editor = true
 						a.cards.destinations = false
@@ -362,85 +315,78 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 		kindColor = ribbonMove
 	}
 
-	// Task Header
-	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(12).Padding(12, 16).Background(porcelain.Surface).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(4).Children(func() {
-			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Baseline).Gap(10).Children(func() {
-				ui.Text(c, t.Name).FontSize(18).FontWeight(600).SingleLine().Ellipsis("…").Tooltip(t.Name)
-				ui.Text(c, kindTag).Font("Consolas").FontSize(12).TextColor(kindColor)
-				if parent, hasParent := a.findCascadeParent(t); hasParent {
-					parentID := parent.ID
-					ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ "+a.tr("接力自 %s", parent.Name)).Background(ui.Transparent).Children(func() {
-						ui.Text(c, "↳ "+a.tr("接力自 %s", parent.Name)).FontSize(12).TextColor(ribbonBlue)
-					}).Disabled(!a.cardActionAllowed()).OnClick(func() { a.selectManual(parentID) })
-				}
-			})
-			porcelainPath(c, t.SourcePath)
-			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
-				ui.Text(c, a.taskTriggerText(t)).FontSize(12).TextColor(porcelain.TextMuted)
-				ui.Text(c, "·").FontSize(12).TextColor(porcelain.TextMuted)
-				statusColor := porcelain.TextMuted
-				if healthColor == porcelain.Danger || healthColor == porcelain.Warning {
-					statusColor = healthColor
-				} else if healthColor == porcelain.Text {
-					statusColor = porcelain.Success
-				}
-				ui.Text(c, status).FontSize(12).TextColor(statusColor)
-				if w := a.watches[id]; w != nil && w.ticket.phase == watchFailed {
-					ui.Text(c, "· "+a.tr("触发器异常")).FontSize(12).TextColor(porcelain.Warning).Tooltip(a.render(w.status))
-				}
-			})
-		})
-
-		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(6).Children(func() {
-			porcelainButton(c, a.tr("编辑任务")).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, "") })
-			porcelainIcon(c, "⌫", a.tr("删除任务")).Disabled(!a.cardActionAllowed()).OnClick(func() {
-				a.selectManual(id)
-				if a.manual.id == id {
-					a.confirmDeleteManual()
-				}
-			})
-			previewBtn := porcelainButton(c, a.tr("源预览"))
-			if a.sourcePreview.open {
-				previewBtn = previewBtn.Background(ribbonBlueSoft).Border(1, ribbonBlue).TextColor(porcelain.Text)
-			}
-			previewBtn.Disabled(!a.cardActionAllowed() && !a.sourcePreview.open).OnClick(func() {
-				if a.manual.id != id && a.cardActionAllowed() {
-					a.selectManual(id)
-				}
-				a.sourcePreview.open = !a.sourcePreview.open
-			})
-			if running {
-				ribbonDangerButton(c, a.tr("停止")).OnClick(a.stopManual)
-			} else {
-				porcelainPrimaryButton(c, a.tr("运行")).Disabled(!a.cardActionAllowed() || len(t.Destinations) == 0).OnClick(func() { a.runCard(id) })
-			}
-		})
-	})
-	ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
-
-	// Unconfirmed regex / request issue strip
-	if _, reqErr := a.tasks.Request(t); reqErr != nil {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(8, 16).Background(ribbonWarnSoft).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).DrawOver(func(p *ui.Painter, r ui.Rect) {
-			p.Fill(ui.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, porcelain.Warning, 0)
-		}).Children(func() {
-			ui.Text(c, a.tr("此任务不可运行或编辑: ")+reqErr.Error()).FontSize(12).TextColor(porcelain.Warning).Grow(1)
-			if hasLegacyRegexRules(t) {
-				porcelainButton(c, a.tr("旧正则迁移")).Padding(3, 10).FontSize(12).Disabled(!a.cardActionAllowed()).OnClick(func() {
-					a.selectManual(id)
-					a.beginRegexMigration()
+	centerCol := func() {
+		// Task Header
+		ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(12).Padding(12, 16).Background(porcelain.Surface).Children(func() {
+			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(4).Children(func() {
+				ui.Row(c).FillWidth().Wrap().AlignItems(ui.Baseline).Gap(10).Children(func() {
+					ui.Text(c, t.Name).FontSize(18).FontWeight(600).SingleLine().Ellipsis("…").Tooltip(t.Name)
+					ui.Text(c, kindTag).Font("Consolas").FontSize(12).TextColor(kindColor)
+					if parent, hasParent := a.findCascadeParent(t); hasParent {
+						parentID := parent.ID
+						ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ "+a.tr("接力自 %s", parent.Name)).Background(ui.Transparent).Children(func() {
+							ui.Text(c, "↳ "+a.tr("接力自 %s", parent.Name)).FontSize(12).TextColor(ribbonBlue)
+						}).Disabled(!a.cardActionAllowed()).OnClick(func() { a.selectManual(parentID) })
+					}
 				})
-			}
-		})
-	}
+				porcelainPath(c, t.SourcePath)
+				ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Text(c, a.taskTriggerText(t)).FontSize(12).TextColor(porcelain.TextMuted)
+					ui.Text(c, "·").FontSize(12).TextColor(porcelain.TextMuted)
+					statusColor := porcelain.TextMuted
+					if healthColor == porcelain.Danger || healthColor == porcelain.Warning {
+						statusColor = healthColor
+					} else if healthColor == porcelain.Text {
+						statusColor = porcelain.Success
+					}
+					ui.Text(c, status).FontSize(12).TextColor(statusColor)
+					if w := a.watches[id]; w != nil && w.ticket.phase == watchFailed {
+						ui.Text(c, "· "+a.tr("触发器异常")).FontSize(12).TextColor(porcelain.Warning).Tooltip(a.render(w.status))
+					}
+				})
+			})
 
-	// Main Body + Collapsible Source Preview Panel
-	destSection := func() {
-		ui.Scroll(c).Grow(1).FillHeight().FillWidth().Children(func() {
+			ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(6).Children(func() {
+				porcelainButton(c, a.tr("编辑任务")).Height(32).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, "") })
+				previewBtn := porcelainButton(c, a.tr("源预览")).Height(32)
+				if a.sourcePreview.open {
+					previewBtn = previewBtn.Background(ribbonBlueSoft).Border(1, ribbonBlue).TextColor(ribbonBlue)
+				}
+				previewBtn.Disabled(!a.cardActionAllowed() && !a.sourcePreview.open).OnClick(func() {
+					if a.manual.id != id && a.cardActionAllowed() {
+						a.selectManual(id)
+					}
+					a.sourcePreview.open = !a.sourcePreview.open
+				})
+				if running {
+					ribbonDangerButton(c, "■ "+a.tr("停止")).Height(32).OnClick(a.stopManual)
+				} else {
+					porcelainPrimaryButton(c, "▶ "+a.tr("运行")).Height(32).Disabled(!a.cardActionAllowed() || len(t.Destinations) == 0).OnClick(func() { a.runCard(id) })
+				}
+			})
+		})
+		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+
+		// Unconfirmed regex / request issue strip
+		if _, reqErr := a.tasks.Request(t); reqErr != nil {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(8, 16).Background(ribbonWarnSoft).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).DrawOver(func(p *ui.Painter, r ui.Rect) {
+				p.Fill(ui.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, porcelain.Warning, 0)
+			}).Children(func() {
+				ui.Text(c, a.tr("此任务不可运行或编辑: ")+reqErr.Error()).FontSize(12).TextColor(porcelain.Warning).Grow(1)
+				if hasLegacyRegexRules(t) {
+					porcelainButton(c, a.tr("旧正则迁移")).Padding(3, 10).FontSize(12).Disabled(!a.cardActionAllowed()).OnClick(func() {
+						a.selectManual(id)
+						a.beginRegexMigration()
+					})
+				}
+			})
+		}
+
+		ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
 			ui.Column(c).FillWidth().Padding(14, 16).Gap(8).Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 					ui.Text(c, fmt.Sprintf("%s (%d)", a.tr("目标"), len(t.Destinations))).FontSize(13).FontWeight(600).TextColor(porcelain.TextMuted).Grow(1)
-					porcelainButton(c, a.tr("添加目标")).Disabled(!a.cardActionAllowed()).OnClick(func() { a.openAddDestination(id) })
+					porcelainButton(c, "+ "+a.tr("添加目标")).Disabled(!a.cardActionAllowed()).OnClick(func() { a.openAddDestination(id) })
 				})
 				if len(t.Destinations) == 0 {
 					ui.Column(c).FillWidth().Padding(28, 16).AlignItems(ui.Center).Gap(10).Background(porcelain.Surface).Border(1, porcelain.Border).Children(func() {
@@ -448,7 +394,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 							ui.Image(c, maidAvatar).Size(36, 36)
 						}
 						ui.Text(c, a.tr("尚未添加目标")).FontSize(14).TextColor(porcelain.TextMuted)
-						ribbonInkButton(c, a.tr("添加目标")).Disabled(!a.cardActionAllowed()).OnClick(func() { a.openAddDestination(id) })
+						ribbonInkButton(c, "+ "+a.tr("添加目标")).Disabled(!a.cardActionAllowed()).OnClick(func() { a.openAddDestination(id) })
 					})
 					return
 				}
@@ -462,20 +408,20 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 	if a.sourcePreview.open {
 		if width >= 920 {
 			ui.Row(c).Grow(1).FillWidth().Gap(0).Children(func() {
-				ui.Column(c).Grow(1).FillHeight().Children(destSection)
+				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).FillHeight().Children(centerCol)
 				ui.Box(c).Width(1).FillHeight().Background(porcelain.Border)
-				ui.Box(c).Width(280).FillHeight().Children(func() { a.sourcePreviewTaskPanel(c) })
+				ui.Box(c).Width(296).FillHeight().Children(func() { a.sourcePreviewTaskPanel(c) })
 			})
 			return
 		}
 		ui.Column(c).Grow(1).FillWidth().Gap(0).Children(func() {
-			ui.Column(c).Grow(1).FillWidth().Children(destSection)
+			ui.Column(c).Grow(1).FillWidth().Children(centerCol)
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
-			ui.Box(c).Height(220).FillWidth().Children(func() { a.sourcePreviewTaskPanel(c) })
+			ui.Box(c).Height(230).FillWidth().Children(func() { a.sourcePreviewTaskPanel(c) })
 		})
 		return
 	}
-	destSection()
+	centerCol()
 }
 
 func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d taskconfig.Destination, idx int, running bool, result savedTaskResult, now time.Time) {
@@ -503,7 +449,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 		stripeColor = porcelain.Warning
 	}
 
-	modeText := a.tr("仅添加")
+	modeText := a.tr("只增不删")
 	if t.Kind == taskconfig.Moving {
 		dirMode := "保留目录结构"
 		if d.FlattenStructure {
@@ -515,7 +461,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 		}
 		modeText = a.tr(dirMode) + " · " + a.tr(colMode)
 	} else if d.Strategy == taskconfig.Mirror {
-		delMode := "移至回收站"
+		delMode := "回收站"
 		if d.DeleteMode == taskconfig.Permanent {
 			delMode = "永久删除"
 		}
@@ -577,6 +523,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 			porcelainPath(c, d.Target.Path)
 			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
 				ui.Text(c, strings.Join(metaParts, "  |  ")).FontSize(12).TextColor(porcelain.TextMuted).Tooltip(a.ruleSummary(d.Filters))
+				ui.Text(c, "·").FontSize(12).TextColor(porcelain.TextMuted)
 				summary := a.destinationStatus(r, ok, now)
 				ui.ButtonBase(c).Role(ui.RoleLink).Label(summary).Background(ui.Transparent).Tooltip(summary).Children(func() {
 					ui.Text(c, summary).FontSize(12).SingleLine().Ellipsis("…").Underline().TextColor(mark)
@@ -584,16 +531,15 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 			})
 		})
 
-		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(4).Children(func() {
+		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(6).Children(func() {
 			if t.Kind == taskconfig.Moving {
 				canUp := idx > 0 && !syncengine.IsAllFileRules(d.Filters) && !syncengine.IsAllFileRules(t.Destinations[idx-1].Filters)
 				canDown := idx+1 < len(t.Destinations) && !syncengine.IsAllFileRules(d.Filters) && !syncengine.IsAllFileRules(t.Destinations[idx+1].Filters)
-				porcelainIcon(c, "up", a.tr("上移")).Disabled(!a.cardActionAllowed() || !canUp).OnClick(func() { a.reorderSavedDestination(id, did, -1) })
-				porcelainIcon(c, "⌄", a.tr("下移")).Disabled(!a.cardActionAllowed() || !canDown).OnClick(func() { a.reorderSavedDestination(id, did, 1) })
+				porcelainCompactButton(c, "↑").Padding(0, 8).Tooltip(a.tr("上移")).Disabled(!a.cardActionAllowed() || !canUp).OnClick(func() { a.reorderSavedDestination(id, did, -1) })
+				porcelainCompactButton(c, "↓").Padding(0, 8).Tooltip(a.tr("下移")).Disabled(!a.cardActionAllowed() || !canDown).OnClick(func() { a.reorderSavedDestination(id, did, 1) })
 			}
-			porcelainIcon(c, "copy", a.tr("复制目标（仅配置）")+" "+d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.openCopyDestination(id, did) })
-			porcelainIcon(c, "♢", a.tr("编辑目标")+" "+d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did) })
-			porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")+" "+d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.deleteSavedDestination(id, did) })
+			porcelainCompactButton(c, a.tr("编辑")).Tooltip(a.tr("编辑目标")+" "+d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did) })
+			porcelainCompactButton(c, a.tr("删除")).Tooltip(a.tr("移除目标（仅配置）")+" "+d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.deleteSavedDestination(id, did) })
 		})
 	})
 }

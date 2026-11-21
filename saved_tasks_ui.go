@@ -268,6 +268,7 @@ func (a *application) deleteManual(id taskconfig.ID) {
 				a.tasks = next
 				delete(a.results, id)
 				s.dirty = false
+				a.cards.editor = false
 				if len(next.Tasks) > 0 {
 					a.selectManual(next.Tasks[0].ID)
 				} else {

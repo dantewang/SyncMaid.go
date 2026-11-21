@@ -410,5 +410,14 @@
   "匹配预览": "Match preview",
   "拓扑": "Topology",
   "扫描": "Scan",
-  "历史": "History"
+  "历史": "History",
+  "全部运行": "Run all",
+  "编辑": "Edit",
+  "只增不删": "Add-only",
+  "任务与迁移": "Tasks & Migration",
+  "复制配置": "Duplicate",
+  "%d 文件 · %d 文件夹 · %s": "%d files · %d folders · %s",
+  "仅扫描源端 · %s 快照": "Source only · %s snapshot",
+  "仅扫描源端 · 扫描中": "Source only · Scanning",
+  "仅扫描源端 · 未扫描": "Source only · Not scanned"
 }
