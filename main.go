@@ -42,6 +42,7 @@ type application struct {
 	historyError       error
 	historyOpen        bool
 	historySelected    taskconfig.ID
+	topologyOpen       bool
 	watchWorkers       sync.WaitGroup
 	watches            map[taskconfig.ID]*watchedTask
 	watchPhase         watchServicePhase
@@ -136,8 +137,8 @@ func run() (result error) {
 			return mygo.NewWindow(mygo.WindowOptions{
 				Title:          "SyncMaid",
 				Hidden:         a.commonError == nil && a.commonValue.StartMinimized,
-				Width:          940,
-				Height:         620,
+				Width:          1040,
+				Height:         680,
 				UseContentSize: true,
 				MinWidth:       760,
 				MinHeight:      480,

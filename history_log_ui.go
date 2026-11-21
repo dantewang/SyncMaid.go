@@ -17,6 +17,7 @@ import (
 
 func (a *application) toggleHistory() {
 	a.settingsOpen = false
+	a.topologyOpen = false
 	a.historyOpen = !a.historyOpen
 	if r, ok := a.historyView.Latest[a.manual.id]; ok {
 		a.historySelected = r.ID
@@ -39,61 +40,72 @@ func (a *application) selectedHistory() (appcore.RunRecord, bool) {
 	return appcore.RunRecord{}, false
 }
 func (a *application) historyViewContent(c *ui.Context) {
-	ui.Column(c).Grow(1).FillWidth().Gap(8).Padding(16).Children(func() {
-		ui.Text(c, a.tr("近期运行记录")).FontSize(18).FontWeight(500)
-		porcelainButton(c, a.tr("诊断详情")).OnClick(func() { a.historyDetails = !a.historyDetails })
+	ui.Column(c).Grow(1).FillHeight().Gap(10).Padding(16).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, a.tr("近期运行记录")).FontSize(18).FontWeight(600).Grow(1)
+			porcelainButton(c, a.tr("诊断详情")).OnClick(func() { a.historyDetails = !a.historyDetails })
+		})
+		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 		if a.historyError != nil {
-			ui.Text(c, a.tr("记录不可用或未保存：")+appcore.HistoryText(a.historyError.Error(), appcore.HistoryErrorBytes))
-			ui.Text(c, a.tr("已发生的文件执行结果不变。请保留并修复记录文件后重新载入。"))
+			ui.Text(c, a.tr("记录不可用或未保存：")+appcore.HistoryText(a.historyError.Error(), appcore.HistoryErrorBytes)).TextColor(porcelain.Danger)
+			ui.Text(c, a.tr("已发生的文件执行结果不变。请保留并修复记录文件后重新载入。")).FontSize(13).TextColor(porcelain.TextMuted)
 		}
-		ui.Scroll(c).Height(145).Children(func() {
-			ui.Column(c).FillWidth().Gap(4).Children(func() {
+		ui.Scroll(c).Height(165).Border(1, porcelain.Border).Background(ribbonSidebarBg).Children(func() {
+			ui.Column(c).FillWidth().Gap(0).Children(func() {
 				for i := len(a.historyView.Recent) - 1; i >= 0; i-- {
 					r := a.historyView.Recent[i]
 					id := r.ID
+					selected := a.historySelected == id
 					label := a.tr("查看 ") + r.Name + " · " + r.Started.Local().Format("01-02 15:04:05") + " · " + a.tr(appcore.RunOutcome(r))
-					ui.Button(c, label).FillWidth().OnClick(func() { a.historySelected = id })
+					btn := ui.ButtonBase(c).Label(label).Justify(ui.Start).FillWidth().Padding(8, 12).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border)
+					if selected {
+						btn = paintRibbonStripe(btn.Background(porcelain.Surface))
+					}
+					btn.Children(func() {
+						ui.Text(c, label).FontSize(13).SingleLine().Ellipsis("…")
+					}).OnClick(func() { a.historySelected = id })
 				}
 			})
 		})
 		r, ok := a.selectedHistory()
 		if !ok {
-			ui.Text(c, a.tr("暂无可用运行记录。"))
+			ui.Text(c, a.tr("暂无可用运行记录。")).TextColor(porcelain.TextMuted)
 			return
 		}
-		ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-			ui.Column(c).FillWidth().Gap(10).Children(func() {
-				ui.Text(c, r.Name+a.tr(" · ")+a.tr(appcore.RunOutcome(r))).Bold()
+		ui.Scroll(c).Grow(1).FillWidth().Border(1, porcelain.Border).Background(porcelain.Surface).Children(func() {
+			ui.Column(c).FillWidth().Padding(14).Gap(8).Children(func() {
+				ui.Text(c, r.Name+a.tr(" · ")+a.tr(appcore.RunOutcome(r))).FontSize(15).Bold()
 				if a.historyDetails {
-					ui.Text(c, fmt.Sprintf(a.tr("任务 %s · 运行 %s · %s / %s"), r.TaskID, r.ID, r.Kind, a.tr(string(r.Origin)))).FontSize(12)
+					ui.Text(c, fmt.Sprintf(a.tr("任务 %s · 运行 %s · %s / %s"), r.TaskID, r.ID, r.Kind, a.tr(string(r.Origin)))).FontSize(12).TextColor(porcelain.TextMuted)
 				}
-				ui.Text(c, a.tr("开始: ")+r.Started.Local().Format("2006-01-02 15:04:05 MST"))
+				ui.Text(c, a.tr("开始: ")+r.Started.Local().Format("2006-01-02 15:04:05 MST")).FontSize(13)
 				if !r.Ended.IsZero() {
-					ui.Text(c, a.tr("结束: ")+r.Ended.Local().Format("2006-01-02 15:04:05 MST"))
+					ui.Text(c, a.tr("结束: ")+r.Ended.Local().Format("2006-01-02 15:04:05 MST")).FontSize(13)
 				} else {
-					ui.Text(c, a.tr("未记录结束；可能已有文件操作，请核对，不能视作成功或未执行。"))
+					ui.Text(c, a.tr("未记录结束；可能已有文件操作，请核对，不能视作成功或未执行。")).FontSize(13).TextColor(porcelain.Warning)
 				}
 				if r.Error != "" {
-					ui.Text(c, a.tr("错误: ")+r.Error)
+					ui.Text(c, a.tr("错误: ")+r.Error).FontSize(13).TextColor(porcelain.Danger)
 				}
 				for _, g := range r.Goals {
+					ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 					ui.Text(c, g.Name+a.tr(" · ")+a.tr(string(g.State))).Bold()
 					if a.historyDetails {
-						ui.Text(c, a.tr("目标ID: ")+string(g.ID)).FontSize(12)
+						ui.Text(c, a.tr("目标ID: ")+string(g.ID)).FontSize(12).TextColor(porcelain.TextMuted)
 					}
 					if a.historyDetails && !g.Started.IsZero() {
-						ui.Text(c, a.tr("目标开始: ")+g.Started.Local().Format("01-02 15:04:05"))
+						ui.Text(c, a.tr("目标开始: ")+g.Started.Local().Format("01-02 15:04:05")).FontSize(12).TextColor(porcelain.TextMuted)
 					}
 					if a.historyDetails && !g.Ended.IsZero() {
-						ui.Text(c, a.tr("目标结束: ")+g.Ended.Local().Format("01-02 15:04:05"))
+						ui.Text(c, a.tr("目标结束: ")+g.Ended.Local().Format("01-02 15:04:05")).FontSize(12).TextColor(porcelain.TextMuted)
 					}
 					if r.Outcome != "running" {
 						if counts := a.runCounts(g, a.historyDetails); counts != "" {
-							ui.Text(c, counts)
+							ui.Text(c, counts).FontSize(13)
 						}
 					}
 					if g.Error != "" {
-						ui.Text(c, a.tr("错误: ")+g.Error)
+						ui.Text(c, a.tr("错误: ")+g.Error).FontSize(13).TextColor(porcelain.Danger)
 					}
 				}
 			})

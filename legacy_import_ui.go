@@ -38,6 +38,7 @@ func (a *application) beginImport() {
 			a.importError = nil
 			s.phase = manualImporting
 			a.settingsOpen = false
+			a.topologyOpen = false
 			a.historyOpen = false
 		}
 	})

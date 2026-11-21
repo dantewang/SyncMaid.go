@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
-	"github.com/egoist/mygo/ui"
-	"reflect"
+	"fmt"
 	"strings"
 	"syncmaid/internal/appcore"
+	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
+
+	"github.com/egoist/mygo/ui"
 )
 
 type sourcePreviewPhase uint8
@@ -26,15 +28,25 @@ type sourcePreviewJob struct {
 	generation uint64
 }
 
-func (a *application) manualEdited() { a.sourcePreview.invalidate(); a.pauseEditingWatch(a.manual.id) }
+func (a *application) manualEdited() {
+	a.sourcePreview.invalidate()
+	a.refreshPreviewFromSnapshot()
+	a.pauseEditingWatch(a.manual.id)
+}
 
 // Owned by the native UI thread. The worker owns only its cloned request.
 type sourcePreviewSession struct {
-	phase      sourcePreviewPhase
-	generation uint64
-	job        *sourcePreviewJob
-	result     *appcore.RoutePreview
-	err        error
+	phase               sourcePreviewPhase
+	generation          uint64
+	job                 *sourcePreviewJob
+	result              *appcore.RoutePreview
+	err                 error
+	cachedSnapshot      *appcore.SourceSnapshot
+	searchQuery         string
+	selectedPath        string
+	selectedOwners      map[taskconfig.ID]bool
+	selectedIntercepted map[taskconfig.ID]int
+	open                bool
 }
 
 func (s *sourcePreviewSession) invalidate() {
@@ -49,6 +61,67 @@ func (s *sourcePreviewSession) invalidate() {
 		s.phase = previewStale
 	}
 }
+
+func (s *sourcePreviewSession) resetSnapshot() {
+	s.cachedSnapshot = nil
+	s.searchQuery = ""
+	s.selectedPath = ""
+	s.selectedOwners = nil
+	s.selectedIntercepted = nil
+	s.invalidate()
+}
+
+func (a *application) selectPreviewPath(fp string) {
+	p := &a.sourcePreview
+	if p.selectedPath == fp {
+		p.selectedPath = ""
+		p.selectedOwners = nil
+		p.selectedIntercepted = nil
+		return
+	}
+	p.selectedPath = fp
+	p.selectedOwners = map[taskconfig.ID]bool{}
+	p.selectedIntercepted = map[taskconfig.ID]int{}
+	q, err := a.previewDraft()
+	if err != nil {
+		return
+	}
+	mini := &appcore.SourceSnapshot{
+		Source: q.Source,
+		Files:  []appcore.PreviewFile{{Path: fp}},
+	}
+	res, err := appcore.EvaluateSourceSnapshot(context.Background(), mini, q)
+	if err != nil {
+		return
+	}
+	moving := syncengine.ManualKind(q.Kind) == taskconfig.Moving
+	winnerIdx := 0
+	for i, d := range q.Destinations {
+		if res.Targets[d.ID].Count > 0 {
+			p.selectedOwners[d.ID] = true
+			if winnerIdx == 0 {
+				winnerIdx = i + 1
+			}
+		}
+	}
+	if moving && winnerIdx > 0 {
+		// Re-evaluate individually for destinations after winner to detect intercepted Move rules.
+		for i := winnerIdx; i < len(q.Destinations); i++ {
+			d := q.Destinations[i]
+			single := syncengine.ManualTaskRequest{
+				Kind:         taskconfig.Sync,
+				Source:       q.Source,
+				Destinations: []syncengine.ManualDestination{d},
+			}
+			_ = fileinventory.File{}
+			sr, err := appcore.EvaluateSourceSnapshot(context.Background(), mini, single)
+			if err == nil && sr.Targets[d.ID].Count > 0 {
+				p.selectedIntercepted[d.ID] = winnerIdx
+			}
+		}
+	}
+}
+
 func (s *sourcePreviewSession) finish(job *sourcePreviewJob, result *appcore.RoutePreview, err error) {
 	if s.job != job {
 		return
@@ -62,11 +135,34 @@ func (s *sourcePreviewSession) finish(job *sourcePreviewJob, result *appcore.Rou
 	s.result = result
 	s.err = err
 	s.phase = previewReady
+	if result != nil && err == nil {
+		s.cachedSnapshot = result.Snapshot
+	}
 	if err != nil {
 		s.result = nil
+		s.cachedSnapshot = nil
 		s.phase = previewFailed
 	}
 }
+
+func (a *application) refreshPreviewFromSnapshot() {
+	p := &a.sourcePreview
+	if p.cachedSnapshot == nil || p.job != nil || p.cachedSnapshot.Source != a.manual.source {
+		return
+	}
+	q, err := a.previewDraft()
+	if err != nil {
+		return
+	}
+	res, err := appcore.EvaluateSourceSnapshot(context.Background(), p.cachedSnapshot, q)
+	if err != nil {
+		return
+	}
+	p.result = res
+	p.err = nil
+	p.phase = previewReady
+}
+
 func (a *application) previewDraft() (syncengine.ManualTaskRequest, error) {
 	s := &a.manual
 	if a.tasks != nil && s.id != "" {
@@ -98,7 +194,7 @@ func (a *application) previewDraft() (syncengine.ManualTaskRequest, error) {
 }
 
 func samePreviewRequest(a, b syncengine.ManualTaskRequest) bool {
-	if a.Source != b.Source || syncengine.ManualKind(a.Kind) != syncengine.ManualKind(b.Kind) || !reflect.DeepEqual(a.Trigger, b.Trigger) || len(a.Destinations) != len(b.Destinations) {
+	if a.Source != b.Source || syncengine.ManualKind(a.Kind) != syncengine.ManualKind(b.Kind) || !reflectEqualTrigger(a.Trigger, b.Trigger) || len(a.Destinations) != len(b.Destinations) {
 		return false
 	}
 	for i, d := range a.Destinations {
@@ -109,6 +205,26 @@ func samePreviewRequest(a, b syncengine.ManualTaskRequest) bool {
 	}
 	return true
 }
+
+func reflectEqualTrigger(a, b taskconfig.Trigger) bool {
+	if a.Kind != b.Kind {
+		return false
+	}
+	if (a.CronExpression == nil) != (b.CronExpression == nil) {
+		return false
+	}
+	if a.CronExpression != nil && *a.CronExpression != *b.CronExpression {
+		return false
+	}
+	if (a.SettleSeconds == nil) != (b.SettleSeconds == nil) {
+		return false
+	}
+	if a.SettleSeconds != nil && *a.SettleSeconds != *b.SettleSeconds {
+		return false
+	}
+	return true
+}
+
 func (a *application) startSourcePreview() {
 	if a.manual.busy() || a.manual.quitPending || a.batch.phase != batchIdle || a.tasks == nil || a.taskError != nil || a.sourcePreview.job != nil {
 		return
@@ -154,39 +270,62 @@ func (a *application) addPreviewExtension(group int, extension string) {
 	a.filterEdited()
 }
 
+func formatPreviewBytes(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(b)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
+func (a *application) sourcePreviewStatusText(c *ui.Context) {
+	p := &a.sourcePreview
+	switch p.phase {
+	case previewScanning:
+		ui.Text(c, a.tr("正在读取源文件…")).FontSize(13).TextColor(porcelain.TextMuted)
+	case previewStopping:
+		ui.Text(c, a.tr("正在取消预览…")).FontSize(13).TextColor(porcelain.TextMuted)
+	case previewStale:
+		ui.Text(c, a.tr("预览已失效，请刷新。")).FontSize(13).TextColor(porcelain.TextMuted)
+	case previewFailed:
+		ui.Text(c, a.tr("预览失败: %s", p.err.Error())).FontSize(13).TextColor(porcelain.Danger)
+	case previewReady:
+		r := p.result
+		if r.EmptyRoot {
+			ui.Text(c, a.tr("源目录为空。")).FontSize(13)
+		} else if r.SourceFiles == 0 {
+			ui.Text(c, a.tr("源目录存在，但没有普通文件。")).FontSize(13)
+		} else {
+			ui.Text(c, a.tr("源文件: %d", r.SourceFiles)).FontSize(13).FontWeight(600)
+			if r.TotalBytes > 0 || r.FolderCount > 0 {
+				ui.Text(c, a.tr("%d 个文件夹 · %s", r.FolderCount, formatPreviewBytes(r.TotalBytes))).FontSize(12).TextColor(porcelain.TextMuted)
+			}
+		}
+	}
+}
+
 func (a *application) sourcePreviewView(c *ui.Context) {
 	p := &a.sourcePreview
 	ui.Column(c).FillWidth().Gap(8).Padding(12, 0).Children(func() {
-		ui.Row(c).Wrap().Gap(10).Children(func() {
+		ui.Row(c).Wrap().Gap(8).Children(func() {
 			label := "源预览"
 			if p.phase != previewIdle {
 				label = "刷新预览"
 			}
-			ui.ButtonBase(c).Label(a.tr(label)).Radius(0).Padding(5, 10).Gap(8).Border(1, porcelain.Border).Background(porcelain.Background).TextColor(porcelain.Text).Children(func() { ui.Icon(c, porcelainGlyphs["eye"]).Size(16, 16); ui.Text(c, a.tr(label)).FontSize(16) }).Disabled(a.manual.busy() || a.manual.quitPending || p.job != nil || a.taskError != nil).OnClick(a.startSourcePreview)
+			porcelainButton(c, a.tr(label)).Disabled(a.manual.busy() || a.manual.quitPending || p.job != nil || a.taskError != nil).OnClick(a.startSourcePreview)
 			if p.job != nil {
 				porcelainButton(c, a.tr("取消预览")).Disabled(p.phase == previewStopping).OnClick(p.invalidate)
 			}
 		})
-
-		switch p.phase {
-		case previewScanning:
-			ui.Text(c, a.tr("正在读取源文件…"))
-		case previewStopping:
-			ui.Text(c, a.tr("正在取消预览…"))
-		case previewStale:
-			ui.Text(c, a.tr("预览已失效，请刷新。"))
-		case previewFailed:
-			ui.Text(c, a.tr("预览失败: %s", p.err.Error())).TextColor(porcelain.Danger)
-		case previewReady:
+		a.sourcePreviewStatusText(c)
+		if p.phase == previewReady && p.result != nil {
 			r := p.result
-			if r.EmptyRoot {
-				ui.Text(c, a.tr("源目录为空。"))
-			} else if r.SourceFiles == 0 {
-				ui.Text(c, a.tr("源目录存在，但没有普通文件。"))
-			} else {
-				ui.Text(c, a.tr("源文件: %d", r.SourceFiles))
-			}
-			ui.Text(c, a.tr("未匹配: %d · %s", r.Unmatched.Count, strings.Join(r.Unmatched.Samples, ", "))).MaxLines(3)
+			ui.Text(c, a.tr("未匹配: %d · %s", r.Unmatched.Count, strings.Join(r.Unmatched.Samples, ", "))).FontSize(12).MaxLines(3)
 			for _, item := range r.Contested {
 				names := make([]string, 0, len(item.Targets))
 				for _, id := range item.Targets {
@@ -203,6 +342,7 @@ func (a *application) sourcePreviewView(c *ui.Context) {
 		}
 	})
 }
+
 func (a *application) sourcePreviewTargetView(c *ui.Context, id taskconfig.ID) {
 	if a.sourcePreview.phase != previewReady || a.sourcePreview.result == nil {
 		return
@@ -213,4 +353,213 @@ func (a *application) sourcePreviewTargetView(c *ui.Context, id taskconfig.ID) {
 	}
 	text := a.tr("预览匹配: %d · %s", r.Count, strings.Join(r.Samples, ", "))
 	ui.Text(c, text).FontSize(12).TextColor(porcelain.TextMuted).MaxLines(2).Tooltip(text)
+}
+
+func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
+	p := &a.sourcePreview
+	ui.Column(c).FillHeight().FillWidth().Background(ribbonSidebarBg).Gap(0).Children(func() {
+		// Header
+		ui.Column(c).FillWidth().Padding(10, 12).Gap(4).Background(porcelain.Surface).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+				ui.Text(c, a.tr("源预览")).FontSize(13).FontWeight(600).Grow(1)
+				if p.job != nil {
+					porcelainButton(c, a.tr("取消预览")).Padding(3, 8).FontSize(12).Disabled(p.phase == previewStopping).OnClick(p.invalidate)
+				} else {
+					btnLabel := a.tr("扫描")
+					if p.phase != previewIdle {
+						btnLabel = a.tr("刷新预览")
+					}
+					porcelainButton(c, btnLabel).Padding(3, 8).FontSize(12).Disabled(a.manual.busy() || a.manual.quitPending || a.taskError != nil).OnClick(a.startSourcePreview)
+				}
+			})
+			a.sourcePreviewStatusText(c)
+			ui.Text(c, a.tr("仅扫描源端")).FontSize(12).TextColor(porcelain.TextMuted)
+		})
+		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+
+		if p.phase == previewIdle {
+			ui.Column(c).Grow(1).FillWidth().AlignItems(ui.Center).Justify(ui.Center).Padding(16).Gap(8).Children(func() {
+				ui.Text(c, a.tr("按需只读扫描源目录")).FontSize(12).TextColor(porcelain.TextMuted)
+				ribbonInkButton(c, a.tr("扫描源目录")).Disabled(a.manual.busy() || a.manual.quitPending || a.taskError != nil).OnClick(a.startSourcePreview)
+			})
+			return
+		}
+		if p.phase != previewReady || p.result == nil {
+			return
+		}
+		r := p.result
+
+		// Instant Search Box
+		if r.Snapshot != nil && r.SourceFiles > 0 {
+			ui.Row(c).FillWidth().Padding(8, 10).Gap(6).Background(porcelain.Surface).Children(func() {
+				ui.TextInput(c, &p.searchQuery).Height(28).Grow(1).FontSize(12).Label(a.tr("搜索源路径")).Placeholder(a.tr("筛选路径 / 扩展名…"))
+				if strings.TrimSpace(p.searchQuery) != "" {
+					porcelainButton(c, a.tr("清除")).Padding(3, 8).FontSize(12).OnClick(func() {
+						p.searchQuery = ""
+						p.selectedPath = ""
+						p.selectedOwners = nil
+						p.selectedIntercepted = nil
+					})
+				}
+			})
+			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+		}
+
+		ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+			ui.Column(c).FillWidth().Gap(0).Children(func() {
+				q := strings.TrimSpace(p.searchQuery)
+				if q != "" && r.Snapshot != nil {
+					matches, total := appcore.SearchSnapshotPaths(r.Snapshot, q, 50)
+					summary := a.tr("命中 %d 项", total)
+					if total > len(matches) {
+						summary = a.tr("仅显示前 %d / 共 %d 项", len(matches), total)
+					}
+					ui.Text(c, summary).FontSize(12).TextColor(porcelain.TextMuted).Padding(6, 10)
+					if len(matches) == 0 {
+						ui.Text(c, a.tr("无匹配文件")).FontSize(12).TextColor(porcelain.TextMuted).Padding(10)
+						return
+					}
+					for _, f := range matches {
+						fp := f.Path
+						selected := p.selectedPath == fp
+						row := ui.ButtonBase(c).Label(fp).FillWidth().Justify(ui.Start).Padding(6, 10).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border)
+						if selected {
+							row = row.Background(ribbonCyanSoft)
+						}
+						row.Children(func() {
+							ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(2).Children(func() {
+								ui.Text(c, fp).Font("Consolas").FontSize(12).SingleLine().Ellipsis("…").Tooltip(fp)
+								ui.Text(c, formatPreviewBytes(f.Size)).FontSize(12).TextColor(porcelain.TextMuted)
+							})
+						}).OnClick(func() {
+							a.selectPreviewPath(fp)
+						})
+					}
+					return
+				}
+
+				allTargetsAll := len(a.manual.targets) > 0
+				for _, d := range a.manual.targets {
+					if !syncengine.IsAllFileRules(d.Filters) {
+						allTargetsAll = false
+						break
+					}
+				}
+
+				if allTargetsAll && len(r.TopDirs) > 0 {
+					ui.Text(c, a.tr("顶层目录分布")).FontSize(12).FontWeight(600).Padding(8, 10, 4, 10)
+					for _, dir := range r.TopDirs {
+						prefix := dir.Prefix
+						label := prefix
+						if prefix == "(root)" {
+							label = a.tr("(根目录)")
+						}
+						ratio := float32(0)
+						if r.TotalBytes > 0 {
+							ratio = float32(dir.Bytes) / float32(r.TotalBytes)
+						} else if r.SourceFiles > 0 {
+							ratio = float32(dir.Files) / float32(r.SourceFiles)
+						}
+						btn := ui.ButtonBase(c).Label(label).FillWidth().Padding(6, 10).Background(ui.Transparent).Children(func() {
+							ui.Column(c).FillWidth().Gap(4).Children(func() {
+								ui.Row(c).FillWidth().Gap(6).Children(func() {
+									ui.Text(c, label).Font("Consolas").FontSize(12).Grow(1).SingleLine().Ellipsis("…")
+									ui.Text(c, fmt.Sprintf("%d · %s", dir.Files, formatPreviewBytes(dir.Bytes))).FontSize(12).TextColor(porcelain.TextMuted)
+								})
+								ui.Box(c).Height(3).FillWidth().Background(porcelain.Border).DrawOver(func(pt *ui.Painter, rc ui.Rect) {
+									w := rc.W * ratio
+									if w > 0 && w < 3 {
+										w = 3
+									}
+									pt.Fill(ui.Rect{X: rc.X, Y: rc.Y, W: w, H: rc.H}, ribbonCyan, 0)
+								})
+							})
+						})
+						if prefix != "(root)" {
+							btn.OnClick(func() { p.searchQuery = prefix })
+						}
+					}
+					if len(r.Extensions) > 0 {
+						ui.Box(c).Height(1).FillWidth().Background(porcelain.Border).Margin(6, 0)
+						ui.Text(c, a.tr("高频扩展名")).FontSize(12).FontWeight(600).Padding(4, 10)
+						ui.Row(c).Wrap().Gap(8).Padding(4, 10, 10, 10).Children(func() {
+							for _, ext := range r.Extensions {
+								extText := ext.Text
+								ui.ButtonBase(c).Label("."+extText).Padding(2, 4).Background(ui.Transparent).Children(func() {
+									ui.Text(c, fmt.Sprintf(".%s %d", extText, ext.Count)).Font("Consolas").FontSize(12).TextColor(porcelain.Text)
+								}).OnClick(func() { p.searchQuery = "." + extText })
+							}
+						})
+					}
+					return
+				}
+
+				// Filtered or Move mode: Sampled Buckets
+				for i, d := range a.manual.targets {
+					sel := r.Targets[d.ID]
+					pct := "0.0%"
+					if r.SourceFiles > 0 {
+						pct = fmt.Sprintf("%.1f%%", float64(sel.Count)*100/float64(r.SourceFiles))
+					}
+					title := d.Name
+					if syncengine.ManualKind(a.manual.kind) == taskconfig.Moving {
+						title = fmt.Sprintf("%02d %s", i+1, d.Name)
+					}
+					ui.Row(c).FillWidth().Padding(7, 10).Background(porcelain.Surface).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+						ui.Text(c, title).FontSize(12).FontWeight(600).Grow(1).SingleLine().Ellipsis("…")
+						ui.Text(c, fmt.Sprintf("%d (%s)", sel.Count, pct)).FontSize(12).TextColor(porcelain.TextMuted)
+					})
+					for _, sp := range sel.Samples {
+						samplePath := sp
+						ui.ButtonBase(c).Label(samplePath).FillWidth().Justify(ui.Start).Padding(5, 10).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+							ui.Text(c, samplePath).Font("Consolas").FontSize(12).SingleLine().Ellipsis("…").Tooltip(samplePath)
+						}).OnClick(func() { a.selectPreviewPath(samplePath) })
+					}
+				}
+				if r.Unmatched.Count > 0 {
+					ui.Row(c).FillWidth().Padding(7, 10).Background(porcelain.Surface).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+						ui.Text(c, a.tr("未匹配")).FontSize(12).TextColor(porcelain.TextMuted).Grow(1)
+						ui.Text(c, fmt.Sprint(r.Unmatched.Count)).FontSize(12).TextColor(porcelain.TextMuted)
+					})
+					for _, sp := range r.Unmatched.Samples {
+						samplePath := sp
+						ui.Text(c, samplePath).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted).Padding(4, 10).SingleLine().Ellipsis("…")
+					}
+				}
+				for _, item := range r.Contested {
+					ui.Text(c, a.tr("多规则匹配: %s", item.Path)).FontSize(12).TextColor(porcelain.Warning).Padding(4, 10).SingleLine().Ellipsis("…")
+				}
+			})
+		})
+	})
+}
+
+func (a *application) sourcePreviewModalPane(c *ui.Context, targetID taskconfig.ID) {
+	p := &a.sourcePreview
+	ui.Column(c).FillHeight().FillWidth().Background(ribbonSidebarBg).Border(1, porcelain.Border).Gap(0).Children(func() {
+		ui.Row(c).FillWidth().Padding(8, 10).AlignItems(ui.Center).Background(porcelain.Surface).Children(func() {
+			ui.Text(c, a.tr("匹配预览")).FontSize(13).FontWeight(600).Grow(1)
+			btnLabel := a.tr("扫描")
+			if p.phase != previewIdle {
+				btnLabel = a.tr("刷新预览")
+			}
+			porcelainButton(c, btnLabel).Padding(3, 8).FontSize(12).Disabled(a.manual.busy() || a.manual.quitPending || p.job != nil || a.taskError != nil).OnClick(a.startSourcePreview)
+		})
+		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+		ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+			ui.Column(c).FillWidth().Padding(8, 10).Gap(6).Children(func() {
+				a.sourcePreviewStatusText(c)
+				if p.phase == previewReady && p.result != nil {
+					r := p.result
+					if sel, ok := r.Targets[targetID]; ok {
+						text := a.tr("预览匹配: %d · %s", sel.Count, strings.Join(sel.Samples, ", "))
+						ui.Text(c, text).FontSize(12).FontWeight(600).MaxLines(2).Tooltip(text)
+						for _, sp := range sel.Samples {
+							ui.Text(c, "✓ "+sp).Font("Consolas").FontSize(12).SingleLine().Ellipsis("…").Tooltip(sp)
+						}
+					}
+				}
+			})
+		})
+	})
 }

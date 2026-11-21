@@ -76,9 +76,14 @@ func (a *application) settingsView(c *ui.Context) {
 				}
 			})
 			porcelainSection(c, a.tr("关于"), func() {
-				ui.Row(c).Gap(14).Padding(11, 0).Children(func() {
-					ui.Text(c, "SyncMaid").Bold()
-					ui.Text(c, appVersion).Font("Consolas").FontSize(14).TextColor(porcelain.TextMuted)
+				ui.Row(c).Gap(14).AlignItems(ui.Center).Padding(11, 0).Children(func() {
+					if maidAvatar != nil {
+						ui.Image(c, maidAvatar).Size(40, 40)
+					}
+					ui.Column(c).Gap(2).Children(func() {
+						ui.Text(c, "SyncMaid").Bold()
+						ui.Text(c, appVersion).Font("Consolas").FontSize(14).TextColor(porcelain.TextMuted)
+					})
 				})
 			})
 

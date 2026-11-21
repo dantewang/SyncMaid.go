@@ -1,11 +1,16 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"github.com/egoist/mygo/ui"
+	"path"
+	"slices"
+	"strings"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
+
+	"github.com/egoist/mygo/ui"
 )
 
 type batchPhase uint8
@@ -119,6 +124,37 @@ func (a *application) destinationModeView(c *ui.Context, locked bool) {
 		}
 	}
 }
+type mirrorDirGroup struct {
+	Dir   string
+	Count int
+}
+
+func groupMirrorPaths(paths []string) []mirrorDirGroup {
+	counts := map[string]int{}
+	for _, p := range paths {
+		norm := strings.ReplaceAll(p, "\\", "/")
+		dir := path.Dir(norm)
+		if dir == "." || dir == "" {
+			dir = "(root)"
+		} else {
+			dir += "/"
+		}
+		counts[dir]++
+	}
+	out := make([]mirrorDirGroup, 0, len(counts))
+	for d, cnt := range counts {
+		out = append(out, mirrorDirGroup{Dir: d, Count: cnt})
+	}
+	slices.SortFunc(out, func(a, b mirrorDirGroup) int {
+		return cmp.Or(
+			cmp.Compare(b.Count, a.Count),
+			cmp.Compare(strings.ToLower(a.Dir), strings.ToLower(b.Dir)),
+			cmp.Compare(a.Dir, b.Dir),
+		)
+	})
+	return out
+}
+
 func (a *application) confirmMirror(ctx context.Context, p syncengine.MirrorPreview) error {
 	reply := make(chan error, 1)
 	a.window.Update(func() {
@@ -126,12 +162,14 @@ func (a *application) confirmMirror(ctx context.Context, p syncengine.MirrorPrev
 			a.lifecycle.show()
 			a.manual.mirrorPreview = &p
 			a.manual.mirrorReply = reply
+			a.manual.mirrorShowAll = false
 		}
 	})
 	defer a.window.Update(func() {
 		if a.manual.mirrorReply == reply {
 			a.manual.mirrorPreview = nil
 			a.manual.mirrorReply = nil
+			a.manual.mirrorShowAll = false
 		}
 	})
 	select {
@@ -156,6 +194,7 @@ func (a *application) answerMirror(accept bool) {
 	}
 	s.mirrorPreview = nil
 	s.mirrorReply = nil
+	s.mirrorShowAll = false
 }
 func (a *application) mirrorPreviewView(c *ui.Context) {
 	p := a.manual.mirrorPreview
@@ -166,18 +205,47 @@ func (a *application) mirrorPreviewView(c *ui.Context) {
 	if p.Mode == taskconfig.Permanent {
 		action = a.tr("永久删除（不可撤销）")
 	}
-	ui.Text(c, fmt.Sprintf(a.tr("确认本次Mirror：%s · %s · %d个文件"), p.Name, action, len(p.Paths))).Bold()
-	ui.Text(c, p.Target)
-	ui.Scroll(c).Height(150).Children(func() {
-		ui.Column(c).Children(func() {
-			for _, path := range p.Paths {
-				ui.Text(c, path)
-			}
+	ui.Column(c).Grow(1).FillWidth().Gap(12).Padding(16).Children(func() {
+		ui.Text(c, fmt.Sprintf(a.tr("确认本次Mirror：%s · %s · %d个文件"), p.Name, action, len(p.Paths))).FontSize(17).Bold()
+		porcelainPath(c, p.Target)
+		large := len(p.Paths) > 20
+		if large {
+			ui.Row(c).Gap(6).Children(func() {
+				porcelainSegment(c, a.tr("按目录汇总"), !a.manual.mirrorShowAll).OnClick(func() { a.manual.mirrorShowAll = false })
+				porcelainSegment(c, a.tr("全部路径"), a.manual.mirrorShowAll).OnClick(func() { a.manual.mirrorShowAll = true })
+			})
+		}
+		ui.Scroll(c).Grow(1).FillWidth().Border(1, porcelain.Border).Background(porcelain.Surface).Children(func() {
+			ui.Column(c).FillWidth().Padding(10).Gap(4).Children(func() {
+				if large && !a.manual.mirrorShowAll {
+					for _, g := range groupMirrorPaths(p.Paths) {
+						dirLabel := g.Dir
+						if dirLabel == "(root)" {
+							dirLabel = a.tr("(根目录)")
+						}
+						ui.Row(c).FillWidth().Padding(4, 0).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+							ui.Text(c, dirLabel).Font("Consolas").FontSize(13).Grow(1)
+							ui.Text(c, fmt.Sprintf("%d", g.Count)).FontSize(13).TextColor(porcelain.TextMuted)
+						})
+					}
+					return
+				}
+				limit := len(p.Paths)
+				if large && limit > 200 {
+					limit = 200
+				}
+				for _, itemPath := range p.Paths[:limit] {
+					ui.Text(c, itemPath).Font("Consolas").FontSize(13)
+				}
+				if limit < len(p.Paths) {
+					ui.Text(c, a.tr("仅显示前 %d / 共 %d 项", limit, len(p.Paths))).FontSize(12).TextColor(porcelain.TextMuted)
+				}
+			})
 		})
-	})
-	ui.Row(c).Gap(8).Children(func() {
-		ui.Button(c, a.tr("取消本次移除")).OnClick(func() { a.answerMirror(false) })
-		ui.Button(c, a.tr("确认本次移除")).OnClick(func() { a.answerMirror(true) })
+		ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Children(func() {
+			porcelainButton(c, a.tr("取消本次移除")).OnClick(func() { a.answerMirror(false) })
+			ribbonDangerButton(c, a.tr("确认本次移除")).OnClick(func() { a.answerMirror(true) })
+		})
 	})
 }
 

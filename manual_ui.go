@@ -57,6 +57,7 @@ type manualSession struct {
 	destinationEdits        map[taskconfig.ID]destinationEditState
 	mirrorPreview           *syncengine.MirrorPreview
 	mirrorReply             chan error
+	mirrorShowAll           bool
 }
 
 type savedTaskResult struct {
@@ -85,37 +86,51 @@ func (s *manualSession) edited() {
 	s.destinationResults = nil
 }
 
-func (a *application) taskEditorView(c *ui.Context) {
+func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 	s := &a.manual
 	locked := s.busy() || a.tasks == nil || a.selectedTaskIssue() != nil
-	ui.Row(c).Gap(8).Children(func() {
-		heading := "任务"
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(0, 0, 10, 0).Children(func() {
+		heading := "编辑任务"
+		if s.id == "" {
+			heading = "新建任务"
+		}
 		if a.cards.destinations {
 			heading = "目标"
 		}
-		ui.Text(c, a.tr(heading)).Bold().Grow(1)
+		ui.Text(c, a.tr(heading)).FontSize(16).Bold().Grow(1)
 		porcelainIcon(c, "×", a.tr("关闭编辑")).Border(0, ui.Transparent).OnClick(a.closeTaskEditor)
 	})
-	ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().Gap(8).Padding(12, 16, 12, 0).Children(func() {
-			if a.taskError != nil {
-				ui.Text(c, a.tr("任务文件不可用，已阻止保存与运行: ")+a.taskError.Error())
-				ui.Text(c, a.tr("修复文件或备份问题后重新载入。不会以空列表覆盖。"))
+	ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+	if a.taskError != nil {
+		ui.Text(c, a.tr("任务文件不可用，已阻止保存与运行: ")+a.taskError.Error()).FontSize(12).TextColor(porcelain.Danger).Padding(6, 0, 0, 0)
+		ui.Text(c, a.tr("修复文件或备份问题后重新载入。不会以空列表覆盖。")).FontSize(12)
+	}
+	if issue := a.selectedTaskIssue(); issue != nil {
+		ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error()).FontSize(12).TextColor(porcelain.Warning).Padding(6, 0, 0, 0)
+	}
+	if a.cards.destinations {
+		ui.Column(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Padding(10, 0).Gap(6).Children(func() {
+			if syncengine.ManualKind(s.kind) == taskconfig.Moving {
+				ui.Text(c, a.tr("按目标顺序首个匹配；失败不转投后续目标。")).FontSize(12).TextColor(porcelain.TextMuted)
 			}
-			if issue := a.selectedTaskIssue(); issue != nil {
-				ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error())
-			}
-			if a.cards.destinations {
-				if syncengine.ManualKind(s.kind) == taskconfig.Moving {
-					ui.Text(c, a.tr("按目标顺序首个匹配；失败不转投后续目标。")).TextColor(porcelain.TextMuted)
+			a.destinationModalView(c, locked, modalWidth)
+		})
+		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+		ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Padding(10, 0, 0, 0).Children(func() {
+			porcelainButton(c, a.tr("取消")).Disabled(s.busy()).OnClick(func() {
+				a.cancelDestination(s.targetID)
+				a.closeTaskEditor()
+			})
+			ribbonInkButton(c, a.tr("保存")).Disabled(locked || a.taskError != nil).OnClick(func() {
+				if a.acceptDestination(s.targetID) {
+					a.createManual()
 				}
-				porcelainPath(c, s.source)
-				ui.Box(c).Height(12)
-				a.manualTargetsView(c, locked)
-				a.sourcePreviewView(c)
-				ui.Text(c, a.render(s.message)).FontSize(12)
-				return
-			}
+			})
+		})
+		return
+	}
+	ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
+		ui.Column(c).FillWidth().Gap(8).Padding(12, 4, 12, 0).Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Children(func() {
 				ui.Text(c, a.tr("名称"))
 				ui.TextInput(c, &s.name).Height(32).Label(a.tr("任务名称")).ReadOnly(locked).OnChange(s.edited)
@@ -132,17 +147,14 @@ func (a *application) taskEditorView(c *ui.Context) {
 			ui.Text(c, a.tr("触发器"))
 			a.triggerView(c, locked)
 			if s.dirty || s.phase == manualDraft || s.phase == manualSaving {
-				ui.Text(c, a.render(s.message))
+				ui.Text(c, a.render(s.message)).FontSize(12).TextColor(porcelain.TextMuted)
 			}
 		})
 	})
-	ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Padding(12, 0, 0, 0).Children(func() {
+	ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+	ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Padding(10, 0, 0, 0).Children(func() {
 		porcelainButton(c, a.tr("取消")).Disabled(s.busy()).OnClick(a.closeTaskEditor)
-		saveLabel := "保存任务"
-		if a.cards.destinations {
-			saveLabel = "保存"
-		}
-		ui.PrimaryButton(c, a.tr(saveLabel)).Padding(5, 10).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
+		ribbonInkButton(c, a.tr("保存任务")).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
 	})
 }
 func runDialog[T any](a *application, prompt func() (T, error), onDone func(T, error)) {

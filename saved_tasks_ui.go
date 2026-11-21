@@ -27,7 +27,7 @@ func (a *application) newManual() {
 	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
 		return
 	}
-	a.sourcePreview.invalidate()
+	a.sourcePreview.resetSnapshot()
 	a.manual = manualSession{onEdit: a.manualEdited, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending}
 }
 func (a *application) selectManual(id taskconfig.ID) {
@@ -39,7 +39,11 @@ func (a *application) selectManual(id taskconfig.ID) {
 		a.manual.message = messagef("错误: %s", err.Error())
 		return
 	}
-	a.sourcePreview.invalidate()
+	sameSource := a.manual.id == id && a.manual.source == t.SourcePath && a.sourcePreview.cachedSnapshot != nil && a.sourcePreview.cachedSnapshot.Source == t.SourcePath
+	if !sameSource {
+		a.sourcePreview.resetSnapshot()
+	}
+	a.cards.navigation = id
 	s := manualSession{onEdit: a.manualEdited, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
 	for _, d := range t.Destinations {
 		s.targets = append(s.targets, cloneManualDestination(syncengine.ManualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy}))
@@ -72,6 +76,9 @@ func (a *application) selectManual(id taskconfig.ID) {
 		}
 	}
 	a.manual = s
+	if sameSource {
+		a.refreshPreviewFromSnapshot()
+	}
 }
 
 func (a *application) reloadTasks() {
@@ -79,7 +86,7 @@ func (a *application) reloadTasks() {
 	if s.busy() {
 		return
 	}
-	a.sourcePreview.invalidate()
+	a.sourcePreview.resetSnapshot()
 	keepDraft := s.dirty
 	id := s.id
 	s.phase = manualLoading

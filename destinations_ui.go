@@ -120,6 +120,37 @@ func (a *application) discardManual() {
 	a.syncWatches()
 }
 
+func (a *application) destinationModalView(c *ui.Context, locked bool, modalWidth float32) {
+	s := &a.manual
+	if modalWidth >= 660 {
+		ui.Row(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Gap(14).Children(func() {
+			ui.Scroll(c).Grow(1).Shrink(1).MinWidth(0).FillHeight().Children(func() {
+				ui.Column(c).FillWidth().Gap(8).Padding(0, 4, 8, 0).Children(func() {
+					a.selectedTargetEditor(c, locked)
+					if s.message.key != "" {
+						ui.Text(c, a.render(s.message)).FontSize(12).TextColor(porcelain.Danger)
+					}
+				})
+			})
+			ui.Box(c).Width(248).FillHeight().Children(func() {
+				a.sourcePreviewModalPane(c, s.targetID)
+			})
+		})
+		return
+	}
+	ui.Scroll(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
+		ui.Column(c).FillWidth().Gap(8).Padding(0, 4, 8, 0).Children(func() {
+			a.selectedTargetEditor(c, locked)
+			if s.message.key != "" {
+				ui.Text(c, a.render(s.message)).FontSize(12).TextColor(porcelain.Danger)
+			}
+			ui.Box(c).Height(190).FillWidth().Children(func() {
+				a.sourcePreviewModalPane(c, s.targetID)
+			})
+		})
+	})
+}
+
 func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 	s := &a.manual
 	for i, d := range s.targets {
@@ -351,12 +382,16 @@ func (a *application) confirmRemoveManualTarget() {
 	}
 	s := &a.manual
 	id := s.targetID
+	autoSave := !a.cards.editor
 	options := mygo.MessageOptions{Parent: a.window, Type: mygo.MessageWarning, Title: a.tr("移除目标（仅配置）"), Message: a.tr("确认移除目标「%s」？", s.targetName), Detail: a.tr("只移除此目标配置，不删除文件；其他目标的编辑保留。"), Buttons: []string{a.tr("取消"), a.tr("删除")}, CancelButton: 0, DefaultButton: 0, DestructiveButtons: []int{1}}
 	runDialog(a, func() (mygo.MessageResult, error) {
 		return e2eDialogMessage(options)
 	}, func(answer mygo.MessageResult, err error) {
 		if !s.quitPending && err == nil && answer.Button == 1 && s.targetID == id {
 			a.removeManualTarget()
+			if autoSave && a.manual.dirty {
+				a.createManual()
+			}
 		}
 		if err != nil {
 			s.message = messagef("错误: %s", err.Error())

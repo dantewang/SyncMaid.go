@@ -59,6 +59,7 @@ func (a *application) beginRegexMigration() {
 	a.regexSession = session
 	a.manual.phase = manualReviewing
 	a.settingsOpen = false
+	a.topologyOpen = false
 	a.historyOpen = false
 }
 func (a *application) discardRegexMigration() {
