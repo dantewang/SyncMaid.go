@@ -248,3 +248,60 @@ func TestSourcePreviewCloseAndExitCancelWithoutLosingDraft(t *testing.T) {
 		}
 	}
 }
+
+func TestSourcePreviewSnapshotTopDirsSearchAndInMemoryEval(t *testing.T) {
+	q := previewFixture(t)
+	// Add extra folder/files to test TopDirs ordering and SearchSnapshotPaths cap.
+	for i := 0; i < 60; i++ {
+		p := filepath.Join(q.Source, "Media", "item"+string(rune('a'+i%26))+string(rune('0'+i/26))+".jpg")
+		if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("01234567890123456789"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := appcore.ScanSourcePreview(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Snapshot == nil || r.SourceFiles != 63 || r.FolderCount != 2 {
+		t.Fatalf("unexpected snapshot stats: files=%d folders=%d snap=%v", r.SourceFiles, r.FolderCount, r.Snapshot != nil)
+	}
+	wantBytes := int64(60*20 + 3*len("synthetic source"))
+	if r.TotalBytes != wantBytes || r.Snapshot.TotalBytes != wantBytes {
+		t.Fatalf("TotalBytes = %d, want %d", r.TotalBytes, wantBytes)
+	}
+	if len(r.TopDirs) < 3 || r.TopDirs[0].Prefix != "Media/" || r.TopDirs[0].Files != 60 {
+		t.Fatalf("unexpected TopDirs: %+v", r.TopDirs)
+	}
+
+	// SearchSnapshotPaths caps matches at limit while returning exact total count.
+	matches, total := appcore.SearchSnapshotPaths(r.Snapshot, "Media\\item", 50)
+	if total != 60 || len(matches) != 50 {
+		t.Fatalf("SearchSnapshotPaths total=%d len=%d", total, len(matches))
+	}
+	extMatches, extTotal := appcore.SearchSnapshotPaths(r.Snapshot, ".txt", 50)
+	if extTotal != 2 || len(extMatches) != 2 {
+		t.Fatalf("ext search total=%d len=%d", extTotal, len(extMatches))
+	}
+
+	// EvaluateSourceSnapshot updates matches in memory even if the source folder is renamed/absent.
+	snap := r.Snapshot
+	q2 := q
+	q2.Source = filepath.Join(t.TempDir(), "not-rescanned")
+	q2.Destinations[0].Filters = []taskconfig.Rule{taskconfig.ExtensionFilter("jpg")}
+	r2, err := appcore.EvaluateSourceSnapshot(context.Background(), snap, q2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r2.Targets[q2.Destinations[0].ID].Count != 61 {
+		t.Fatalf("in-memory jpg count = %d, want 61", r2.Targets[q2.Destinations[0].ID].Count)
+	}
+
+	// EvaluateSourceSnapshot must still reject unconfirmed legacy regex rules.
+	q2.Destinations[1].Filters = []taskconfig.Rule{{Kind: "regex", Pattern: filterText("a")}}
+	if rBad, errBad := appcore.EvaluateSourceSnapshot(context.Background(), snap, q2); rBad != nil || !errors.Is(errBad, filefilter.ErrUnsupportedRegex) {
+		t.Fatalf("EvaluateSourceSnapshot bypassed regex gate: r=%v err=%v", rBad, errBad)
+	}
+}
