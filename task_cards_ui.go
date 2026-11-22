@@ -2,7 +2,6 @@ package main
 
 import (
 	"strings"
-	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"time"
@@ -267,8 +266,15 @@ func (a *application) destinationStatus(r syncengine.DestinationResult, exists b
 		return a.tr("从未运行")
 	}
 	if r.State != syncengine.DestinationSucceeded {
+		switch r.State {
+		case syncengine.DestinationCanceled, syncengine.DestinationSkipped:
+			return a.tr(string(r.State))
+		case syncengine.DestinationInterrupted:
+			return a.tr(string(r.State)) + " · " + a.tr("查看日志")
+		}
 		if r.Error != "" {
-			return a.tr(string(r.State)) + " · " + appcore.HistoryText(r.Error, appcore.HistoryErrorBytes)
+			summaryKey, _ := classifySyncError(r.Error)
+			return a.tr(string(r.State)) + " · " + a.tr(summaryKey)
 		}
 		return a.tr(string(r.State))
 	}

@@ -505,7 +505,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 		}
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(4).Children(func() {
 			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Baseline).Gap(8).Children(func() {
-				ui.Text(c, d.Name).FontSize(14).FontWeight(600).SingleLine().Ellipsis("…").Tooltip(d.Name)
+				ui.Text(c, d.Name).FontSize(14).FontWeight(600).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…").Tooltip(d.Name)
 				ui.Text(c, strategyLabel).Font("Consolas").FontSize(12).TextColor(strategyColor)
 				if isOwner {
 					ui.Text(c, "● "+a.tr("命中")).FontSize(12).FontWeight(600).TextColor(ribbonBlue)
@@ -521,12 +521,16 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 				}
 			})
 			porcelainPath(c, d.Target.Path)
-			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
-				ui.Text(c, strings.Join(metaParts, "  |  ")).FontSize(12).TextColor(porcelain.TextMuted).Tooltip(a.ruleSummary(d.Filters))
-				ui.Text(c, "·").FontSize(12).TextColor(porcelain.TextMuted)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Text(c, strings.Join(metaParts, "  |  ")).FontSize(12).TextColor(porcelain.TextMuted).Shrink(0).Tooltip(a.ruleSummary(d.Filters))
+				ui.Text(c, "·").FontSize(12).TextColor(porcelain.TextMuted).Shrink(0)
 				summary := a.destinationStatus(r, ok, now)
-				ui.ButtonBase(c).Role(ui.RoleLink).Label(summary).Background(ui.Transparent).Tooltip(summary).Children(func() {
-					ui.Text(c, summary).FontSize(12).SingleLine().Ellipsis("…").Underline().TextColor(mark)
+				tooltip := summary
+				if ok && r.State != syncengine.DestinationWaiting {
+					tooltip = summary + " · " + a.tr("点击查看同步日志")
+				}
+				ui.ButtonBase(c).Role(ui.RoleLink).Label(summary).Shrink(1).MinWidth(0).Justify(ui.Start).Background(ui.Transparent).Tooltip(tooltip).Children(func() {
+					ui.Text(c, summary).FontSize(12).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…").Underline().TextColor(mark)
 				}).OnClick(func() { a.openDestinationLog(id, did) })
 			})
 		})

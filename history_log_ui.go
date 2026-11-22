@@ -13,6 +13,7 @@ import (
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"syncmaid/internal/winutil"
+	"time"
 )
 
 func (a *application) toggleHistory() {
@@ -75,21 +76,34 @@ func (a *application) historyViewContent(c *ui.Context) {
 		porcelainScroll(c, &a.scrolls.historyDetail, func() {
 			ui.Column(c).FillWidth().Padding(14).Gap(8).Children(func() {
 				ui.Text(c, r.Name+a.tr(" · ")+a.tr(appcore.RunOutcome(r))).FontSize(15).Bold()
+				if r.SourcePath != "" {
+					ui.Text(c, a.tr("源目录: ")+r.SourcePath).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
+				}
 				if a.historyDetails {
 					ui.Text(c, fmt.Sprintf(a.tr("任务 %s · 运行 %s · %s / %s"), r.TaskID, r.ID, r.Kind, a.tr(string(r.Origin)))).FontSize(12).TextColor(porcelain.TextMuted)
 				}
 				ui.Text(c, a.tr("开始: ")+r.Started.Local().Format("2006-01-02 15:04:05 MST")).FontSize(13)
 				if !r.Ended.IsZero() {
-					ui.Text(c, a.tr("结束: ")+r.Ended.Local().Format("2006-01-02 15:04:05 MST")).FontSize(13)
+					endedText := a.tr("结束: ") + r.Ended.Local().Format("2006-01-02 15:04:05 MST")
+					if dur := formatRunDuration(r.Started, r.Ended); dur != "" {
+						endedText += " (" + dur + ")"
+					}
+					ui.Text(c, endedText).FontSize(13)
 				} else {
 					ui.Text(c, a.tr("未记录结束；可能已有文件操作，请核对，不能视作成功或未执行。")).FontSize(13).TextColor(porcelain.Warning)
 				}
 				if r.Error != "" {
-					ui.Text(c, a.tr("错误: ")+r.Error).FontSize(13).TextColor(porcelain.Danger)
+					a.renderLogErrorBlock(c, r.Error, porcelain.Danger)
 				}
 				for _, g := range r.Goals {
 					ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 					ui.Text(c, g.Name+a.tr(" · ")+a.tr(string(g.State))).Bold()
+					if g.TargetPath != "" {
+						ui.Text(c, a.tr("目标目录: ")+g.TargetPath).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
+					}
+					if g.Stage != "" {
+						ui.Text(c, a.tr("阶段: ")+a.tr(g.Stage)).FontSize(12).TextColor(porcelain.TextMuted)
+					}
 					if a.historyDetails {
 						ui.Text(c, a.tr("目标ID: ")+string(g.ID)).FontSize(12).TextColor(porcelain.TextMuted)
 					}
@@ -105,7 +119,7 @@ func (a *application) historyViewContent(c *ui.Context) {
 						}
 					}
 					if g.Error != "" {
-						ui.Text(c, a.tr("错误: ")+g.Error).FontSize(13).TextColor(porcelain.Danger)
+						a.renderLogErrorBlock(c, g.Error, porcelain.Danger)
 					}
 				}
 			})
@@ -337,15 +351,28 @@ func (a *application) destinationLogView(c *ui.Context) {
 								color = porcelain.Warning
 							}
 							ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(4).Children(func() {
-								ui.Text(c, a.tr(string(g.State))).Font("Consolas").FontSize(14).TextColor(color)
+								stateText := a.tr(string(g.State))
+								if dur := formatRunDuration(r.Started, r.Ended); dur != "" {
+									stateText += " · " + dur
+								}
+								ui.Text(c, stateText).Font("Consolas").FontSize(14).TextColor(color)
+								if r.SourcePath != "" {
+									ui.Text(c, a.tr("源目录: ")+r.SourcePath).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
+								}
+								if g.TargetPath != "" {
+									ui.Text(c, a.tr("目标目录: ")+g.TargetPath).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
+								}
+								if g.Stage != "" {
+									ui.Text(c, a.tr("阶段: ")+a.tr(g.Stage)).FontSize(12).TextColor(porcelain.TextMuted)
+								}
 								if counts := a.runCounts(g, a.logDetails); counts != "" {
 									ui.Text(c, counts).FontSize(13)
 								}
 								if g.Error != "" {
-									ui.Text(c, g.Error).Font("Consolas").FontSize(14).TextColor(color)
+									a.renderLogErrorBlock(c, g.Error, color)
 								}
 								if r.Error != "" && g.Error == "" {
-									ui.Text(c, r.Error).Font("Consolas").FontSize(14).TextColor(color)
+									a.renderLogErrorBlock(c, r.Error, color)
 								}
 								if r.Ended.IsZero() {
 									ui.Text(c, a.tr("未记录结束；可能已有文件操作，请核对，不能视作成功或未执行。"))
@@ -392,4 +419,18 @@ func (a *application) destinationLogRecords() []appcore.RunRecord {
 		add(latest)
 	}
 	return out
+}
+
+func formatRunDuration(started, ended time.Time) string {
+	if started.IsZero() || ended.IsZero() || ended.Before(started) {
+		return ""
+	}
+	return ended.Sub(started).Round(time.Millisecond).String()
+}
+
+func (a *application) renderLogErrorBlock(c *ui.Context, raw string, color ui.Color) {
+	summaryKey, hintKey := classifySyncError(raw)
+	ui.Text(c, a.tr("原因: ")+a.tr(summaryKey)).FontSize(13).FontWeight(600).TextColor(color)
+	ui.Text(c, a.tr("说明: ")+a.tr(hintKey)).FontSize(12).TextColor(porcelain.TextMuted)
+	ui.Text(c, a.tr("技术详情: ")+raw).Font("Consolas").FontSize(12).TextColor(color)
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/egoist/mygo/ui"
-	"strings"
 	"syncmaid/internal/appcore"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
@@ -66,13 +65,141 @@ func TestRelativeStatusAndLogRetainRealCountsAndErrors(t *testing.T) {
 		t.Fatal("missing record invented success")
 	}
 	r.State = syncengine.DestinationFailed
-	r.Error = "完整的原始错误"
-	if !strings.Contains(a.destinationStatus(r, true, now), r.Error) {
-		t.Fatal("error lost")
+	r.Error = "目标文件夹: directory identity cannot be verified: The parameter is incorrect."
+	if got := a.destinationStatus(r, true, now); got != "失败 · 目录或文件系统不受支持" {
+		t.Fatalf("expected generalized error summary, got %q", got)
+	}
+	r.Error = "unknown raw failure detail"
+	if got := a.destinationStatus(r, true, now); got != "失败 · 查看日志" {
+		t.Fatalf("expected generic error summary, got %q", got)
 	}
 	r.State = syncengine.DestinationCanceled
-	if text := a.destinationStatus(r, true, now); !strings.HasPrefix(text, a.tr("已停止")) {
-		t.Fatal("stop mislabeled as failure", text)
+	if text := a.destinationStatus(r, true, now); text != a.tr("已停止") {
+		t.Fatalf("stop status = %q, want %q", text, a.tr("已停止"))
+	}
+}
+
+func TestDestinationCardStatusDoesNotOverflowNarrowWidth(t *testing.T) {
+	taskID := taskconfig.NewID()
+	destID := taskconfig.NewID()
+	task := taskconfig.Task{
+		ID:         taskID,
+		Name:       "Eagle",
+		Kind:       taskconfig.Sync,
+		SourcePath: `G:\EagleRes\`,
+		Destinations: []taskconfig.Destination{{
+			ID:         destID,
+			Name:       "NAS-Eagle_backup_with_very_long_destination_name",
+			Strategy:   taskconfig.Mirror,
+			DeleteMode: taskconfig.Recycle,
+			Target:     taskconfig.Target{Kind: "local", Path: `Z:\Eagle_backup\very\deep\folder\path`},
+			Filters:    []taskconfig.Rule{{Kind: "all"}},
+		}},
+	}
+	a := &application{
+		locale: "en",
+		results: map[taskconfig.ID]savedTaskResult{
+			taskID: {
+				outcome: "failed",
+				destinations: syncengine.MultipleResult{
+					destID: {
+						ID:    destID,
+						Name:  "NAS-Eagle_backup",
+						State: syncengine.DestinationFailed,
+						Error: "目标文件夹: directory identity cannot be verified: The parameter is incorrect.",
+					},
+				},
+			},
+		},
+	}
+	const viewWidth = 640
+	tt := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(&porcelain)
+		ui.Column(c).Fill().Children(func() {
+			a.selectedTaskDetailView(c, task, viewWidth)
+		})
+	}, viewWidth, 480)
+	summary := a.destinationStatus(a.results[taskID].destinations[destID], true, time.Now())
+	info, ok := tt.AccessByRole(ui.RoleLink, summary)
+	if !ok {
+		t.Fatalf("missing destination status link %q in texts %v", summary, tt.Texts())
+	}
+	if info.Bounds.X < 0 || info.Bounds.X+info.Bounds.W > float32(viewWidth)-10 {
+		t.Fatalf("status link overflowed card bounds: bounds=%+v viewWidth=%d", info.Bounds, viewWidth)
+	}
+}
+
+func TestClassifySyncErrorCatalogCoverage(t *testing.T) {
+	cases := []struct {
+		raw     string
+		wantKey string
+	}{
+		{"目标文件夹: directory identity cannot be verified: The parameter is incorrect.", "目录或文件系统不受支持"},
+		{"源与同步目标不可重叠: 目标目录相同", "源与目标目录重叠"},
+		{"open directory: The system cannot find the path specified.", "目录不可访问"},
+		{"open directory: Access is denied.", "权限不足"},
+		{"Rust regex compatibility not implemented", "过滤规则未就绪"},
+		{"源没有普通文件，Mirror禁止删除", "镜像安全检查未通过"},
+		{"some unexpected low-level failure", "查看日志"},
+	}
+	for _, tc := range cases {
+		summaryKey, hintKey := classifySyncError(tc.raw)
+		if summaryKey != tc.wantKey {
+			t.Fatalf("classifySyncError(%q) = %q, want %q", tc.raw, summaryKey, tc.wantKey)
+		}
+		for _, choice := range languageChoices {
+			if got := messages.Format(choice.tag, summaryKey, nil); got == "" || got == summaryKey && choice.tag == "en" {
+				t.Fatalf("missing %s translation for summary %q: %q", choice.tag, summaryKey, got)
+			}
+			if got := messages.Format(choice.tag, hintKey, nil); got == "" || got == hintKey && choice.tag == "en" {
+				t.Fatalf("missing %s translation for hint %q: %q", choice.tag, hintKey, got)
+			}
+		}
+	}
+}
+
+func TestHistoryViewShowsEnrichedMetadataAndLocalizedReason(t *testing.T) {
+	taskID, destID, runID := taskconfig.NewID(), taskconfig.NewID(), taskconfig.NewID()
+	start := time.Date(2026, 11, 22, 17, 47, 25, 0, time.UTC)
+	end := start.Add(25 * time.Millisecond)
+	a := &application{
+		locale:          "en",
+		historySelected: runID,
+		historyView: appcore.RunHistoryData{
+			Recent: []appcore.RunRecord{{
+				ID:         runID,
+				TaskID:     taskID,
+				Name:       "Eagle",
+				Kind:       taskconfig.Sync,
+				Origin:     appcore.OriginManual,
+				SourcePath: `G:\EagleRes\`,
+				Started:    start,
+				Ended:      end,
+				Outcome:    appcore.OutcomeFailed,
+				Error:      "NAS-Eagle_backup: 目标文件夹: directory identity cannot be verified: The parameter is incorrect.",
+				Goals: []appcore.RunGoal{{
+					ID:         destID,
+					Name:       "NAS-Eagle_backup",
+					TargetPath: `Z:\Eagle_backup`,
+					Stage:      "检查目标目录",
+					State:      syncengine.DestinationFailed,
+					Error:      "目标文件夹: directory identity cannot be verified: The parameter is incorrect.",
+				}},
+			}},
+		},
+	}
+	tt := ui.NewTester(a.historyViewContent, 760, 620)
+	for _, want := range []string{
+		`G:\EagleRes\`,
+		`Z:\Eagle_backup`,
+		"Checking destination folder",
+		"25ms",
+		"Unsupported folder or filesystem",
+		"directory identity cannot be verified: The parameter is incorrect.",
+	} {
+		if !tt.HasText(want) {
+			t.Fatalf("historyViewContent missing %q in %v", want, tt.Texts())
+		}
 	}
 }
 
