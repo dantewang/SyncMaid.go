@@ -43,15 +43,21 @@ func ntError(err error) error {
 	return err
 }
 
-func ordinaryDirectory(h windows.Handle) error {
-	sensitive, err := windowsfs.CaseSensitive(h)
+func checkOrdinaryDirectory(sensitive bool, err error) error {
 	if err != nil {
+		if errors.Is(err, errors.ErrUnsupported) {
+			return nil
+		}
 		return err
 	}
 	if sensitive {
 		return errors.New("暂不支持区分大小写的目录")
 	}
 	return nil
+}
+
+func ordinaryDirectory(h windows.Handle) error {
+	return checkOrdinaryDirectory(windowsfs.CaseSensitive(h))
 }
 
 func splitRelativePath(rel string) ([]string, error) {

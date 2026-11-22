@@ -3,6 +3,7 @@ package syncengine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -284,5 +285,21 @@ func TestManualCleanupDisablesIOInterruption(t *testing.T) {
 	})
 	if !errors.Is(e, sentinel) || g.enabled {
 		t.Fatal(e, g.enabled)
+	}
+}
+
+func TestCheckOrdinaryDirectoryPolicy(t *testing.T) {
+	if err := checkOrdinaryDirectory(false, nil); err != nil {
+		t.Fatalf("expected case-insensitive dir to pass, got %v", err)
+	}
+	if err := checkOrdinaryDirectory(true, nil); err == nil {
+		t.Fatal("expected case-sensitive dir to be rejected")
+	}
+	unsupported := fmt.Errorf("%w: %w", errors.ErrUnsupported, windows.ERROR_NOT_SUPPORTED)
+	if err := checkOrdinaryDirectory(false, unsupported); err != nil {
+		t.Fatalf("expected ErrUnsupported to be tolerated like fileinventory.walk, got %v", err)
+	}
+	if err := checkOrdinaryDirectory(false, windows.ERROR_ACCESS_DENIED); !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		t.Fatalf("expected access denied to propagate, got %v", err)
 	}
 }
