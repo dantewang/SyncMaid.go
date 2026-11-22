@@ -109,6 +109,7 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 		ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error()).FontSize(12).TextColor(porcelain.Warning).Padding(6, 0, 0, 0)
 	}
 	if a.cards.destinations {
+		_, hasDestOverlap := a.destinationOverlapMessage(s.targetID, s.target)
 		ui.Column(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Padding(10, 0).Gap(6).Children(func() {
 			if syncengine.ManualKind(s.kind) == taskconfig.Moving {
 				ui.Text(c, a.tr("按目标顺序首个匹配；失败不转投后续目标。")).FontSize(12).TextColor(porcelain.TextMuted)
@@ -125,7 +126,7 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 				a.cancelDestination(s.targetID)
 				a.closeTaskEditor()
 			})
-			ribbonInkButton(c, a.tr("保存")).Disabled(locked || a.taskError != nil).OnClick(func() {
+			ribbonInkButton(c, a.tr("保存")).Disabled(locked || a.taskError != nil || hasDestOverlap).OnClick(func() {
 				if a.acceptDestination(s.targetID) {
 					a.createManual()
 				}
@@ -133,6 +134,7 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 		})
 		return
 	}
+	sourceOverlap, hasSourceOverlap := a.sourceOverlapMessage()
 	porcelainScroll(c, &a.scrolls.taskModal, func() {
 		ui.Column(c).FillWidth().Gap(8).Padding(12, 0, 12, 0).Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Children(func() {
@@ -145,6 +147,9 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 					ui.TextInput(c, &s.source).Height(32).Label(a.tr("源文件夹路径")).Grow(1).Placeholder(a.tr("源文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
 					porcelainButton(c, a.tr("浏览")).Label(a.tr("选择源")).Disabled(locked).OnClick(func() { a.chooseFolder(true) })
 				})
+				if hasSourceOverlap {
+					ui.Text(c, a.render(sourceOverlap)).FontSize(12).TextColor(porcelain.Danger)
+				}
 			})
 			a.manualKindView(c, locked)
 
@@ -162,7 +167,7 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 		}
 		ui.Box(c).Grow(1)
 		porcelainButton(c, a.tr("取消")).Disabled(s.busy()).OnClick(a.closeTaskEditor)
-		ribbonInkButton(c, a.tr("保存任务")).Disabled(locked || a.taskError != nil).OnClick(a.createManual)
+		ribbonInkButton(c, a.tr("保存任务")).Disabled(locked || a.taskError != nil || hasSourceOverlap).OnClick(a.createManual)
 	})
 }
 func runDialog[T any](a *application, prompt func() (T, error), onDone func(T, error)) {

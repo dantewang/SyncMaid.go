@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"golang.org/x/sys/windows"
@@ -30,10 +29,10 @@ func ValidateCrossTaskPaths(ctx context.Context, current taskconfig.ID, q Manual
 			}
 			d, err := winutil.OpenDirectoryAccess(path, windows.FILE_READ_ATTRIBUTES)
 			if err != nil {
-				if len(keys) == 0 && errors.Is(err, os.ErrNotExist) {
-					return nil, nil
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
 				}
-				return nil, err
+				return nil, nil
 			}
 			keys = append(keys, d.Key)
 			parent := filepath.Dir(d.Path)

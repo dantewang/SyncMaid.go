@@ -81,6 +81,34 @@ func TestReleaseTailCrossTaskAliasAndAllowedChain(t *testing.T) {
 	if err := syncengine.ValidateCrossTaskPaths(context.Background(), task, q, tasks); err == nil {
 		t.Fatal("accepted alias overlap")
 	}
+
+	// An unopenable peer path (not just ErrNotExist, e.g., offline/not-a-directory)
+	// must not block an unrelated task.
+	notDir := filepath.Join(root, "not-a-dir.txt")
+	manualWrite(t, notDir, "file")
+	tasks[1].SourcePath = notDir
+	tasks[1].Destinations[0].Target.Path = notDir
+	if err := syncengine.ValidateCrossTaskPaths(context.Background(), task, q, tasks); err != nil {
+		t.Fatalf("unavailable peer blocked healthy task: %v", err)
+	}
+
+	// An unopenable current-task destination must not be misattributed to a peer
+	// task here; OpenMultiplePlan handles per-destination failure isolation.
+	qBadDest := syncengine.ManualTaskRequest{Source: source, Destinations: []syncengine.ManualDestination{{Path: notDir}}}
+	tasks[1].SourcePath = target
+	tasks[1].Destinations[0].Target.Path = third
+	if err := syncengine.ValidateCrossTaskPaths(context.Background(), task, qBadDest, tasks); err != nil {
+		t.Fatalf("unopenable current target misattributed to peer: %v", err)
+	}
+
+	// Lexical overlaps must still be caught even when paths do not exist on disk.
+	offlineA := filepath.Join(root, "missing-a")
+	offlineB := filepath.Join(offlineA, "sub")
+	qOffline := syncengine.ManualTaskRequest{Source: source, Destinations: []syncengine.ManualDestination{{Path: offlineA}}}
+	tasks[1].Destinations[0].Target.Path = offlineB
+	if err := syncengine.ValidateCrossTaskPaths(context.Background(), task, qOffline, tasks); err == nil {
+		t.Fatal("missed offline lexical overlap")
+	}
 }
 
 func TestReleaseTailMirrorPreservesEmptyDirectoryTime(t *testing.T) {

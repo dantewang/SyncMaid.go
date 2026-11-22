@@ -45,12 +45,12 @@ func ValidateEditedTaskLayout(edit taskconfig.Task, tasks []taskconfig.Task) err
 			continue
 		}
 		if syncengine.ObviousPathOverlap(edit.SourcePath, other.SourcePath) {
-			return errors.New("源文件夹与其他任务重叠")
+			return fmt.Errorf("源文件夹与任务 %q 重叠", other.Name)
 		}
 		for _, d := range edit.Destinations {
 			for _, existing := range other.Destinations {
 				if syncengine.ObviousPathOverlap(d.Target.Path, existing.Target.Path) {
-					return errors.New("目标文件夹与其他任务重叠")
+					return fmt.Errorf("目标文件夹与任务 %q 重叠", other.Name)
 				}
 			}
 		}

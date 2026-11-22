@@ -203,6 +203,90 @@ func TestHistoryViewShowsEnrichedMetadataAndLocalizedReason(t *testing.T) {
 	}
 }
 
+func TestEditorInlineOverlapHintsAndSaveDisable(t *testing.T) {
+	otherID, editID, destID, siblingID := taskconfig.NewID(), taskconfig.NewID(), taskconfig.NewID(), taskconfig.NewID()
+	a := &application{
+		locale: "zh-Hans",
+		tasks: &appcore.SavedTaskLibrary{
+			Tasks: []taskconfig.Task{
+				{
+					ID:         otherID,
+					Name:       "Downloads",
+					Kind:       taskconfig.Moving,
+					SourcePath: `D:\Downloads`,
+					Destinations: []taskconfig.Destination{{
+						ID:     taskconfig.NewID(),
+						Name:   "Archive",
+						Target: taskconfig.Target{Kind: "local", Path: `Z:\Archive`},
+					}},
+				},
+				{
+					ID:         editID,
+					Name:       "Eagle",
+					Kind:       taskconfig.Sync,
+					SourcePath: `G:\EagleRes`,
+					Destinations: []taskconfig.Destination{{
+						ID:     destID,
+						Name:   "Backup",
+						Target: taskconfig.Target{Kind: "local", Path: `Z:\Eagle_backup`},
+					}},
+				},
+			},
+		},
+		cards: taskCardLayout{editor: true, destinations: false},
+		manual: manualSession{
+			id:     editID,
+			name:   "Eagle",
+			kind:   taskconfig.Sync,
+			source: `D:\Downloads\Sub`,
+			targets: []syncengine.ManualDestination{
+				{ID: destID, Name: "Backup", Path: `Z:\Eagle_backup`},
+				{ID: siblingID, Name: "Sibling", Path: `Z:\Sibling`},
+			},
+			targetID:   destID,
+			targetName: "Backup",
+			target:     `Z:\Eagle_backup`,
+		},
+	}
+
+	taskModal := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(&porcelain)
+		ui.Column(c).Fill().Children(func() {
+			a.taskEditorView(c, 520)
+		})
+	}, 600, 620)
+	if !taskModal.HasText("Downloads") {
+		t.Fatalf("missing source overlap hint naming Downloads: %v", taskModal.Texts())
+	}
+	if saveBtn, ok := taskModal.Access(a.tr("保存任务")); !ok || !saveBtn.Disabled {
+		t.Fatalf("expected Save Task button to be disabled on source overlap: ok=%t info=%+v", ok, saveBtn)
+	}
+
+	a.manual.source = `G:\EagleRes`
+	a.cards.destinations = true
+	a.manual.target = `Z:\Archive\Nested`
+	destModal := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(&porcelain)
+		ui.Column(c).Fill().Children(func() {
+			a.taskEditorView(c, 720)
+		})
+	}, 760, 620)
+	if !destModal.HasText("Downloads") {
+		t.Fatalf("missing destination overlap hint naming Downloads: %v", destModal.Texts())
+	}
+	if saveBtn, ok := destModal.Access(a.tr("保存")); !ok || !saveBtn.Disabled {
+		t.Fatalf("expected Save button to be disabled on destination overlap: ok=%t info=%+v", ok, saveBtn)
+	}
+
+	a.manual.target = `Z:\Sibling`
+	if msg, ok := a.destinationOverlapMessage(destID, a.manual.target); !ok || msg.key == "" {
+		t.Fatal("expected sibling destination overlap message")
+	}
+	if a.acceptDestination(destID) {
+		t.Fatal("acceptDestination should reject overlapping path")
+	}
+}
+
 func TestDiagnosticViewRetainsRootErrorAcrossLanguages(t *testing.T) {
 	task, destination := taskconfig.NewID(), taskconfig.NewID()
 	a := &application{logTask: task, logDestination: destination, historyView: appcore.RunHistoryData{Recent: []appcore.RunRecord{{ID: taskconfig.NewID(), TaskID: task, Name: "Original task", Error: "unabridged root failure", Goals: []appcore.RunGoal{{ID: destination, Name: "Original destination", State: syncengine.DestinationFailed}}}}}}

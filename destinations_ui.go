@@ -241,6 +241,9 @@ func (a *application) selectedTargetEditor(c *ui.Context, locked bool) {
 		ui.TextInput(c, &s.target).Height(32).Label(a.tr("目标文件夹路径")).Grow(1).Placeholder(a.tr("现有目标文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
 		porcelainButton(c, a.tr("浏览")).Label(a.tr("选择目标")).Disabled(locked).OnClick(func() { a.chooseFolder(false) })
 	})
+	if overlap, hasOverlap := a.destinationOverlapMessage(s.targetID, s.target); hasOverlap {
+		ui.Text(c, a.render(overlap)).FontSize(12).TextColor(porcelain.Danger)
+	}
 
 	if syncengine.ManualKind(s.kind) == taskconfig.Moving {
 		a.moveOptionsView(c, locked)
@@ -296,15 +299,9 @@ func (a *application) acceptDestination(id taskconfig.ID) bool {
 			s.message = messagef("目标名称与文件夹不能为空")
 			return false
 		}
-		if syncengine.ObviousPathOverlap(s.source, d.Path) {
-			s.message = messagef("错误: %s", syncengine.ErrTransferOverlap.Error())
+		if overlap, hasOverlap := a.destinationOverlapMessage(id, d.Path); hasOverlap {
+			s.message = overlap
 			return false
-		}
-		for _, other := range s.targets {
-			if other.ID != id && syncengine.ObviousPathOverlap(other.Path, d.Path) {
-				s.message = messagef("错误: %s", syncengine.ErrTransferOverlap.Error())
-				return false
-			}
 		}
 		delete(s.destinationEdits, id)
 		if syncengine.ManualKind(s.kind) == taskconfig.Moving && syncengine.IsAllFileRules(d.Filters) {
@@ -397,4 +394,55 @@ func (a *application) confirmRemoveManualTarget() {
 			s.message = messagef("错误: %s", err.Error())
 		}
 	})
+}
+
+func (a *application) sourceOverlapMessage() (localizedMessage, bool) {
+	src := strings.TrimSpace(a.manual.source)
+	if src == "" {
+		return localizedMessage{}, false
+	}
+	if a.tasks != nil {
+		for _, other := range a.tasks.Tasks {
+			if other.ID == a.manual.id {
+				continue
+			}
+			if syncengine.ObviousPathOverlap(src, other.SourcePath) {
+				return messagef("此文件夹与任务「%s」的源重叠 — 任务之间不能共享源。", other.Name), true
+			}
+		}
+	}
+	for _, d := range a.manual.targets {
+		if syncengine.ObviousPathOverlap(src, d.Path) {
+			return messagef("源文件夹不能与本任务的目标「%s」重叠。", d.Name), true
+		}
+	}
+	return localizedMessage{}, false
+}
+
+func (a *application) destinationOverlapMessage(destID taskconfig.ID, path string) (localizedMessage, bool) {
+	dst := strings.TrimSpace(path)
+	if dst == "" {
+		return localizedMessage{}, false
+	}
+	if syncengine.ObviousPathOverlap(a.manual.source, dst) {
+		return messagef("此文件夹与本任务的源文件夹重叠。"), true
+	}
+	for _, other := range a.manual.targets {
+		if other.ID != destID && syncengine.ObviousPathOverlap(other.Path, dst) {
+			return messagef("此文件夹与本任务中的「%s」重叠 — 目标之间不能相互重叠。", other.Name), true
+		}
+	}
+	if a.tasks != nil {
+		for _, t := range a.tasks.Tasks {
+			if t.ID == a.manual.id {
+				continue
+			}
+			for _, existing := range t.Destinations {
+				if syncengine.ObviousPathOverlap(dst, existing.Target.Path) {
+					return messagef("此文件夹与任务「%s」的一个目标重叠 — 任务之间不能共享目标。", t.Name), true
+				}
+			}
+		}
+	}
+	return localizedMessage{}, false
 }
