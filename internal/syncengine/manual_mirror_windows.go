@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"syncmaid/internal/windowsfs"
+	"time"
+	"unicode"
 
 	"golang.org/x/sys/windows"
 	"syncmaid/internal/fileinventory"
@@ -74,12 +77,69 @@ func mirrorFileStamp(f *os.File, fat, network bool) (s MirrorStamp, err error) {
 	return
 }
 
+func foldRelPath(p string) string {
+	var b strings.Builder
+	b.Grow(len(p))
+	for _, r := range p {
+		b.WriteRune(unicode.ToUpper(r))
+	}
+	return b.String()
+}
+
+func markAncestorDirs(dirty map[string]bool, rel string) {
+	for dir := path.Dir(rel); dir != "." && dir != "/" && dir != ""; dir = path.Dir(dir) {
+		dirty[foldRelPath(dir)] = true
+	}
+}
+
+func dirtyMirrorDirs(hasCopies bool, sourceInv, targetBefore *fileinventory.Inventory, removed []string) map[string]bool {
+	if !hasCopies && len(removed) == 0 {
+		return nil
+	}
+	dirty := map[string]bool{}
+	for _, rel := range removed {
+		markAncestorDirs(dirty, rel)
+	}
+	if hasCopies && sourceInv != nil {
+		var targetFiles map[string]fileinventory.File
+		if targetBefore != nil {
+			list := targetBefore.Files()
+			targetFiles = make(map[string]fileinventory.File, len(list))
+			for _, tf := range list {
+				targetFiles[foldRelPath(tf.Path)] = tf
+			}
+		}
+		for _, sf := range sourceInv.Files() {
+			if targetFiles != nil {
+				if existing, ok := targetFiles[foldRelPath(sf.Path)]; ok && !TransferNeeded(sf.Size, sf.Modified, existing.Size, existing.Modified) {
+					continue
+				}
+			}
+			markAncestorDirs(dirty, sf.Path)
+		}
+	}
+	return dirty
+}
+
 // restoreMirrorDirectories creates missing source directories and preserves their
 // timestamps after file publication and any confirmed removal. Extra folders
 // are left alone; this never turns a file-only approval into folder deletion.
-func restoreMirrorDirectories(ctx context.Context, root *winutil.DirectoryObject, dirs []fileinventory.Directory) error {
+func restoreMirrorDirectories(ctx context.Context, root *winutil.DirectoryObject, dirs []fileinventory.Directory, targetBefore *fileinventory.Inventory, dirty map[string]bool) error {
+	var existing map[string]time.Time
+	if targetBefore != nil {
+		targetDirs := targetBefore.Directories()
+		existing = make(map[string]time.Time, len(targetDirs))
+		for _, td := range targetDirs {
+			existing[foldRelPath(td.Path)] = td.Modified
+		}
+	}
 	for i := len(dirs) - 1; i >= 0; i-- {
 		d := dirs[i]
+		if existing != nil && !dirty[foldRelPath(d.Path)] {
+			if mtime, ok := existing[foldRelPath(d.Path)]; ok && mtime.Unix() == d.Modified.Unix() {
+				continue
+			}
+		}
 		if err := ProtectedTransferIO(ctx, func() error {
 			return restoreMirrorDirectory(ctx, root, d)
 		}); err != nil {
@@ -166,14 +226,25 @@ func mirrorSourceExists(sourceRoot *winutil.DirectoryObject, rel string) (bool, 
 	return false, e
 }
 
-func collectMirrorCandidates(ctx context.Context, roots *TransferRoots, targetFiles []fileinventory.File) ([]string, map[string]MirrorStamp, error) {
-	// Use the actual filesystem's case-insensitive lookup, not filter Unicode
-	// comparison, to distinguish destination extras from source spellings.
+func collectMirrorCandidates(ctx context.Context, roots *TransferRoots, targetFiles []fileinventory.File, sourceInv *fileinventory.Inventory) ([]string, map[string]MirrorStamp, error) {
+	// Use the in-memory source inventory first, falling back to the filesystem's
+	// case-insensitive lookup only for items absent from the source listing.
+	var sourceSet map[string]bool
+	if sourceInv != nil {
+		list := sourceInv.Files()
+		sourceSet = make(map[string]bool, len(list))
+		for _, sf := range list {
+			sourceSet[foldRelPath(sf.Path)] = true
+		}
+	}
 	var paths []string
 	stamps := map[string]MirrorStamp{}
 	for _, entry := range targetFiles {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
+		}
+		if sourceSet != nil && sourceSet[foldRelPath(entry.Path)] {
+			continue
 		}
 		exists, e := mirrorSourceExists(roots.source, entry.Path)
 		if e != nil {

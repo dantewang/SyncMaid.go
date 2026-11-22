@@ -211,6 +211,10 @@ func RunManualWithFilters(ctx context.Context, q ManualRequest, notify func(Tran
 	return RunManualWithSession(ctx, q, nil, nil, notify, ops, rules, prepared...)
 }
 func RunManualWithSession(ctx context.Context, q ManualRequest, r *TransferRoots, inventory *fileinventory.Inventory, notify func(TransferProgress), ops TransferIO, rules []taskconfig.Rule, prepared ...*filefilter.Matcher) (p TransferProgress, err error) {
+	return runManualWithSessionTarget(ctx, q, r, inventory, nil, notify, ops, rules, prepared...)
+}
+
+func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *TransferRoots, inventory *fileinventory.Inventory, targetInv *fileinventory.Inventory, notify func(TransferProgress), ops TransferIO, rules []taskconfig.Rule, prepared ...*filefilter.Matcher) (p TransferProgress, err error) {
 	update := func() {
 		if notify != nil {
 			notify(p)
@@ -254,9 +258,24 @@ func RunManualWithSession(ctx context.Context, q ManualRequest, r *TransferRoots
 		update()
 		return p, ctx.Err()
 	}
+	var targetFiles map[string]fileinventory.File
+	if targetInv != nil {
+		list := targetInv.Files()
+		targetFiles = make(map[string]fileinventory.File, len(list))
+		for _, tf := range list {
+			targetFiles[foldRelPath(tf.Path)] = tf
+		}
+	}
 	p.Stage = "同步中"
 	update()
 	for _, entry := range files {
+		if targetFiles != nil {
+			if existing, ok := targetFiles[foldRelPath(entry.Path)]; ok && !TransferNeeded(entry.Size, entry.Modified, existing.Size, existing.Modified) {
+				p.Unchanged++
+				update()
+				continue
+			}
+		}
 		p.Path = entry.Path
 		update()
 		var copied bool

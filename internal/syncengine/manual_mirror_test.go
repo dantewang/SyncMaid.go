@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
 )
 
@@ -174,5 +176,69 @@ func TestMirrorShellPathBoundary(t *testing.T) {
 		if _, e := MirrorShellPath(s); e == nil {
 			t.Fatal("unsupported shell path accepted", s)
 		}
+	}
+}
+
+func TestMirrorSkipsUnchangedFilesAndMatchingDirectories(t *testing.T) {
+	q, p := multiFixture(t)
+	d := q.Destinations[0]
+	d.Strategy = taskconfig.Mirror
+	d.DeleteMode = taskconfig.Permanent
+
+	srcUnchanged := filepath.Join(p.Source, "sub", "same.txt")
+	dstUnchanged := filepath.Join(p.Target, "sub", "same.txt")
+	srcChanged := filepath.Join(p.Source, "dirty", "changed.txt")
+	dstChanged := filepath.Join(p.Target, "dirty", "changed.txt")
+	manualWrite(t, srcUnchanged, "same-content")
+	manualWrite(t, dstUnchanged, "same-content")
+	manualWrite(t, srcChanged, "new-content")
+	manualWrite(t, dstChanged, "old")
+	manualWrite(t, filepath.Join(p.Target, "dirty", "extra.txt"), "extra")
+
+	old := time.Date(2023, 5, 6, 7, 8, 0, 0, time.UTC)
+	for _, f := range []string{srcUnchanged, dstUnchanged, filepath.Dir(srcUnchanged), filepath.Dir(dstUnchanged)} {
+		if err := os.Chtimes(f, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chtimes(filepath.Dir(srcChanged), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify runManualWithSessionTarget skips unchanged files in memory without copying.
+	srcInv, err := fileinventory.Scan(context.Background(), p.Source, fileinventory.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dstInv, err := fileinventory.Scan(context.Background(), p.Target, fileinventory.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copiedCalls := 0
+	progress, err := runManualWithSessionTarget(context.Background(), p, nil, srcInv, dstInv, nil, TransferIO{
+		Publish: PublishTransfer,
+		Copy: func(ctx context.Context, src, tmp *os.File, cb func(int64)) error {
+			copiedCalls++
+			return CopyUnverified(ctx, src, tmp, cb)
+		},
+	}, AllFileRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copiedCalls != 1 || progress.Copied != 1 || progress.Unchanged != 1 {
+		t.Fatalf("expected 1 copy and 1 in-memory skip, got copiedCalls=%d progress=%+v", copiedCalls, progress)
+	}
+
+	// Run full Mirror session: removes extra.txt and restores dirty dir timestamp.
+	progress, err = RunMirrorSession(context.Background(), p, d, nil, nil, nil, acceptMirror, nil, noRecycle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Unchanged != 2 || progress.Copied != 0 || progress.Removed != 1 {
+		t.Fatalf("unexpected second-pass mirror progress: %+v", progress)
+	}
+	gotDirtyDir, err := os.Stat(filepath.Dir(dstChanged))
+	if err != nil || !gotDirtyDir.ModTime().Equal(old) {
+		t.Fatalf("dirty dir timestamp not restored after removal: %v %v", gotDirtyDir, err)
 	}
 }

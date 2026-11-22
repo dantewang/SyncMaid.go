@@ -91,18 +91,19 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 	if copyFiles != nil {
 		p, e = copyFiles(ctx, q, AllFileRules(), notify)
 	} else {
-		p, e = RunManualWithSession(ctx, q, roots, sourceInv, notify, TransferIO{Copy: TransferCopier(d.VerifyContents), Publish: PublishTransfer}, AllFileRules())
+		p, e = runManualWithSessionTarget(ctx, q, roots, sourceInv, targetBefore, notify, TransferIO{Copy: TransferCopier(d.VerifyContents), Publish: PublishTransfer}, AllFileRules())
 	}
 	if e != nil {
 		return p, e
 	}
-	paths, targetStamps, e := collectMirrorCandidates(ctx, roots, targetBefore.Files())
+	paths, targetStamps, e := collectMirrorCandidates(ctx, roots, targetBefore.Files(), sourceInv)
 	if e != nil {
 		return p, e
 	}
 	preview := MirrorPreview{DestinationID: d.ID, Name: d.Name, Target: winutil.PathLabel(roots.target.Path), Mode: DestinationDeleteMode(d), Paths: paths}
 	if len(preview.Paths) == 0 {
-		return p, restoreMirrorDirectories(ctx, roots.target, sourceInv.Directories())
+		dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, nil)
+		return p, restoreMirrorDirectories(ctx, roots.target, sourceInv.Directories(), targetBefore, dirty)
 	}
 	if preview.Mode == taskconfig.Recycle && (roots.target.Network || roots.target.Removable || roots.target.Fat) {
 		return p, errors.New("此目标不支持回收确认；多余文件未移除。若需要，请明确选择永久删除后重新运行。")
@@ -147,5 +148,6 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 			notify(p)
 		}
 	}
-	return p, restoreMirrorDirectories(ctx, roots.target, sourceInv.Directories())
+	dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, preview.Paths)
+	return p, restoreMirrorDirectories(ctx, roots.target, sourceInv.Directories(), targetBefore, dirty)
 }
