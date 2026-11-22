@@ -86,6 +86,7 @@ func RunMultipleConfirmed(ctx context.Context, q ManualTaskRequest, notify func(
 		for id, r := range results {
 			r.Ended = time.Now()
 			r.State = DestinationSkipped
+			r.Progress.Stage = "检查目录"
 			r.Error = err.Error()
 			results[id] = r
 		}
@@ -109,6 +110,7 @@ func RunMultipleConfirmed(ctx context.Context, q ManualTaskRequest, notify func(
 		}
 		if e := plan.failures[d.ID]; e != nil {
 			r.State = DestinationFailed
+			r.Progress.Stage = "检查目标目录"
 			r.Error = e.Error()
 			failures = append(failures, fmt.Errorf("%s: %w", d.Name, e))
 		} else {

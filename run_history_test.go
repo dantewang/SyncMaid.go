@@ -253,3 +253,99 @@ func TestRunHistoryBoundsAndOrigins(t *testing.T) {
 		t.Fatal(len(body), len(h.Data.Recent), e)
 	}
 }
+
+func TestRunHistoryMetadataBackwardCompatibilityAndBounds(t *testing.T) {
+	data := t.TempDir()
+	legacyJSON := `{
+  "Version": 1,
+  "Latest": {
+    "c4384fbe-ac5f-4973-82dc-1d764ff3f8ee": {
+      "ID": "0e6671b4-874c-490a-8010-57b5f236552a",
+      "TaskID": "c4384fbe-ac5f-4973-82dc-1d764ff3f8ee",
+      "Name": "Eagle",
+      "Kind": "Sync",
+      "Origin": "manual",
+      "Started": "2026-11-22T17:47:25.6660106+08:00",
+      "Ended": "2026-11-22T17:47:25.6732326+08:00",
+      "Outcome": "failed",
+      "Error": "NAS-Eagle_backup: 目标文件夹: directory identity cannot be verified: The parameter is incorrect.",
+      "Goals": [
+        {
+          "Started": "0001-01-01T00:00:00Z",
+          "Ended": "2026-11-22T17:47:25.6732326+08:00",
+          "ID": "91fbf41d-0f7b-4b0c-a8d1-ad2b30b23a3d",
+          "Name": "NAS-Eagle_backup",
+          "State": "失败",
+          "Error": "目标文件夹: directory identity cannot be verified: The parameter is incorrect.",
+          "Counts": {
+            "Stage": "",
+            "Path": "",
+            "Total": 0,
+            "Copied": 0,
+            "Unchanged": 0,
+            "Bytes": 0,
+            "Removed": 0,
+            "Moved": 0,
+            "Retained": 0,
+            "Failed": 0,
+            "Unmatched": 0,
+            "SourceFiles": 0,
+            "SourceEmpty": false
+          }
+        }
+      ]
+    }
+  },
+  "Recent": []
+}`
+	if err := os.WriteFile(filepath.Join(data, appcore.RunHistoryFile), []byte(legacyJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded := appcore.LoadRunHistory(data)
+	if loaded.Err != nil {
+		t.Fatalf("failed to load v1 run-history without new metadata: %v", loaded.Err)
+	}
+
+	r, q := historyFixture(t)
+	start, err := appcore.NewRunRecord(r.TaskID, "Meta", q, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if start.SourcePath == "" || start.Goals[0].TargetPath == "" {
+		t.Fatalf("expected SourcePath and TargetPath to be populated: %+v", start)
+	}
+	results := historySuccess(start)
+	g := results[start.Goals[0].ID]
+	g.Progress.Stage = "检查目标目录"
+	results[start.Goals[0].ID] = g
+	end := appcore.FinishRunRecord(start, results, nil, time.Now())
+	if end.Goals[0].Stage != "检查目标目录" || end.Goals[0].Counts.Stage != "" {
+		t.Fatalf("unexpected goal stage persistence: %+v", end.Goals[0])
+	}
+	if err := loaded.Put(end, []taskconfig.ID{start.TaskID}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := appcore.LoadRunHistory(data)
+	if reloaded.Err != nil {
+		t.Fatal(reloaded.Err)
+	}
+	got := reloaded.Data.Latest[start.TaskID]
+	if got.SourcePath == "" || got.Goals[0].TargetPath == "" || got.Goals[0].Stage != "检查目标目录" {
+		t.Fatalf("new metadata lost after reload: %+v", got)
+	}
+	badSource := reloaded.Data
+	rCopy := got
+	rCopy.SourcePath = strings.Repeat("a", appcore.HistoryPathBytes+1)
+	badSource.Latest = map[taskconfig.ID]appcore.RunRecord{start.TaskID: rCopy}
+	if err := appcore.ValidateRunHistory(badSource); err == nil {
+		t.Fatal("oversize SourcePath accepted")
+	}
+	badStage := reloaded.Data
+	rCopy = got
+	rCopy.Goals = append([]appcore.RunGoal(nil), got.Goals...)
+	rCopy.Goals[0].Stage = strings.Repeat("s", appcore.HistoryStageBytes+1)
+	badStage.Latest = map[taskconfig.ID]appcore.RunRecord{start.TaskID: rCopy}
+	if err := appcore.ValidateRunHistory(badStage); err == nil {
+		t.Fatal("oversize Goal.Stage accepted")
+	}
+}

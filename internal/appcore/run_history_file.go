@@ -54,7 +54,7 @@ func ValidateRunHistory(d RunHistoryData) error {
 		return errors.New("不支持的运行记录版本或条数")
 	}
 	validate := func(r RunRecord) error {
-		if r.ID == "" || r.TaskID == "" || len(r.ID) > 64 || len(r.TaskID) > 64 || r.Started.IsZero() || len(r.Name) > 256 || len(r.Error) > HistoryErrorBytes || len(r.Goals) > HistoryGoalLimit {
+		if r.ID == "" || r.TaskID == "" || len(r.ID) > 64 || len(r.TaskID) > 64 || r.Started.IsZero() || len(r.Name) > 256 || len(r.SourcePath) > HistoryPathBytes || len(r.Error) > HistoryErrorBytes || len(r.Goals) > HistoryGoalLimit {
 			return errors.New("运行记录字段无效或超限")
 		}
 		switch r.Outcome {
@@ -76,7 +76,7 @@ func ValidateRunHistory(d RunHistoryData) error {
 			return errors.New("未知触发来源")
 		}
 		for _, g := range r.Goals {
-			if g.ID == "" || len(g.ID) > 64 || len(g.Name) > 256 || len(g.Error) > HistoryErrorBytes || g.Counts.Path != "" || g.Counts.Stage != "" {
+			if g.ID == "" || len(g.ID) > 64 || len(g.Name) > 256 || len(g.TargetPath) > HistoryPathBytes || len(g.Stage) > HistoryStageBytes || len(g.Error) > HistoryErrorBytes || g.Counts.Path != "" || g.Counts.Stage != "" {
 				return errors.New("目标记录无效或超限")
 			}
 			switch g.State {

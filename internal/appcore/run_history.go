@@ -10,12 +10,15 @@ import (
 
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
+	"syncmaid/internal/winutil"
 )
 
 const (
 	HistoryLimit      = 100
 	HistoryBytes      = 4 << 20
 	HistoryErrorBytes = 1024
+	HistoryPathBytes  = 512
+	HistoryStageBytes = 128
 	HistoryGoalLimit  = 256
 )
 
@@ -40,6 +43,8 @@ type RunGoal struct {
 	Started, Ended time.Time
 	ID             taskconfig.ID
 	Name           string
+	TargetPath     string `json:",omitempty"`
+	Stage          string `json:",omitempty"`
 	State          syncengine.DestinationState
 	Error          string
 	Counts         syncengine.TransferProgress
@@ -50,6 +55,7 @@ type RunRecord struct {
 	Name           string
 	Kind           taskconfig.TaskKind
 	Origin         TriggerOrigin
+	SourcePath     string `json:",omitempty"`
 	Started, Ended time.Time
 	Outcome        OutcomeState
 	Error          string
@@ -77,7 +83,16 @@ func HistoryText(s string, n int) string {
 }
 
 func NewRunRecord(id taskconfig.ID, name string, q syncengine.ManualTaskRequest, automatic bool, now time.Time) (RunRecord, error) {
-	r := RunRecord{ID: taskconfig.NewID(), TaskID: id, Name: HistoryText(name, 256), Kind: syncengine.ManualKind(q.Kind), Origin: OriginManual, Started: now, Outcome: OutcomeRunning}
+	r := RunRecord{
+		ID:         taskconfig.NewID(),
+		TaskID:     id,
+		Name:       HistoryText(name, 256),
+		Kind:       syncengine.ManualKind(q.Kind),
+		Origin:     OriginManual,
+		SourcePath: HistoryText(winutil.PathLabel(q.Source), HistoryPathBytes),
+		Started:    now,
+		Outcome:    OutcomeRunning,
+	}
 	if automatic {
 		r.Origin = TriggerOrigin(q.Trigger.Kind)
 	}
@@ -85,7 +100,12 @@ func NewRunRecord(id taskconfig.ID, name string, q syncengine.ManualTaskRequest,
 		return r, fmt.Errorf("运行记录每次最多支持%d个目标，文件执行不受影响", HistoryGoalLimit)
 	}
 	for _, d := range q.Destinations {
-		r.Goals = append(r.Goals, RunGoal{ID: d.ID, Name: HistoryText(d.Name, 256), State: syncengine.DestinationWaiting})
+		r.Goals = append(r.Goals, RunGoal{
+			ID:         d.ID,
+			Name:       HistoryText(d.Name, 256),
+			TargetPath: HistoryText(winutil.PathLabel(d.Path), HistoryPathBytes),
+			State:      syncengine.DestinationWaiting,
+		})
 	}
 	return r, nil
 }
@@ -115,6 +135,9 @@ func FinishRunRecord(r RunRecord, results syncengine.MultipleResult, err error, 
 			g.Started = result.Started
 			g.Ended = result.Ended
 			g.State = result.State
+			if stage := strings.TrimSpace(result.Progress.Stage); stage != "" && stage != string(result.State) {
+				g.Stage = HistoryText(stage, HistoryStageBytes)
+			}
 			g.Error = HistoryText(result.Error, HistoryErrorBytes)
 			g.Counts = result.Progress
 			g.Counts.Path = ""
