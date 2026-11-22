@@ -71,7 +71,7 @@ func (r *TransferRoots) ensureWritableTarget(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("目标文件夹: %w", err)
 	}
-	if err := ordinaryDirectory(next.Handle); err != nil {
+	if err := ordinaryDirectory(next); err != nil {
 		return errors.Join(err, CloseProtected(ctx, next))
 	}
 	if next.Key != r.target.Key {
@@ -129,7 +129,7 @@ func openDestinationRoots(ctx context.Context, source *winutil.DirectoryObject, 
 	if r.target, err = winutil.OpenDirectoryAccess(targetPath, targetAccess); err != nil {
 		return nil, fmt.Errorf("目标文件夹: %w", err)
 	}
-	if err = ordinaryDirectory(r.target.Handle); err != nil {
+	if err = ordinaryDirectory(r.target); err != nil {
 		return nil, err
 	}
 	if r.source.Key == r.target.Key {
@@ -160,7 +160,7 @@ func OpenTransferRootsAccess(ctx context.Context, q ManualRequest, targetAccess 
 	if r.source, err = winutil.OpenDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {
 		return nil, fmt.Errorf("源文件夹: %w", err)
 	}
-	if err = ordinaryDirectory(r.source.Handle); err != nil {
+	if err = ordinaryDirectory(r.source); err != nil {
 		return nil, err
 	}
 	sourceAncestors, err := openAncestors(ctx, r.source.Path, "")
@@ -298,7 +298,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 	}()
 	// Open every actual directory relative to a pinned handle; never follow a
 	// replaced junction. Held no-delete-sharing handles also pin its spelling.
-	openParents := func(root windows.Handle, create bool, parts []string) (windows.Handle, error) {
+	openParents := func(root windows.Handle, create, checkCase bool, parts []string) (windows.Handle, error) {
 		parent := root
 		for _, part := range parts[:len(parts)-1] {
 			mode := uint32(windows.FILE_OPEN)
@@ -309,7 +309,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 			if create {
 				access |= windows.FILE_GENERIC_WRITE
 			}
-			f, e := openTransferChild(parent, part, true, mode, access, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
+			f, e := openTransferChildChecked(parent, part, true, checkCase, mode, access, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
 			if e != nil {
 				return 0, e
 			}
@@ -318,7 +318,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 		}
 		return parent, nil
 	}
-	sp, e := openParents(roots.source.Handle, false, parts)
+	sp, e := openParents(roots.source.Handle, false, needsCaseCheck(roots.source), parts)
 	if e != nil {
 		return false, e
 	}
@@ -355,7 +355,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 		return false, errors.New("非法目标相对路径")
 	}
 	name = targetParts[len(targetParts)-1]
-	dp, e := openParents(roots.target.Handle, true, targetParts)
+	dp, e := openParents(roots.target.Handle, true, needsCaseCheck(roots.target), targetParts)
 	if e != nil {
 		return false, e
 	}

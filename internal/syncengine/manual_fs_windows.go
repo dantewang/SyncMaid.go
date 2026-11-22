@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syncmaid/internal/windowsfs"
+	"syncmaid/internal/winutil"
 	"time"
 	"unsafe"
 
@@ -56,8 +57,15 @@ func checkOrdinaryDirectory(sensitive bool, err error) error {
 	return nil
 }
 
-func ordinaryDirectory(h windows.Handle) error {
-	return checkOrdinaryDirectory(windowsfs.CaseSensitive(h))
+func needsCaseCheck(d *winutil.DirectoryObject) bool {
+	return d != nil && !d.Network && !d.Fat
+}
+
+func ordinaryDirectory(d *winutil.DirectoryObject) error {
+	if !needsCaseCheck(d) {
+		return nil
+	}
+	return checkOrdinaryDirectory(windowsfs.CaseSensitive(d.Handle))
 }
 
 func splitRelativePath(rel string) ([]string, error) {
@@ -87,6 +95,10 @@ func CloseFilesProtected(ctx context.Context, files []*os.File) error {
 }
 
 func openTransferChild(parent windows.Handle, name string, dir bool, disposition, access, share uint32) (*os.File, error) {
+	return openTransferChildChecked(parent, name, dir, true, disposition, access, share)
+}
+
+func openTransferChildChecked(parent windows.Handle, name string, dir, checkCase bool, disposition, access, share uint32) (*os.File, error) {
 	options := uint32(windows.FILE_NON_DIRECTORY_FILE)
 	if dir {
 		options = windows.FILE_DIRECTORY_FILE
@@ -101,8 +113,8 @@ func openTransferChild(parent windows.Handle, name string, dir bool, disposition
 	if !dir && info.NumberOfLinks > 1 {
 		e = errors.New("暂不支持硬链接文件: " + name)
 	}
-	if e == nil && dir {
-		e = ordinaryDirectory(h)
+	if e == nil && dir && checkCase {
+		e = checkOrdinaryDirectory(windowsfs.CaseSensitive(h))
 	}
 	if e != nil {
 		windows.CloseHandle(h)

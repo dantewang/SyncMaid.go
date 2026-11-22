@@ -101,7 +101,7 @@ func OpenMultiplePlan(ctx context.Context, q ManualTaskRequest) (plan *MultipleP
 	if p.source, err = winutil.OpenDirectoryAccess(q.Source, windows.FILE_READ_ATTRIBUTES); err != nil {
 		return nil, fmt.Errorf("源文件夹: %w", err)
 	}
-	if err = ordinaryDirectory(p.source.Handle); err != nil {
+	if err = ordinaryDirectory(p.source); err != nil {
 		return nil, err
 	}
 	if p.sourceAncestors, err = openAncestors(ctx, p.source.Path, ""); err != nil {

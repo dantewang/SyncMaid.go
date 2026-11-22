@@ -22,7 +22,7 @@ func scanMoveFiles(ctx context.Context, root *winutil.DirectoryObject) ([]filein
 		if err = ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-		f, close, e := openMirrorFile(root.Handle, entry.Path, windows.GENERIC_READ)
+		f, close, e := openMirrorFile(root, entry.Path, windows.GENERIC_READ)
 		if e != nil {
 			return nil, nil, e
 		}

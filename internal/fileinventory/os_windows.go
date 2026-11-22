@@ -17,8 +17,10 @@ import (
 // with FILE_OPEN_REPARSE_POINT, so a directory swapped for a junction after it
 // was listed is opened as the link itself and then rejected, never followed.
 type osDirectory struct {
-	file *os.File
-	path string // for diagnostics only
+	file          *os.File
+	path          string // for diagnostics only
+	network       bool
+	skipCaseCheck bool
 }
 
 func openRootDirectory(root string) (directory, error) {
@@ -36,23 +38,34 @@ func openRootDirectory(root string) (directory, error) {
 		f.Close()
 		return nil, err
 	}
-	return &osDirectory{file: f, path: root}, nil
+	network := windowsfs.Network(root)
+	kind, _, volErr := windowsfs.Volume(windows.Handle(f.Fd()))
+	skipCaseCheck := network || (volErr == nil && windowsfs.FAT(kind))
+	return &osDirectory{file: f, path: root, network: network, skipCaseCheck: skipCaseCheck}, nil
 }
 
 func (d *osDirectory) ReadDir(n int) ([]fs.DirEntry, error) { return d.file.ReadDir(n) }
 func (d *osDirectory) Close() error                         { return d.file.Close() }
 
 func (d *osDirectory) OpenChild(name string) (directory, error) {
+	childPath := d.path + `\` + name
+	if d.network {
+		f, err := os.Open(childPath)
+		if err != nil {
+			return nil, &fs.PathError{Op: "open", Path: childPath, Err: err}
+		}
+		return &osDirectory{file: f, path: childPath, network: true, skipCaseCheck: d.skipCaseCheck}, nil
+	}
 	h, err := openChildDirectory(windows.Handle(d.file.Fd()), name)
 	if err != nil {
-		return nil, &fs.PathError{Op: "open", Path: d.path + `\` + name, Err: err}
+		return nil, &fs.PathError{Op: "open", Path: childPath, Err: err}
 	}
-	f := os.NewFile(uintptr(h), d.path+`\`+name)
+	f := os.NewFile(uintptr(h), childPath)
 	if f == nil {
 		windows.CloseHandle(h)
 		return nil, errors.New("invalid directory handle")
 	}
-	return &osDirectory{file: f, path: f.Name()}, nil
+	return &osDirectory{file: f, path: f.Name(), skipCaseCheck: d.skipCaseCheck}, nil
 }
 
 func openChildDirectory(parent windows.Handle, name string) (windows.Handle, error) {
@@ -68,6 +81,9 @@ func openChildDirectory(parent windows.Handle, name string) (windows.Handle, err
 }
 
 func (d *osDirectory) CaseSensitive() (bool, error) {
+	if d.skipCaseCheck {
+		return false, nil
+	}
 	return windowsfs.CaseSensitive(windows.Handle(d.file.Fd()))
 }
 
