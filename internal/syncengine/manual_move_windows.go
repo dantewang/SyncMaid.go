@@ -26,7 +26,7 @@ func scanMoveFiles(ctx context.Context, root *winutil.DirectoryObject) ([]filein
 		if e != nil {
 			return nil, nil, e
 		}
-		stamp, e := mirrorFileStamp(f, root.Fat)
+		stamp, e := mirrorFileStamp(f, root.Fat, root.Network)
 		e = errors.Join(e, close())
 		if e != nil {
 			return nil, nil, e

@@ -342,7 +342,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 		return false, errors.New("源文件已在扫描后改变，请重新运行")
 	}
 	if expected != nil {
-		actual, e := mirrorFileStamp(source, roots.source.Fat)
+		actual, e := mirrorFileStamp(source, roots.source.Fat, roots.source.Network)
 		if e != nil {
 			return false, e
 		}
@@ -431,7 +431,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 		copied = publication == TransferPublished
 	}
 	if e == nil && copied && expected != nil {
-		e = deleteVerifiedSource(ctx, source, *expected, roots.source.Fat, ops.SourceDelete)
+		e = deleteVerifiedSource(ctx, source, *expected, roots.source.Fat, roots.source.Network, ops.SourceDelete)
 	}
 	return copied, e
 }

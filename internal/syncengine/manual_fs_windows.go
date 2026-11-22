@@ -165,12 +165,12 @@ func finalizeTempTransfer(ctx context.Context, temp *os.File, publication *Trans
 	})
 }
 
-func deleteVerifiedSource(ctx context.Context, source *os.File, expected MirrorStamp, fat bool, remove func(*os.File) error) error {
+func deleteVerifiedSource(ctx context.Context, source *os.File, expected MirrorStamp, fat, network bool, remove func(*os.File) error) error {
 	return ProtectedTransferIO(ctx, func() error {
 		if e := ctx.Err(); e != nil {
 			return e
 		}
-		actual, e := mirrorFileStamp(source, fat)
+		actual, e := mirrorFileStamp(source, fat, network)
 		if e != nil {
 			return e
 		}

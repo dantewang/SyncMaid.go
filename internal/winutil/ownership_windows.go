@@ -103,12 +103,16 @@ func OpenDirectoryAccess(path string, access uint32) (*DirectoryObject, error) {
 	if !network && !fat && kind != "NTFS" && kind != "REFS" {
 		return nil, fmt.Errorf("%w: filesystem %q", ErrUnsupportedLocation, kind)
 	}
-	id, err := windowsfs.FileIdentity(h, fat)
+	id, err := windowsfs.FileIdentity(h, fat, network)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnreliableIdentity, err)
+		return nil, fmt.Errorf("%w (fs=%s, network=%t, path=%s): %w", ErrUnreliableIdentity, kind, network, PathLabel(final), err)
+	}
+	key := fmt.Sprintf("%016x-%x", id.Volume, id.File)
+	if id.Legacy {
+		key = "legacy-" + key
 	}
 	ok = true
-	return &DirectoryObject{Handle: h, Path: final, Key: fmt.Sprintf("%016x-%x", id.Volume, id.File),
+	return &DirectoryObject{Handle: h, Path: final, Key: key,
 		Network: network, Fat: fat, Removable: removable}, nil
 }
 

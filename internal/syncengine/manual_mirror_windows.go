@@ -59,9 +59,9 @@ func openMirrorFile(root windows.Handle, rel string, access uint32) (f *os.File,
 	}
 	return
 }
-func mirrorFileStamp(f *os.File, fat bool) (s MirrorStamp, err error) {
+func mirrorFileStamp(f *os.File, fat, network bool) (s MirrorStamp, err error) {
 	h := windows.Handle(f.Fd())
-	if s.ID, err = windowsfs.FileIdentity(h, fat); err != nil {
+	if s.ID, err = windowsfs.FileIdentity(h, fat, network); err != nil {
 		return
 	}
 	var b windows.ByHandleFileInformation
@@ -186,7 +186,7 @@ func collectMirrorCandidates(ctx context.Context, roots *TransferRoots, targetFi
 			}
 			return nil, nil, e
 		}
-		stamp, e := mirrorFileStamp(f, roots.target.Fat)
+		stamp, e := mirrorFileStamp(f, roots.target.Fat, roots.target.Network)
 		e = errors.Join(e, close())
 		if e != nil {
 			return nil, nil, e
@@ -211,7 +211,7 @@ func removeMirrorCandidate(ctx context.Context, roots *TransferRoots, rel string
 	if e != nil {
 		return e
 	}
-	stamp, e := mirrorFileStamp(f, roots.target.Fat)
+	stamp, e := mirrorFileStamp(f, roots.target.Fat, roots.target.Network)
 	if e == nil && stamp != expected {
 		e = ErrMirrorChanged
 	}
