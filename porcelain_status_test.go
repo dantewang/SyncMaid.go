@@ -61,6 +61,12 @@ func TestRelativeStatusAndLogRetainRealCountsAndErrors(t *testing.T) {
 	if text != "2天前同步 · 120个文件" {
 		t.Fatal(text)
 	}
+	if got := a.destinationStatus(syncengine.DestinationResult{State: syncengine.DestinationSucceeded, Ended: now, Progress: syncengine.TransferProgress{Removed: 24}}, true, now); got != "刚刚同步 · 移除24个文件" {
+		t.Fatalf("removed-only status = %q", got)
+	}
+	if got := a.destinationStatus(syncengine.DestinationResult{State: syncengine.DestinationSucceeded, Ended: now, Progress: syncengine.TransferProgress{Copied: 3, Removed: 24}}, true, now); got != "刚刚同步 · 3个文件 · 移除24个" {
+		t.Fatalf("copied+removed status = %q", got)
+	}
 	if a.destinationStatus(r, false, now) != "从未运行" {
 		t.Fatal("missing record invented success")
 	}
