@@ -386,6 +386,13 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 			return openTransferChild(dp, name, false, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
 		})
 		if e == nil {
+			matched, matchErr := openedFileMatchesName(existing, name)
+			if matchErr != nil {
+				return false, errors.Join(matchErr, CloseProtected(ctx, existing))
+			}
+			if !matched {
+				return false, errors.Join(errors.New("目标存在 8.3 短文件名冲突，无法安全同步"), CloseProtected(ctx, existing))
+			}
 			if expected != nil {
 				return false, existing.Close()
 			}

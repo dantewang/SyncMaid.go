@@ -11,10 +11,60 @@ import (
 	"syncmaid/internal/windowsfs"
 	"syncmaid/internal/winutil"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+var procCompareStringOrdinal = windows.NewLazySystemDLL("kernel32.dll").NewProc("CompareStringOrdinal")
+
+func sameFileNameOrdinal(a, b string) (bool, error) {
+	if a == b {
+		return true, nil
+	}
+	ua := utf16.Encode([]rune(a))
+	ub := utf16.Encode([]rune(b))
+	if len(ua) == 0 || len(ub) == 0 {
+		return len(ua) == len(ub), nil
+	}
+	r1, _, err := procCompareStringOrdinal.Call(
+		uintptr(unsafe.Pointer(&ua[0])),
+		uintptr(len(ua)),
+		uintptr(unsafe.Pointer(&ub[0])),
+		uintptr(len(ub)),
+		1,
+	)
+	if r1 == 0 {
+		return false, err
+	}
+	return r1 == 2, nil
+}
+
+func openedFileMatchesName(f *os.File, requested string) (bool, error) {
+	var final string
+	h := windows.Handle(f.Fd())
+	for size := uint32(512); size <= 65536; {
+		buf := make([]uint16, size)
+		n, err := windows.GetFinalPathNameByHandle(h, &buf[0], size, 0)
+		if err != nil {
+			return false, err
+		}
+		if n < size {
+			final = windows.UTF16ToString(buf[:n])
+			break
+		}
+		size = n + 1
+	}
+	if final == "" {
+		return false, errors.New("无法确认文件规范路径")
+	}
+	base := final
+	if idx := strings.LastIndexByte(final, '\\'); idx >= 0 {
+		base = final[idx+1:]
+	}
+	return sameFileNameOrdinal(base, requested)
+}
 
 // Retry only the initial open of an existing object. Never replay a write,
 // rename or delete whose result could be ambiguous.

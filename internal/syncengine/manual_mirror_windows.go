@@ -206,9 +206,14 @@ func RecycleWithShell(trash func(string) error) func(string) error {
 }
 
 func mirrorSourceExists(sourceRoot *winutil.DirectoryObject, rel string) (bool, error) {
-	_, close, e := openMirrorFile(sourceRoot, rel, windows.GENERIC_READ)
+	f, close, e := openMirrorFile(sourceRoot, rel, windows.GENERIC_READ)
 	if e == nil {
-		return true, close()
+		matched, matchErr := openedFileMatchesName(f, path.Base(rel))
+		closeErr := close()
+		if matchErr != nil {
+			return false, errors.Join(matchErr, closeErr)
+		}
+		return matched, closeErr
 	}
 	if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) {
 		return false, nil

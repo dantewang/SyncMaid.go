@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
 )
@@ -391,6 +392,110 @@ func TestMirrorDistinctUnicodeCaseFoldingAndRealCaseInsensitivity(t *testing.T) 
 		}
 		if progress.Copied != 0 || progress.Unchanged != 1 || progress.Removed != 0 {
 			t.Fatalf("unexpected progress for case-insensitive match: %+v", progress)
+		}
+	})
+}
+
+func TestSameFileNameOrdinal(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"Report.txt", "report.txt", true},
+		{"LONGFI~1.TXT", "LongFileName1234567890.txt", false},
+		{"\u10d0.txt", "\u10d0.txt", true},
+		{"\u10d0.txt", "\u1c90.txt", false},
+	}
+	for _, tc := range cases {
+		got, err := sameFileNameOrdinal(tc.a, tc.b)
+		if err != nil {
+			t.Fatalf("sameFileNameOrdinal(%q, %q) error: %v", tc.a, tc.b, err)
+		}
+		if got != tc.want {
+			t.Errorf("sameFileNameOrdinal(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+func shortNameForFile(t *testing.T, longPath string) string {
+	t.Helper()
+	lp, err := windows.UTF16PtrFromString(longPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]uint16, 32768)
+	n, err := windows.GetShortPathName(lp, &buf[0], uint32(len(buf)))
+	if err != nil || n == 0 || int(n) >= len(buf) {
+		t.Fatalf("GetShortPathName(%q) failed: n=%d err=%v", longPath, n, err)
+	}
+	return filepath.Base(windows.UTF16ToString(buf[:n]))
+}
+
+func TestMirror83ShortNameAliasSafety(t *testing.T) {
+	old := time.Date(2023, 5, 6, 7, 8, 0, 0, time.UTC)
+	const longName = "LongFileName1234567890.txt"
+
+	t.Run("source-short-vs-target-long", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		dstLong := filepath.Join(p.Target, longName)
+		manualWrite(t, dstLong, "BBBB")
+		shortName := shortNameForFile(t, dstLong)
+		if strings.EqualFold(shortName, longName) {
+			t.Skip("8.3 short names disabled on temp volume")
+		}
+		srcShort := filepath.Join(p.Source, shortName)
+		manualWrite(t, srcShort, "AAAA")
+		for _, targetPath := range []string{srcShort, dstLong} {
+			if err := os.Chtimes(targetPath, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		_, err := RunMirrorSession(context.Background(), p, d, nil, nil, nil, acceptMirror, nil, noRecycle)
+		if err == nil {
+			t.Fatalf("expected 8.3 short-name conflict error, got nil")
+		}
+		if data, readErr := os.ReadFile(dstLong); readErr != nil || string(data) != "BBBB" {
+			t.Fatalf("target long file was altered or deleted: data=%q err=%v", data, readErr)
+		}
+	})
+
+	t.Run("source-long-vs-target-short", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		srcLong := filepath.Join(p.Source, longName)
+		manualWrite(t, srcLong, "AAAA")
+		shortName := shortNameForFile(t, srcLong)
+		if strings.EqualFold(shortName, longName) {
+			t.Skip("8.3 short names disabled on temp volume")
+		}
+		dstShort := filepath.Join(p.Target, shortName)
+		manualWrite(t, dstShort, "BBBB")
+		for _, targetPath := range []string{srcLong, dstShort} {
+			if err := os.Chtimes(targetPath, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		progress, err := RunMirrorSession(context.Background(), p, d, nil, nil, nil, acceptMirror, nil, noRecycle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if progress.Copied != 1 || progress.Removed != 1 {
+			t.Fatalf("unexpected progress: %+v", progress)
+		}
+		if data, readErr := os.ReadFile(filepath.Join(p.Target, longName)); readErr != nil || string(data) != "AAAA" {
+			t.Fatalf("expected copied long file, got data=%q err=%v", data, readErr)
+		}
+		if _, statErr := os.Stat(dstShort); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("expected target short-named file %s to be removed, got err=%v", dstShort, statErr)
 		}
 	})
 }
