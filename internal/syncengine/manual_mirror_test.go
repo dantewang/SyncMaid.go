@@ -616,3 +616,55 @@ func TestMirror83ShortNameAliasSafety(t *testing.T) {
 		}
 	})
 }
+
+func TestMirrorNameVerifyPathNotFoundNeverDeletes(t *testing.T) {
+	q, p := multiFixture(t)
+	d := q.Destinations[0]
+	d.Strategy = taskconfig.Mirror
+	d.DeleteMode = taskconfig.Permanent
+
+	manualWrite(t, filepath.Join(p.Source, "Report.txt"), "same")
+	dstFile := filepath.Join(p.Target, "report.txt")
+	manualWrite(t, dstFile, "same")
+	if _, err := os.Stat(filepath.Join(p.Source, "report.txt")); err != nil {
+		t.Skipf("source directory is case-sensitive: %v", err)
+	}
+
+	orig := openedFinalPath
+	t.Cleanup(func() { openedFinalPath = orig })
+	openedFinalPath = func(windows.Handle) (string, error) {
+		return "", windows.ERROR_PATH_NOT_FOUND
+	}
+
+	roots, err := OpenTransferRoots(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if closeErr := roots.Close(); closeErr != nil {
+			t.Fatal(closeErr)
+		}
+	}()
+	exists, err := mirrorSourceExists(roots.source, "report.txt")
+	if err == nil || exists {
+		t.Fatalf("expected error from post-open name query failure, got exists=%v err=%v", exists, err)
+	}
+	if errors.Is(err, windows.ERROR_PATH_NOT_FOUND) || errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
+		t.Fatalf("post-open name query error must not unwrap as missing file: %v", err)
+	}
+
+	confirmCalled := false
+	_, err = RunMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v MirrorPreview) error {
+		confirmCalled = true
+		t.Fatalf("confirm should not be called on name query failure, got preview=%+v", v)
+		return nil
+	}, func(context.Context, ManualRequest, []taskconfig.Rule, func(TransferProgress)) (TransferProgress, error) {
+		return TransferProgress{Stage: "已完成", Total: 1, Unchanged: 1}, nil
+	}, noRecycle)
+	if err == nil || confirmCalled {
+		t.Fatalf("expected error without confirm, got err=%v confirmCalled=%v", err, confirmCalled)
+	}
+	if data, readErr := os.ReadFile(dstFile); readErr != nil || string(data) != "same" {
+		t.Fatalf("target file was altered or deleted: data=%q err=%v", data, readErr)
+	}
+}

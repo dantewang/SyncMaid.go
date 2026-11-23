@@ -328,7 +328,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 			if create {
 				access |= windows.FILE_GENERIC_WRITE
 			}
-			f, e := openTransferChildChecked(parent, part, true, checkCase, mode, access, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
+			f, e := openTransferChildChecked(parent, part, true, checkCase, create, mode, access, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
 			if e != nil {
 				return 0, e
 			}
@@ -383,7 +383,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 	suffix := expected != nil && ops.Collision == taskconfig.Suffix
 	if !suffix {
 		existing, e = retryTransferOpen(ctx, func() (*os.File, error) {
-			return openTransferChild(dp, name, false, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
+			return openTransferChildChecked(dp, name, false, true, true, windows.FILE_OPEN, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
 		})
 		if e == nil {
 			if expected != nil {

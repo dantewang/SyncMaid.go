@@ -43,10 +43,14 @@ func sameFileNameOrdinal(a, b string) (bool, error) {
 
 var errShortNameConflict = errors.New("目标存在 8.3 短文件名冲突，无法安全同步")
 
+var openedFinalPath = windowsfs.FinalPathNormalized
+
 func checkOpenedName(h windows.Handle, requested string) error {
-	final, err := windowsfs.FinalPath(h)
+	final, err := openedFinalPath(h)
 	if err != nil {
-		return err
+		// Deliberately avoid wrapping (%w) so post-open query errors such as
+		// ERROR_PATH_NOT_FOUND are never misclassified as a missing file.
+		return fmt.Errorf("校验文件规范名称失败: %v", err)
 	}
 	base := strings.TrimRight(final, `\`)
 	if idx := strings.LastIndexByte(base, '\\'); idx >= 0 {
@@ -54,7 +58,7 @@ func checkOpenedName(h windows.Handle, requested string) error {
 	}
 	ok, err := sameFileNameOrdinal(base, requested)
 	if err != nil {
-		return err
+		return fmt.Errorf("比对文件规范名称失败: %v", err)
 	}
 	if !ok {
 		return errShortNameConflict
@@ -141,10 +145,10 @@ func CloseFilesProtected(ctx context.Context, files []*os.File) error {
 }
 
 func openTransferChild(parent windows.Handle, name string, dir bool, disposition, access, share uint32) (*os.File, error) {
-	return openTransferChildChecked(parent, name, dir, true, disposition, access, share)
+	return openTransferChildChecked(parent, name, dir, true, false, disposition, access, share)
 }
 
-func openTransferChildChecked(parent windows.Handle, name string, dir, checkCase bool, disposition, access, share uint32) (*os.File, error) {
+func openTransferChildChecked(parent windows.Handle, name string, dir, checkCase, checkName bool, disposition, access, share uint32) (*os.File, error) {
 	options := uint32(windows.FILE_NON_DIRECTORY_FILE)
 	if dir {
 		options = windows.FILE_DIRECTORY_FILE
@@ -162,7 +166,7 @@ func openTransferChildChecked(parent windows.Handle, name string, dir, checkCase
 	if e == nil && dir && checkCase {
 		e = checkOrdinaryDirectory(windowsfs.CaseSensitive(h))
 	}
-	if e == nil && disposition != windows.FILE_CREATE {
+	if e == nil && checkName && disposition != windows.FILE_CREATE {
 		e = checkOpenedName(h, name)
 	}
 	if e != nil {

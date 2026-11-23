@@ -46,11 +46,21 @@ func OpenChildNoReparse(parent windows.Handle, name string, access, share, dispo
 	return h, info, nil
 }
 
-// FinalPath returns the normalized volume-qualified path for an open handle.
+// FinalPath returns the normalized DOS-volume path for an open handle.
 func FinalPath(h windows.Handle) (string, error) {
+	return finalPath(h, 0)
+}
+
+// FinalPathNormalized returns the normalized volume-relative path without
+// requiring a DOS drive-letter mapping (VOLUME_NAME_NONE = 0x4).
+func FinalPathNormalized(h windows.Handle) (string, error) {
+	return finalPath(h, 0x4)
+}
+
+func finalPath(h windows.Handle, flags uint32) (string, error) {
 	for size := uint32(512); size <= 65536; {
 		buf := make([]uint16, size)
-		n, err := windows.GetFinalPathNameByHandle(h, &buf[0], size, 0)
+		n, err := windows.GetFinalPathNameByHandle(h, &buf[0], size, flags)
 		if err != nil {
 			return "", err
 		}
