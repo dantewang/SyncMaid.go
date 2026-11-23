@@ -88,6 +88,25 @@ func TestLayoutBoundaryAndChaining(t *testing.T) {
 		t.Fatal("UNC overlap missed")
 	}
 }
+
+func TestPathsOverlapUnicodeAndCaseBoundaries(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{`C:\test\ა`, `C:\test\Ა`, false},
+		{`C:\test\ა`, `C:\test\ა\sub`, true},
+		{`c:\test\ა`, `C:\test\ა`, true},
+		{`C:\Foo`, `c:/foo/bar`, true},
+		{`\\host\share\dir`, `//HOST/share/dir/sub`, true},
+		{`C:\foo`, `C:\foobar`, false},
+	}
+	for _, tc := range cases {
+		if got := PathsOverlap(tc.a, tc.b); got != tc.want {
+			t.Errorf("PathsOverlap(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
 func TestUnsupportedSemanticsSurviveButAreNotValidated(t *testing.T) {
 	input := fixture(t, "nested-filters")
 	input = []byte(strings.Replace(string(input), "5/15 * * * *", "not a cron", 1))

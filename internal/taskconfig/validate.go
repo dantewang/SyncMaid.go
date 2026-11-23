@@ -122,34 +122,67 @@ func Validate(tasks []Task) (Validation, error) {
 // Only a lexical, ASCII Windows absolute-path comparison: never persisted and
 // never a security identity. Relative, device, Unicode and alias paths require
 // platform resolution. No cwd is consulted or baked into the configuration.
-func lexicalPath(s string) string {
-	for _, r := range s {
-		if r > 127 || r == 0 {
-			return ""
-		}
+func cleanAbsolutePath(s string) string {
+	if strings.ContainsRune(s, 0) {
+		return ""
 	}
 	s = strings.ReplaceAll(s, `\`, "/")
 	if strings.HasPrefix(s, "//?/") || strings.HasPrefix(s, "//./") {
 		return ""
 	}
 	if len(s) >= 3 && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) && s[1:3] == ":/" {
-		return strings.ToUpper(s[:2] + path.Clean(s[2:]))
+		return strings.ToUpper(s[:2]) + path.Clean(s[2:])
 	}
 	if strings.HasPrefix(s, "//") {
 		parts := strings.Split(strings.TrimPrefix(s, "//"), "/")
 		if len(parts) < 2 || parts[0] == "" || parts[1] == "" || parts[0] == "." || parts[0] == ".." || parts[1] == "." || parts[1] == ".." {
 			return ""
 		}
-		return strings.ToUpper("//" + parts[0] + "/" + parts[1] + strings.TrimSuffix(path.Clean("/"+strings.Join(parts[2:], "/")), "/"))
+		return "//" + parts[0] + "/" + parts[1] + strings.TrimSuffix(path.Clean("/"+strings.Join(parts[2:], "/")), "/")
 	}
 	return ""
 }
+
+func lexicalPath(s string) string {
+	for _, r := range s {
+		if r > 127 || r == 0 {
+			return ""
+		}
+	}
+	clean := cleanAbsolutePath(s)
+	if clean == "" {
+		return ""
+	}
+	return strings.ToUpper(clean)
+}
+
+func hasPathOverlap(a, b string) bool {
+	return a == b || strings.HasPrefix(a, strings.TrimRight(b, "/")+"/") || strings.HasPrefix(b, strings.TrimRight(a, "/")+"/")
+}
+
+// PathsOverlap checks whether two path spellings lexically denote the same
+// location or an ancestor/descendant pair. Non-ASCII paths are never case-folded
+// so distinct Unicode names are left to platform resolution.
+func PathsOverlap(a, b string) bool {
+	if a != "" && a == b {
+		return true
+	}
+	if ca, cb := cleanAbsolutePath(a), cleanAbsolutePath(b); ca != "" && cb != "" && hasPathOverlap(ca, cb) {
+		return true
+	}
+	if ak, bk := lexicalPath(a), lexicalPath(b); ak != "" && bk != "" && hasPathOverlap(ak, bk) {
+		return true
+	}
+	return false
+}
+
 func pathsConflict(a, ak, b, bk string) bool {
 	if a == b {
 		return true
 	}
-	if ak == "" || bk == "" {
-		return false
+	if ak != "" && bk != "" {
+		return hasPathOverlap(ak, bk)
 	}
-	return ak == bk || strings.HasPrefix(ak, strings.TrimRight(bk, "/")+"/") || strings.HasPrefix(bk, strings.TrimRight(ak, "/")+"/")
+	ca, cb := cleanAbsolutePath(a), cleanAbsolutePath(b)
+	return ca != "" && cb != "" && hasPathOverlap(ca, cb)
 }

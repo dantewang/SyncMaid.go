@@ -60,9 +60,7 @@ func ObviousPathOverlap(a, b string) bool {
 	if !filepath.IsAbs(a) || !filepath.IsAbs(b) {
 		return false
 	}
-	a = strings.ToUpper(filepath.Clean(a))
-	b = strings.ToUpper(filepath.Clean(b))
-	return a == b || strings.HasPrefix(a, strings.TrimRight(b, `\`)+`\`) || strings.HasPrefix(b, strings.TrimRight(a, `\`)+`\`)
+	return taskconfig.PathsOverlap(a, b)
 }
 func targetObjectsOverlap(a, b *TransferRoots) bool {
 	if a.target.Key == b.target.Key {

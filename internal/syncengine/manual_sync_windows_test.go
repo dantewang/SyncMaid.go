@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+	"syncmaid/internal/taskconfig"
 )
 
 func TestManualAddOnlyUpdatesAndKeepsExtra(t *testing.T) {
@@ -145,6 +146,36 @@ func TestManualOverlapAndAliases(t *testing.T) {
 	manualJunction(t, alias, q.Source)
 	if _, e := validateManual(context.Background(), ManualRequest{q.Source, alias}); e == nil {
 		t.Fatal("alias accepted")
+	}
+}
+
+func TestOpenMultiplePlanDistinctUnicodeDirectories(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "\u10d0")
+	dst := filepath.Join(root, "\u1c90")
+	if err := os.Mkdir(src, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dst, 0700); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			t.Skipf("filesystem treats U+10D0 and U+1C90 as the same directory: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if ObviousPathOverlap(src, dst) {
+		t.Fatalf("ObviousPathOverlap falsely flagged distinct Unicode dirs %q and %q", src, dst)
+	}
+	plan, err := OpenMultiplePlan(context.Background(), ManualTaskRequest{
+		Source: src,
+		Destinations: []ManualDestination{
+			{ID: "dst-1", Name: "Dst", Path: dst, Strategy: taskconfig.Mirror, DeleteMode: taskconfig.Permanent},
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenMultiplePlan rejected distinct Unicode dirs: %v", err)
+	}
+	if err := plan.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 func TestManualScanFailureAndChangedSourceBlockWrites(t *testing.T) {
