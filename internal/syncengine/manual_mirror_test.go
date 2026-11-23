@@ -242,3 +242,140 @@ func TestMirrorSkipsUnchangedFilesAndMatchingDirectories(t *testing.T) {
 		t.Fatalf("dirty dir timestamp not restored after removal: %v %v", gotDirtyDir, err)
 	}
 }
+
+func TestMirrorDistinctUnicodeCaseFoldingAndRealCaseInsensitivity(t *testing.T) {
+	old := time.Date(2023, 5, 6, 7, 8, 0, 0, time.UTC)
+
+	t.Run("distinct-unicode-declined", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		srcFile := filepath.Join(p.Source, "\u10d0.txt")
+		dstOtherFile := filepath.Join(p.Target, "\u1c90.txt")
+		dstSrcFile := filepath.Join(p.Target, "\u10d0.txt")
+		manualWrite(t, srcFile, "AAAA")
+		manualWrite(t, dstOtherFile, "BBBB")
+
+		for _, targetPath := range []string{srcFile, dstOtherFile} {
+			if err := os.Chtimes(targetPath, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if _, err := os.Stat(dstSrcFile); !errors.Is(err, os.ErrNotExist) {
+			t.Skipf("filesystem treats U+10D0 and U+1C90 as the same name: %v", err)
+		}
+		if data, err := os.ReadFile(dstOtherFile); err != nil || string(data) != "BBBB" {
+			t.Fatalf("precondition failed for target file: data=%q err=%v", data, err)
+		}
+
+		var gotPreview []string
+		progress, err := RunMirrorSession(context.Background(), p, d, nil, nil, nil, func(_ context.Context, v MirrorPreview) error {
+			gotPreview = append([]string(nil), v.Paths...)
+			return ErrMirrorDeclined
+		}, nil, noRecycle)
+		if !errors.Is(err, ErrMirrorDeclined) {
+			t.Fatalf("expected ErrMirrorDeclined, got %v", err)
+		}
+		if progress.Copied != 1 || progress.Unchanged != 0 || progress.Removed != 0 {
+			t.Fatalf("unexpected progress: %+v", progress)
+		}
+		if len(gotPreview) != 1 || gotPreview[0] != "\u1c90.txt" {
+			t.Fatalf("unexpected preview paths: %v", gotPreview)
+		}
+		if data, err := os.ReadFile(dstSrcFile); err != nil || string(data) != "AAAA" {
+			t.Fatalf("source file was not copied: data=%q err=%v", data, err)
+		}
+		if data, err := os.ReadFile(dstOtherFile); err != nil || string(data) != "BBBB" {
+			t.Fatalf("existing target file should remain when deletion declined: data=%q err=%v", data, err)
+		}
+	})
+
+	t.Run("distinct-unicode-accepted", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		srcFile := filepath.Join(p.Source, "\u10d0.txt")
+		dstOtherFile := filepath.Join(p.Target, "\u1c90.txt")
+		dstSrcFile := filepath.Join(p.Target, "\u10d0.txt")
+		manualWrite(t, srcFile, "AAAA")
+		manualWrite(t, dstOtherFile, "BBBB")
+
+		srcDir := filepath.Join(p.Source, "\u10d0")
+		dstOtherDir := filepath.Join(p.Target, "\u1c90")
+		dstSrcDir := filepath.Join(p.Target, "\u10d0")
+		if err := os.MkdirAll(srcDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(dstOtherDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, targetPath := range []string{srcFile, dstOtherFile, srcDir, dstOtherDir} {
+			if err := os.Chtimes(targetPath, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if _, err := os.Stat(dstSrcFile); !errors.Is(err, os.ErrNotExist) {
+			t.Skipf("filesystem treats U+10D0 and U+1C90 as the same name: %v", err)
+		}
+		if data, err := os.ReadFile(dstOtherFile); err != nil || string(data) != "BBBB" {
+			t.Fatalf("precondition failed for target file: data=%q err=%v", data, err)
+		}
+
+		progress, err := RunMirrorSession(context.Background(), p, d, nil, nil, nil, acceptMirror, nil, noRecycle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if progress.Copied != 1 || progress.Unchanged != 0 || progress.Removed != 1 {
+			t.Fatalf("unexpected progress: %+v", progress)
+		}
+		if _, err := os.Stat(dstOtherFile); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected %s to be removed, got err=%v", dstOtherFile, err)
+		}
+		if data, err := os.ReadFile(dstSrcFile); err != nil || string(data) != "AAAA" {
+			t.Fatalf("copied file changed unexpectedly: data=%q err=%v", data, err)
+		}
+		info, err := os.Stat(dstSrcDir)
+		if err != nil || !info.IsDir() || !info.ModTime().Equal(old) {
+			t.Fatalf("expected directory %s with mtime %v, got info=%v err=%v", dstSrcDir, old, info, err)
+		}
+	})
+
+	t.Run("real-case-insensitive-match", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		srcFile := filepath.Join(p.Source, "Report.txt")
+		dstFile := filepath.Join(p.Target, "report.txt")
+		manualWrite(t, srcFile, "same")
+		manualWrite(t, dstFile, "same")
+		for _, targetPath := range []string{srcFile, dstFile} {
+			if err := os.Chtimes(targetPath, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if _, err := os.Stat(filepath.Join(p.Target, "Report.txt")); err != nil {
+			t.Skipf("target directory is case-sensitive: %v", err)
+		}
+
+		progress, err := RunMirrorSession(context.Background(), p, d, nil, nil, nil, func(_ context.Context, v MirrorPreview) error {
+			t.Fatalf("confirm should not be called for case-only difference, got preview=%+v", v)
+			return nil
+		}, nil, noRecycle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if progress.Copied != 0 || progress.Unchanged != 1 || progress.Removed != 0 {
+			t.Fatalf("unexpected progress for case-insensitive match: %+v", progress)
+		}
+	})
+}

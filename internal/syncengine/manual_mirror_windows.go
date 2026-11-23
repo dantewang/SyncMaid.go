@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syncmaid/internal/windowsfs"
 	"time"
-	"unicode"
 
 	"golang.org/x/sys/windows"
 	"syncmaid/internal/fileinventory"
@@ -77,18 +76,9 @@ func mirrorFileStamp(f *os.File, fat, network bool) (s MirrorStamp, err error) {
 	return
 }
 
-func foldRelPath(p string) string {
-	var b strings.Builder
-	b.Grow(len(p))
-	for _, r := range p {
-		b.WriteRune(unicode.ToUpper(r))
-	}
-	return b.String()
-}
-
 func markAncestorDirs(dirty map[string]bool, rel string) {
 	for dir := path.Dir(rel); dir != "." && dir != "/" && dir != ""; dir = path.Dir(dir) {
-		dirty[foldRelPath(dir)] = true
+		dirty[dir] = true
 	}
 }
 
@@ -106,12 +96,12 @@ func dirtyMirrorDirs(hasCopies bool, sourceInv, targetBefore *fileinventory.Inve
 			list := targetBefore.Files()
 			targetFiles = make(map[string]fileinventory.File, len(list))
 			for _, tf := range list {
-				targetFiles[foldRelPath(tf.Path)] = tf
+				targetFiles[tf.Path] = tf
 			}
 		}
 		for _, sf := range sourceInv.Files() {
 			if targetFiles != nil {
-				if existing, ok := targetFiles[foldRelPath(sf.Path)]; ok && !TransferNeeded(sf.Size, sf.Modified, existing.Size, existing.Modified) {
+				if existing, ok := targetFiles[sf.Path]; ok && !TransferNeeded(sf.Size, sf.Modified, existing.Size, existing.Modified) {
 					continue
 				}
 			}
@@ -130,13 +120,13 @@ func restoreMirrorDirectories(ctx context.Context, root *winutil.DirectoryObject
 		targetDirs := targetBefore.Directories()
 		existing = make(map[string]time.Time, len(targetDirs))
 		for _, td := range targetDirs {
-			existing[foldRelPath(td.Path)] = td.Modified
+			existing[td.Path] = td.Modified
 		}
 	}
 	for i := len(dirs) - 1; i >= 0; i-- {
 		d := dirs[i]
-		if existing != nil && !dirty[foldRelPath(d.Path)] {
-			if mtime, ok := existing[foldRelPath(d.Path)]; ok && mtime.Unix() == d.Modified.Unix() {
+		if existing != nil && !dirty[d.Path] {
+			if mtime, ok := existing[d.Path]; ok && mtime.Unix() == d.Modified.Unix() {
 				continue
 			}
 		}
@@ -234,7 +224,7 @@ func collectMirrorCandidates(ctx context.Context, roots *TransferRoots, targetFi
 		list := sourceInv.Files()
 		sourceSet = make(map[string]bool, len(list))
 		for _, sf := range list {
-			sourceSet[foldRelPath(sf.Path)] = true
+			sourceSet[sf.Path] = true
 		}
 	}
 	var paths []string
@@ -243,7 +233,7 @@ func collectMirrorCandidates(ctx context.Context, roots *TransferRoots, targetFi
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-		if sourceSet != nil && sourceSet[foldRelPath(entry.Path)] {
+		if sourceSet != nil && sourceSet[entry.Path] {
 			continue
 		}
 		exists, e := mirrorSourceExists(roots.source, entry.Path)

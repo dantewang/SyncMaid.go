@@ -263,14 +263,14 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 		list := targetInv.Files()
 		targetFiles = make(map[string]fileinventory.File, len(list))
 		for _, tf := range list {
-			targetFiles[foldRelPath(tf.Path)] = tf
+			targetFiles[tf.Path] = tf
 		}
 	}
 	p.Stage = "同步中"
 	update()
 	for _, entry := range files {
 		if targetFiles != nil {
-			if existing, ok := targetFiles[foldRelPath(entry.Path)]; ok && !TransferNeeded(entry.Size, entry.Modified, existing.Size, existing.Modified) {
+			if existing, ok := targetFiles[entry.Path]; ok && !TransferNeeded(entry.Size, entry.Modified, existing.Size, existing.Modified) {
 				p.Unchanged++
 				update()
 				continue
