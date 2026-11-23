@@ -162,6 +162,13 @@ func restoreMirrorDirectory(ctx context.Context, rootDir *winutil.DirectoryObjec
 			return err
 		}
 		parents = append(parents, dir)
+		matched, matchErr := openedFileMatchesName(dir, name)
+		if matchErr != nil {
+			return matchErr
+		}
+		if !matched {
+			return errShortNameConflict
+		}
 		root = windows.Handle(dir.Fd())
 	}
 	mtime := windows.NsecToFiletime(d.Modified.UnixNano())
@@ -206,9 +213,13 @@ func RecycleWithShell(trash func(string) error) func(string) error {
 }
 
 func mirrorSourceExists(sourceRoot *winutil.DirectoryObject, rel string) (bool, error) {
+	parts, err := splitRelativePath(rel)
+	if err != nil {
+		return false, err
+	}
 	f, close, e := openMirrorFile(sourceRoot, rel, windows.GENERIC_READ)
 	if e == nil {
-		matched, matchErr := openedFileMatchesName(f, path.Base(rel))
+		matched, matchErr := openedPathMatchesParts(f, parts)
 		closeErr := close()
 		if matchErr != nil {
 			return false, errors.Join(matchErr, closeErr)

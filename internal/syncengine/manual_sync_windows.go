@@ -333,6 +333,15 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 				return 0, e
 			}
 			parents = append(parents, f)
+			if create {
+				matched, matchErr := openedFileMatchesName(f, part)
+				if matchErr != nil {
+					return 0, matchErr
+				}
+				if !matched {
+					return 0, errShortNameConflict
+				}
+			}
 			parent = windows.Handle(f.Fd())
 		}
 		return parent, nil
@@ -391,7 +400,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 				return false, errors.Join(matchErr, CloseProtected(ctx, existing))
 			}
 			if !matched {
-				return false, errors.Join(errors.New("目标存在 8.3 短文件名冲突，无法安全同步"), CloseProtected(ctx, existing))
+				return false, errors.Join(errShortNameConflict, CloseProtected(ctx, existing))
 			}
 			if expected != nil {
 				return false, existing.Close()

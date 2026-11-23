@@ -41,7 +41,9 @@ func sameFileNameOrdinal(a, b string) (bool, error) {
 	return r1 == 2, nil
 }
 
-func openedFileMatchesName(f *os.File, requested string) (bool, error) {
+var errShortNameConflict = errors.New("目标存在 8.3 短文件名冲突，无法安全同步")
+
+func openedPathMatchesParts(f *os.File, parts []string) (bool, error) {
 	var final string
 	h := windows.Handle(f.Fd())
 	for size := uint32(512); size <= 65536; {
@@ -59,11 +61,25 @@ func openedFileMatchesName(f *os.File, requested string) (bool, error) {
 	if final == "" {
 		return false, errors.New("无法确认文件规范路径")
 	}
-	base := final
-	if idx := strings.LastIndexByte(final, '\\'); idx >= 0 {
-		base = final[idx+1:]
+	comps := strings.Split(strings.TrimRight(final, `\`), `\`)
+	if len(comps) < len(parts) {
+		return false, nil
 	}
-	return sameFileNameOrdinal(base, requested)
+	offset := len(comps) - len(parts)
+	for i, req := range parts {
+		ok, err := sameFileNameOrdinal(comps[offset+i], req)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func openedFileMatchesName(f *os.File, requested string) (bool, error) {
+	return openedPathMatchesParts(f, []string{requested})
 }
 
 // Retry only the initial open of an existing object. Never replay a write,

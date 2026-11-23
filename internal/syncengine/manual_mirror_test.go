@@ -498,4 +498,79 @@ func TestMirror83ShortNameAliasSafety(t *testing.T) {
 			t.Fatalf("expected target short-named file %s to be removed, got err=%v", dstShort, statErr)
 		}
 	})
+
+	t.Run("source-short-dir-vs-target-long-dir", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		const longDirName = "LongDirName1234567890"
+		dstDir := filepath.Join(p.Target, longDirName)
+		dstSame := filepath.Join(dstDir, "same.txt")
+		manualWrite(t, dstSame, "BBBB")
+		shortDir := shortNameForFile(t, dstDir)
+		if strings.EqualFold(shortDir, longDirName) {
+			t.Skip("8.3 short names disabled on temp volume")
+		}
+
+		srcSame := filepath.Join(p.Source, shortDir, "same.txt")
+		srcNested := filepath.Join(p.Source, shortDir, "nested", "new.txt")
+		manualWrite(t, srcSame, "AAAA")
+		manualWrite(t, srcNested, "CCCC")
+		for _, targetPath := range []string{dstSame, srcSame, srcNested} {
+			if err := os.Chtimes(targetPath, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		_, err := RunMirrorSession(context.Background(), p, d, nil, nil, nil, acceptMirror, nil, noRecycle)
+		if err == nil {
+			t.Fatalf("expected 8.3 short-name directory conflict error, got nil")
+		}
+		if data, readErr := os.ReadFile(dstSame); readErr != nil || string(data) != "BBBB" {
+			t.Fatalf("target long dir file was altered or deleted: data=%q err=%v", data, readErr)
+		}
+		if _, statErr := os.Stat(filepath.Join(dstDir, "nested")); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("unexpected nested directory created inside aliased target dir: err=%v", statErr)
+		}
+	})
+
+	t.Run("source-long-dir-vs-target-short-dir", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		const longDirName = "LongDirName1234567890"
+		srcDir := filepath.Join(p.Source, longDirName)
+		srcSame := filepath.Join(srcDir, "same.txt")
+		manualWrite(t, srcSame, "AAAA")
+		shortDir := shortNameForFile(t, srcDir)
+		if strings.EqualFold(shortDir, longDirName) {
+			t.Skip("8.3 short names disabled on temp volume")
+		}
+
+		dstSame := filepath.Join(p.Target, shortDir, "same.txt")
+		manualWrite(t, dstSame, "BBBB")
+		for _, targetPath := range []string{srcSame, dstSame} {
+			if err := os.Chtimes(targetPath, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		progress, err := RunMirrorSession(context.Background(), p, d, nil, nil, nil, acceptMirror, nil, noRecycle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if progress.Copied != 1 || progress.Removed != 1 {
+			t.Fatalf("unexpected progress: %+v", progress)
+		}
+		if data, readErr := os.ReadFile(filepath.Join(p.Target, longDirName, "same.txt")); readErr != nil || string(data) != "AAAA" {
+			t.Fatalf("expected copied file in long dir, got data=%q err=%v", data, readErr)
+		}
+		if _, statErr := os.Stat(dstSame); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("expected %s to be removed, got err=%v", dstSame, statErr)
+		}
+	})
 }
