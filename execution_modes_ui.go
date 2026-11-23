@@ -104,6 +104,9 @@ func (a *application) setDestinationMode(strategy taskconfig.Strategy, mode task
 		d.Strategy = strategy
 		d.DeleteMode = mode
 		a.manual.edited()
+		if strategy == taskconfig.Mirror && syncengine.DestinationDeleteMode(*d) == taskconfig.Recycle {
+			a.triggerRecycleProbe(d.ID, d.Path)
+		}
 		return
 	}
 }
@@ -119,6 +122,12 @@ func (a *application) destinationModeView(c *ui.Context, locked bool) {
 					ui.Button(c, a.tr("回收站")).Selected(syncengine.DestinationDeleteMode(d) == taskconfig.Recycle).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Recycle) })
 					ui.Button(c, a.tr("永久删除")).Selected(syncengine.DestinationDeleteMode(d) == taskconfig.Permanent).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Permanent) })
 				})
+				if syncengine.DestinationDeleteMode(d) == taskconfig.Recycle && a.destinationRecycleUnsupported(d) {
+					ui.Row(c).Gap(8).Children(func() {
+						ui.Text(c, a.tr("此目标不支持回收站，Mirror 清理多余文件将失败。")).FontSize(12).TextColor(porcelain.Danger).Grow(1)
+						porcelainButton(c, a.tr("切换为永久删除")).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Permanent) })
+					})
+				}
 				return
 			}
 		}

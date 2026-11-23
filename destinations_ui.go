@@ -3,10 +3,88 @@ package main
 import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"golang.org/x/sys/windows"
+	"path/filepath"
 	"strings"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
+	"syncmaid/internal/windowsfs"
+	"syncmaid/internal/winutil"
 )
+
+type recycleProbeState struct {
+	path        string
+	unsupported bool
+	known       bool
+	token       uint64
+}
+
+var probeRecycleSupport = defaultProbeRecycleSupport
+
+func defaultProbeRecycleSupport(dirPath string) (unsupported, known bool) {
+	dirPath = strings.TrimSpace(dirPath)
+	if dirPath == "" || !filepath.IsAbs(dirPath) {
+		return false, false
+	}
+	d, err := winutil.OpenDirectoryAccess(dirPath, windows.FILE_READ_ATTRIBUTES)
+	if err != nil {
+		if windowsfs.Network(dirPath) {
+			return true, true
+		}
+		return false, false
+	}
+	unsupported = d.Network || d.Removable || d.Fat
+	_ = d.Close()
+	return unsupported, true
+}
+
+func (a *application) triggerRecycleProbe(destID taskconfig.ID, targetPath string) {
+	targetPath = strings.TrimSpace(targetPath)
+	if destID == "" {
+		return
+	}
+	if targetPath == "" {
+		delete(a.manual.recycleProbes, destID)
+		return
+	}
+	if prev, ok := a.manual.recycleProbes[destID]; ok && prev.known && prev.path == targetPath {
+		return
+	}
+	if a.manual.recycleProbes == nil {
+		a.manual.recycleProbes = map[taskconfig.ID]recycleProbeState{}
+	}
+	a.manual.recycleProbeSeq++
+	token := a.manual.recycleProbeSeq
+	a.manual.recycleProbes[destID] = recycleProbeState{path: targetPath, token: token}
+	if a.window == nil {
+		unsupported, known := probeRecycleSupport(targetPath)
+		a.manual.recycleProbes[destID] = recycleProbeState{path: targetPath, unsupported: unsupported, known: known, token: token}
+		return
+	}
+	win := a.window
+	go func() {
+		unsupported, known := probeRecycleSupport(targetPath)
+		win.Update(func() {
+			cur, ok := a.manual.recycleProbes[destID]
+			if !ok || cur.token != token || cur.path != targetPath {
+				return
+			}
+			a.manual.recycleProbes[destID] = recycleProbeState{path: targetPath, unsupported: unsupported, known: known, token: token}
+		})
+	}()
+}
+
+func (a *application) destinationRecycleUnsupported(d syncengine.ManualDestination) bool {
+	p := strings.TrimSpace(d.Path)
+	if p == "" {
+		return false
+	}
+	if windowsfs.Network(p) {
+		return true
+	}
+	st, ok := a.manual.recycleProbes[d.ID]
+	return ok && st.known && st.path == p && st.unsupported
+}
 
 func (s *manualSession) flushTarget() {
 	for i := range s.targets {
@@ -203,6 +281,7 @@ func (a *application) toggleDestinationEditor(id taskconfig.ID) {
 		}
 	}
 	a.cards.targetHidden = ""
+	a.triggerRecycleProbe(id, a.manual.target)
 }
 func (a *application) copyManualTarget(id taskconfig.ID) {
 	if !a.targetEditAllowed() {

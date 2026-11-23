@@ -43,6 +43,8 @@ func classifySyncError(raw string) (summaryKey, hintKey string) {
 		"拒绝访问",
 	):
 		return "权限不足", "没有足够的读取或写入权限，或文件/目录正被其他程序占用。请检查目录权限与共享权限。"
+	case hasAny("不支持回收确认", "回收站暂不支持", "回收站接口不可用"):
+		return "不支持回收站", "此目标所在卷或网络共享不支持回收站，请在目标编辑中切换为永久删除后再重新运行。"
 	case hasAny(
 		"directory identity cannot be verified",
 		"unsupported installation or data location",
@@ -50,9 +52,6 @@ func classifySyncError(raw string) (summaryKey, hintKey string) {
 		"暂不支持区分大小写的目录",
 		"不支持链接或重解析点",
 		"暂不支持硬链接文件",
-		"回收站暂不支持",
-		"回收站接口不可用",
-		"不支持回收确认",
 		"reparse point",
 		"case-sensitive",
 	):

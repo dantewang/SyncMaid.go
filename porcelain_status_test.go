@@ -75,6 +75,10 @@ func TestRelativeStatusAndLogRetainRealCountsAndErrors(t *testing.T) {
 	if got := a.destinationStatus(r, true, now); got != "失败 · 目录或文件系统不受支持" {
 		t.Fatalf("expected generalized error summary, got %q", got)
 	}
+	r.Error = "此目标不支持回收确认；多余文件未移除。若需要，请明确选择永久删除后重新运行。"
+	if got := a.destinationStatus(r, true, now); got != "失败 · 不支持回收站" {
+		t.Fatalf("expected recycle-unsupported error summary, got %q", got)
+	}
 	r.Error = "unknown raw failure detail"
 	if got := a.destinationStatus(r, true, now); got != "失败 · 查看日志" {
 		t.Fatalf("expected generic error summary, got %q", got)
@@ -321,5 +325,58 @@ func TestDestinationLogsBoundedAndLatestFallback(t *testing.T) {
 	a.logDestination = taskconfig.NewID()
 	if len(a.destinationLogRecords()) != 0 {
 		t.Fatal("mixed destination logs")
+	}
+}
+
+func TestDestinationRecycleProbeAndSwitchToPermanent(t *testing.T) {
+	orig := probeRecycleSupport
+	t.Cleanup(func() { probeRecycleSupport = orig })
+	probeCalls := 0
+	probeRecycleSupport = func(dirPath string) (bool, bool) {
+		probeCalls++
+		return dirPath == `Z:\share`, true
+	}
+
+	destID := taskconfig.NewID()
+	a := &application{
+		locale: "zh-Hans",
+		tasks:  &appcore.SavedTaskLibrary{},
+		manual: manualSession{
+			kind:       taskconfig.Sync,
+			targetID:   destID,
+			targetName: "NAS",
+			target:     `Z:\share`,
+			targets: []syncengine.ManualDestination{{
+				ID:         destID,
+				Name:       "NAS",
+				Path:       `Z:\share`,
+				Strategy:   taskconfig.Mirror,
+				DeleteMode: taskconfig.Recycle,
+				Filters:    syncengine.AllFileRules(),
+			}},
+		},
+	}
+
+	a.triggerRecycleProbe(destID, `Z:\share`)
+	if probeCalls != 1 {
+		t.Fatalf("probeCalls = %d, want 1", probeCalls)
+	}
+	if !a.destinationRecycleUnsupported(a.manual.targets[0]) {
+		t.Fatal("expected Z:\\share to be flagged as recycle-unsupported")
+	}
+	if !a.destinationRecycleUnsupported(syncengine.ManualDestination{ID: taskconfig.NewID(), Path: `\\nas\share`}) {
+		t.Fatal("expected UNC path to be flagged as recycle-unsupported")
+	}
+
+	tt := ui.NewTester(func(c *ui.Context) { a.destinationModeView(c, false) }, 640, 320)
+	if !tt.HasText(a.tr("此目标不支持回收站，Mirror 清理多余文件将失败。")) {
+		t.Fatalf("missing recycle warning in mode view: %v", tt.Texts())
+	}
+	tt.Click(a.tr("切换为永久删除"))
+	if a.manual.targets[0].DeleteMode != taskconfig.Permanent {
+		t.Fatalf("expected DeleteMode to switch to Permanent, got %q", a.manual.targets[0].DeleteMode)
+	}
+	if !a.manual.dirty {
+		t.Fatal("expected manual session to be marked dirty after switching delete mode")
 	}
 }

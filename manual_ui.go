@@ -55,6 +55,8 @@ type manualSession struct {
 	filterEditor            appcore.FilterEditor
 	filterDrafts            map[taskconfig.ID]appcore.FilterEditor
 	destinationEdits        map[taskconfig.ID]destinationEditState
+	recycleProbes           map[taskconfig.ID]recycleProbeState
+	recycleProbeSeq         uint64
 	mirrorPreview           *syncengine.MirrorPreview
 	mirrorReply             chan error
 	mirrorShowAll           bool
@@ -216,6 +218,9 @@ func (a *application) chooseFolder(source bool) {
 				s.target = paths[0]
 			}
 			s.edited()
+			if !source {
+				a.triggerRecycleProbe(s.targetID, s.target)
+			}
 		}
 	})
 }
