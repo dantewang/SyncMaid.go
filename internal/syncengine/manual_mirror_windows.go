@@ -111,6 +111,85 @@ func dirtyMirrorDirs(hasCopies bool, sourceInv, targetBefore *fileinventory.Inve
 	return dirty
 }
 
+func openMirrorDirectory(root *winutil.DirectoryObject, parts []string) (dir *os.File, closeAll func() error, err error) {
+	var parents []*os.File
+	closeParents := func() (e error) {
+		for i := len(parents) - 1; i >= 0; i-- {
+			e = errors.Join(e, parents[i].Close())
+		}
+		return
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, closeParents())
+		}
+	}()
+	h := root.Handle
+	checkCase := needsCaseCheck(root)
+	for _, part := range parts {
+		var d *os.File
+		d, err = openTransferChildChecked(h, part, true, checkCase, windows.FILE_OPEN, windows.FILE_GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
+		if err != nil {
+			return nil, nil, err
+		}
+		parents = append(parents, d)
+		dir = d
+		h = windows.Handle(d.Fd())
+	}
+	return dir, closeParents, nil
+}
+
+func checkMirrorDirectoryConflicts(ctx context.Context, root *winutil.DirectoryObject, dirs []fileinventory.Directory, targetBefore *fileinventory.Inventory) error {
+	existing := map[string]bool{}
+	if targetBefore != nil {
+		targetDirs := targetBefore.Directories()
+		existing = make(map[string]bool, len(targetDirs))
+		for _, td := range targetDirs {
+			existing[td.Path] = true
+		}
+	}
+	missing := map[string]bool{}
+	for _, d := range dirs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if existing[d.Path] {
+			continue
+		}
+		if parent := path.Dir(d.Path); parent != "." && missing[parent] {
+			missing[d.Path] = true
+			continue
+		}
+		parts, err := splitRelativePath(d.Path)
+		if err != nil {
+			return errors.New("非法相对目录路径")
+		}
+		dir, closeAll, err := openMirrorDirectory(root, parts)
+		if err != nil {
+			if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
+				missing[d.Path] = true
+				continue
+			}
+			if errors.Is(err, windows.ERROR_DIRECTORY) {
+				continue
+			}
+			return fmt.Errorf("检查目标目录 %s: %w", d.Path, err)
+		}
+		matched, matchErr := openedPathMatchesParts(dir, parts)
+		closeErr := closeAll()
+		if matchErr != nil {
+			return fmt.Errorf("检查目标目录 %s: %w", d.Path, errors.Join(matchErr, closeErr))
+		}
+		if closeErr != nil {
+			return fmt.Errorf("检查目标目录 %s: %w", d.Path, closeErr)
+		}
+		if !matched {
+			return fmt.Errorf("目标目录 %s: %w", d.Path, errShortNameConflict)
+		}
+	}
+	return nil
+}
+
 // restoreMirrorDirectories creates missing source directories and preserves their
 // timestamps after file publication and any confirmed removal. Extra folders
 // are left alone; this never turns a file-only approval into folder deletion.

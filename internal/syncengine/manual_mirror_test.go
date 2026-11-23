@@ -573,4 +573,46 @@ func TestMirror83ShortNameAliasSafety(t *testing.T) {
 			t.Fatalf("expected %s to be removed, got err=%v", dstSame, statErr)
 		}
 	})
+
+	t.Run("empty-source-short-dir-blocks-before-delete", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		const longDirName = "Quarterly financial reports"
+		dstDir := filepath.Join(p.Target, longDirName)
+		dstFile := filepath.Join(dstDir, "a.txt")
+		manualWrite(t, dstFile, "BBBB")
+		shortDir := shortNameForFile(t, dstDir)
+		if strings.EqualFold(shortDir, longDirName) {
+			t.Skip("8.3 short names disabled on temp volume")
+		}
+
+		srcKeep := filepath.Join(p.Source, "keep.txt")
+		srcEmptyShortDir := filepath.Join(p.Source, shortDir)
+		manualWrite(t, srcKeep, "AAAA")
+		if err := os.MkdirAll(srcEmptyShortDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, targetPath := range []string{dstFile, srcKeep, srcEmptyShortDir} {
+			if err := os.Chtimes(targetPath, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		progress, err := RunMirrorSession(context.Background(), p, d, nil, nil, nil, func(_ context.Context, v MirrorPreview) error {
+			t.Fatalf("confirm should not be called when directory short-name conflict exists, got preview=%+v", v)
+			return nil
+		}, nil, noRecycle)
+		if !errors.Is(err, errShortNameConflict) {
+			t.Fatalf("expected errShortNameConflict, got %v", err)
+		}
+		if progress.Copied != 0 || progress.Removed != 0 {
+			t.Fatalf("expected no copies or removals before conflict check, got %+v", progress)
+		}
+		if data, readErr := os.ReadFile(dstFile); readErr != nil || string(data) != "BBBB" {
+			t.Fatalf("target file altered or deleted: data=%q err=%v", data, readErr)
+		}
+	})
 }

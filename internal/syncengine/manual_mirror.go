@@ -88,6 +88,9 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 	if e != nil {
 		return p, e
 	}
+	if e = checkMirrorDirectoryConflicts(ctx, roots.target, sourceInv.Directories(), targetBefore); e != nil {
+		return p, e
+	}
 	if copyFiles != nil {
 		p, e = copyFiles(ctx, q, AllFileRules(), notify)
 	} else {
