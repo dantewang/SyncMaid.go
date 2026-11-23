@@ -79,14 +79,13 @@ func (s *scanner) walk(d directory, rel string, depth int) (err error) {
 	}
 
 	var subdirs []string
-	folded := map[string]string{}
 	for {
 		if err := s.ctx.Err(); err != nil {
 			return s.fail(Canceled, rel, err)
 		}
 		batch, readErr := d.ReadDir(readBatch)
 		for _, entry := range batch {
-			if err := s.entry(entry, rel, folded, &subdirs); err != nil {
+			if err := s.entry(entry, rel, &subdirs); err != nil {
 				return err
 			}
 		}
@@ -123,7 +122,7 @@ func (s *scanner) walk(d directory, rel string, depth int) (err error) {
 	return nil
 }
 
-func (s *scanner) entry(entry fs.DirEntry, rel string, folded map[string]string, subdirs *[]string) error {
+func (s *scanner) entry(entry fs.DirEntry, rel string, subdirs *[]string) error {
 	name := entry.Name()
 	path := join(rel, name)
 	s.entries++
@@ -134,14 +133,6 @@ func (s *scanner) entry(entry fs.DirEntry, rel string, folded map[string]string,
 		s.addUnsupported(path, reason)
 		return nil
 	}
-	// Defensive only: a case-insensitive directory cannot hold these, and this
-	// simple fold is not the file system's identity rule.
-	key := foldKey(name)
-	if other, ok := folded[key]; ok {
-		s.addUnsupported(path, fmt.Sprintf("name differs from %q only by case", other))
-		return nil
-	}
-	folded[key] = name
 
 	info, err := entry.Info()
 	if err != nil {
@@ -169,11 +160,6 @@ func (s *scanner) entry(entry fs.DirEntry, rel string, folded map[string]string,
 	}
 	return nil
 }
-
-// foldKey approximates the NTFS upcase table with simple per-rune uppercase,
-// so names NTFS keeps distinct (k and U+212A KELVIN SIGN, ß and SS) stay
-// distinct here.
-func foldKey(name string) string { return strings.Map(unicode.ToUpper, name) }
 
 // unsupportedName rejects names that cannot be carried safely as a
 // root-relative '/' path or that Win32 path APIs would resolve to a different

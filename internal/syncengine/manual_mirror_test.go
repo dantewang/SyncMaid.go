@@ -291,6 +291,21 @@ func TestMirrorDistinctUnicodeCaseFoldingAndRealCaseInsensitivity(t *testing.T) 
 		if data, err := os.ReadFile(dstOtherFile); err != nil || string(data) != "BBBB" {
 			t.Fatalf("existing target file should remain when deletion declined: data=%q err=%v", data, err)
 		}
+
+		// Re-running Mirror while both files coexist in target must also succeed.
+		progress, err = RunMirrorSession(context.Background(), p, d, nil, nil, nil, acceptMirror, nil, noRecycle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if progress.Copied != 0 || progress.Unchanged != 1 || progress.Removed != 1 {
+			t.Fatalf("unexpected progress on second pass: %+v", progress)
+		}
+		if _, err := os.Stat(dstOtherFile); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected %s to be removed, got err=%v", dstOtherFile, err)
+		}
+		if data, err := os.ReadFile(dstSrcFile); err != nil || string(data) != "AAAA" {
+			t.Fatalf("copied file changed unexpectedly: data=%q err=%v", data, err)
+		}
 	})
 
 	t.Run("distinct-unicode-accepted", func(t *testing.T) {

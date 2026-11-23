@@ -152,8 +152,6 @@ func TestInjectedFailuresYieldNoListing(t *testing.T) {
 			tree: fakeTree{children: map[string][]fakeEntry{"": {file("ok"), {name: "pipe", mode: fs.ModeNamedPipe}}}}},
 		{name: "symlink entry", kind: Unsupported, path: "link",
 			tree: fakeTree{children: map[string][]fakeEntry{"": {{name: "link", mode: fs.ModeSymlink}}}}},
-		{name: "case duplicate", kind: Unsupported, path: "A.txt",
-			tree: fakeTree{children: map[string][]fakeEntry{"": {file("a.txt"), file("A.txt")}}}},
 		{name: "separator in name", kind: Unsupported, path: `x\..\y`,
 			tree: fakeTree{children: map[string][]fakeEntry{"": {file(`x\..\y`)}}}},
 		{name: "dotdot name", kind: Unsupported, path: "..",
@@ -220,9 +218,9 @@ func TestUnsupportedDiagnosticsAreBounded(t *testing.T) {
 }
 
 func TestDistinctUnicodeNamesAreNotCaseDuplicates(t *testing.T) {
-	tree := fakeTree{children: map[string][]fakeEntry{"": {file("k"), file("\u212A"), file("ß"), file("SS"), file("é"), file("e\u0301")}}}
+	tree := fakeTree{children: map[string][]fakeEntry{"": {file("k"), file("\u212A"), file("ß"), file("SS"), file("é"), file("e\u0301"), file("\u10d0.txt"), file("\u1c90.txt")}}}
 	inv, err := tree.scan(context.Background(), Options{})
-	if err != nil || len(inv.Files()) != 6 {
+	if err != nil || len(inv.Files()) != 8 {
 		t.Fatalf("distinct names rejected: %v", err)
 	}
 }
