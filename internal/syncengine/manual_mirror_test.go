@@ -668,3 +668,95 @@ func TestMirrorNameVerifyPathNotFoundNeverDeletes(t *testing.T) {
 		t.Fatalf("target file was altered or deleted: data=%q err=%v", data, readErr)
 	}
 }
+
+func TestMirrorReplacedShortTargetWithLongAliasNeverDeletes(t *testing.T) {
+	old := time.Date(2023, 5, 6, 7, 8, 0, 0, time.UTC)
+	const longName = "Quarterly financial report.txt"
+
+	probeDir := t.TempDir()
+	probeLong := filepath.Join(probeDir, longName)
+	manualWrite(t, probeLong, "old1")
+	shortName := shortNameForFile(t, probeLong)
+	if strings.EqualFold(shortName, longName) {
+		t.Skip("8.3 short names disabled on temp volume")
+	}
+
+	replaceTarget := func(t *testing.T, targetDir string) string {
+		t.Helper()
+		shortPath := filepath.Join(targetDir, shortName)
+		longPath := filepath.Join(targetDir, longName)
+		if err := os.Remove(shortPath); err != nil {
+			t.Fatal(err)
+		}
+		manualWrite(t, longPath, "new2")
+		if err := os.Chtimes(longPath, old, old); err != nil {
+			t.Fatal(err)
+		}
+		if gotShort := shortNameForFile(t, longPath); !strings.EqualFold(gotShort, shortName) {
+			t.Skipf("OS assigned different short name %q instead of %q", gotShort, shortName)
+		}
+		return longPath
+	}
+
+	t.Run("before-preview", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		manualWrite(t, filepath.Join(p.Source, "keep.txt"), "source")
+		shortPath := filepath.Join(p.Target, shortName)
+		manualWrite(t, shortPath, "old1")
+		if err := os.Chtimes(shortPath, old, old); err != nil {
+			t.Fatal(err)
+		}
+
+		var longPath string
+		_, err := RunMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v MirrorPreview) error {
+			t.Fatalf("confirm should not be called after short-to-long replacement, got preview=%+v", v)
+			return nil
+		}, func(ctx context.Context, req ManualRequest, rules []taskconfig.Rule, notify func(TransferProgress)) (TransferProgress, error) {
+			prog, copyErr := RunManualFiltered(ctx, req, rules, notify)
+			if copyErr != nil {
+				return prog, copyErr
+			}
+			longPath = replaceTarget(t, p.Target)
+			return prog, nil
+		}, noRecycle)
+		if !errors.Is(err, ErrMirrorChanged) {
+			t.Fatalf("expected ErrMirrorChanged, got %v", err)
+		}
+		if data, readErr := os.ReadFile(longPath); readErr != nil || string(data) != "new2" {
+			t.Fatalf("replaced long file was altered or deleted: data=%q err=%v", data, readErr)
+		}
+	})
+
+	t.Run("during-confirm", func(t *testing.T) {
+		q, p := multiFixture(t)
+		d := q.Destinations[0]
+		d.Strategy = taskconfig.Mirror
+		d.DeleteMode = taskconfig.Permanent
+
+		manualWrite(t, filepath.Join(p.Source, "keep.txt"), "source")
+		shortPath := filepath.Join(p.Target, shortName)
+		manualWrite(t, shortPath, "old1")
+		if err := os.Chtimes(shortPath, old, old); err != nil {
+			t.Fatal(err)
+		}
+
+		var longPath string
+		_, err := RunMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v MirrorPreview) error {
+			if len(v.Paths) != 1 || v.Paths[0] != shortName {
+				t.Fatalf("unexpected preview: %+v", v)
+			}
+			longPath = replaceTarget(t, p.Target)
+			return nil
+		}, RunManualFiltered, noRecycle)
+		if !errors.Is(err, ErrMirrorChanged) {
+			t.Fatalf("expected ErrMirrorChanged, got %v", err)
+		}
+		if data, readErr := os.ReadFile(longPath); readErr != nil || string(data) != "new2" {
+			t.Fatalf("replaced long file was altered or deleted: data=%q err=%v", data, readErr)
+		}
+	})
+}

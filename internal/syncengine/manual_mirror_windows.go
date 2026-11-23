@@ -290,9 +290,9 @@ func collectMirrorCandidates(ctx context.Context, roots *TransferRoots, targetFi
 		if exists {
 			continue
 		}
-		f, close, e := openMirrorPath(roots.target, entry.Path, false, false, windows.GENERIC_READ)
+		f, close, e := openMirrorPath(roots.target, entry.Path, false, true, windows.GENERIC_READ)
 		if e != nil {
-			if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) {
+			if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) || errors.Is(e, errShortNameConflict) {
 				return nil, nil, ErrMirrorChanged
 			}
 			return nil, nil, e
@@ -318,8 +318,11 @@ func removeMirrorCandidate(ctx context.Context, roots *TransferRoots, rel string
 	if exists {
 		return ErrMirrorChanged
 	}
-	f, close, e := openMirrorPath(roots.target, rel, false, false, windows.GENERIC_READ|windows.DELETE)
+	f, close, e := openMirrorPath(roots.target, rel, false, true, windows.GENERIC_READ|windows.DELETE)
 	if e != nil {
+		if errors.Is(e, errShortNameConflict) {
+			return ErrMirrorChanged
+		}
 		return e
 	}
 	stamp, e := mirrorFileStamp(f, roots.target.Fat, roots.target.Network)
