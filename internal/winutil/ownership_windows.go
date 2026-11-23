@@ -60,21 +60,9 @@ func OpenDirectoryAccess(path string, access uint32) (*DirectoryObject, error) {
 	if basic.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 {
 		return nil, fmt.Errorf("not a directory: %s", path)
 	}
-	var final string
-	for size := uint32(512); size <= 65536; {
-		buffer := make([]uint16, size)
-		n, err := windows.GetFinalPathNameByHandle(h, &buffer[0], size, 0)
-		if err != nil {
-			return nil, err
-		}
-		if n < size {
-			final = windows.UTF16ToString(buffer[:n])
-			break
-		}
-		size = n + 1
-	}
-	if final == "" {
-		return nil, errors.New("directory final path too long")
+	final, err := windowsfs.FinalPath(h)
+	if err != nil {
+		return nil, err
 	}
 	network := windowsfs.Network(final) || windowsfs.Network(path)
 	removable := false

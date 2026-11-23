@@ -43,43 +43,23 @@ func sameFileNameOrdinal(a, b string) (bool, error) {
 
 var errShortNameConflict = errors.New("目标存在 8.3 短文件名冲突，无法安全同步")
 
-func openedPathMatchesParts(f *os.File, parts []string) (bool, error) {
-	var final string
-	h := windows.Handle(f.Fd())
-	for size := uint32(512); size <= 65536; {
-		buf := make([]uint16, size)
-		n, err := windows.GetFinalPathNameByHandle(h, &buf[0], size, 0)
-		if err != nil {
-			return false, err
-		}
-		if n < size {
-			final = windows.UTF16ToString(buf[:n])
-			break
-		}
-		size = n + 1
+func checkOpenedName(h windows.Handle, requested string) error {
+	final, err := windowsfs.FinalPath(h)
+	if err != nil {
+		return err
 	}
-	if final == "" {
-		return false, errors.New("无法确认文件规范路径")
+	base := strings.TrimRight(final, `\`)
+	if idx := strings.LastIndexByte(base, '\\'); idx >= 0 {
+		base = base[idx+1:]
 	}
-	comps := strings.Split(strings.TrimRight(final, `\`), `\`)
-	if len(comps) < len(parts) {
-		return false, nil
+	ok, err := sameFileNameOrdinal(base, requested)
+	if err != nil {
+		return err
 	}
-	offset := len(comps) - len(parts)
-	for i, req := range parts {
-		ok, err := sameFileNameOrdinal(comps[offset+i], req)
-		if err != nil {
-			return false, err
-		}
-		if !ok {
-			return false, nil
-		}
+	if !ok {
+		return errShortNameConflict
 	}
-	return true, nil
-}
-
-func openedFileMatchesName(f *os.File, requested string) (bool, error) {
-	return openedPathMatchesParts(f, []string{requested})
+	return nil
 }
 
 // Retry only the initial open of an existing object. Never replay a write,
@@ -181,6 +161,9 @@ func openTransferChildChecked(parent windows.Handle, name string, dir, checkCase
 	}
 	if e == nil && dir && checkCase {
 		e = checkOrdinaryDirectory(windowsfs.CaseSensitive(h))
+	}
+	if e == nil && disposition != windows.FILE_CREATE {
+		e = checkOpenedName(h, name)
 	}
 	if e != nil {
 		windows.CloseHandle(h)

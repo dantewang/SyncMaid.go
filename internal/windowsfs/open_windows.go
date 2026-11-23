@@ -45,3 +45,22 @@ func OpenChildNoReparse(parent windows.Handle, name string, access, share, dispo
 	}
 	return h, info, nil
 }
+
+// FinalPath returns the normalized volume-qualified path for an open handle.
+func FinalPath(h windows.Handle) (string, error) {
+	for size := uint32(512); size <= 65536; {
+		buf := make([]uint16, size)
+		n, err := windows.GetFinalPathNameByHandle(h, &buf[0], size, 0)
+		if err != nil {
+			return "", err
+		}
+		if n < size {
+			if n == 0 {
+				return "", errors.New("empty final path")
+			}
+			return windows.UTF16ToString(buf[:n]), nil
+		}
+		size = n + 1
+	}
+	return "", errors.New("final path too long")
+}

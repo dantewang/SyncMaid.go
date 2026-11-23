@@ -24,14 +24,14 @@ type MirrorStamp struct {
 }
 
 // Parents remain pinned until the returned closer runs. Neither an intermediate
-// reparse point nor a replaced final reparse file is followed.
-func openMirrorFile(root *winutil.DirectoryObject, rel string, access uint32) (f *os.File, closeAll func() error, err error) {
+// reparse point nor a replaced final reparse object is followed.
+func openMirrorPath(root *winutil.DirectoryObject, rel string, isDir bool, access uint32) (f *os.File, closeAll func() error, err error) {
 	parts, err := splitRelativePath(rel)
 	if err != nil {
 		return nil, nil, err
 	}
 	var parents []*os.File
-	closeAll = func() (e error) {
+	closeParents := func() (e error) {
 		if f != nil && f.Fd() != ^uintptr(0) {
 			e = errors.Join(e, f.Close())
 		}
@@ -42,25 +42,32 @@ func openMirrorFile(root *winutil.DirectoryObject, rel string, access uint32) (f
 	}
 	defer func() {
 		if err != nil {
-			err = errors.Join(err, closeAll())
+			err = errors.Join(err, closeParents())
 		}
 	}()
 	h := root.Handle
 	checkCase := needsCaseCheck(root)
+	share := uint32(windows.FILE_SHARE_READ)
+	if isDir {
+		share |= windows.FILE_SHARE_WRITE
+	}
 	for i, part := range parts {
 		if i == len(parts)-1 {
-			f, err = openTransferChildChecked(h, part, false, checkCase, windows.FILE_OPEN, access, windows.FILE_SHARE_READ)
-			return
+			f, err = openTransferChildChecked(h, part, isDir, checkCase, windows.FILE_OPEN, access, share)
+			if err != nil {
+				return nil, nil, err
+			}
+			return f, closeParents, nil
 		}
 		var d *os.File
 		d, err = openTransferChildChecked(h, part, true, checkCase, windows.FILE_OPEN, windows.FILE_GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
 		if err != nil {
-			return
+			return nil, nil, err
 		}
 		parents = append(parents, d)
 		h = windows.Handle(d.Fd())
 	}
-	return
+	return nil, nil, errors.New("非法相对路径")
 }
 func mirrorFileStamp(f *os.File, fat, network bool) (s MirrorStamp, err error) {
 	h := windows.Handle(f.Fd())
@@ -111,34 +118,6 @@ func dirtyMirrorDirs(hasCopies bool, sourceInv, targetBefore *fileinventory.Inve
 	return dirty
 }
 
-func openMirrorDirectory(root *winutil.DirectoryObject, parts []string) (dir *os.File, closeAll func() error, err error) {
-	var parents []*os.File
-	closeParents := func() (e error) {
-		for i := len(parents) - 1; i >= 0; i-- {
-			e = errors.Join(e, parents[i].Close())
-		}
-		return
-	}
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, closeParents())
-		}
-	}()
-	h := root.Handle
-	checkCase := needsCaseCheck(root)
-	for _, part := range parts {
-		var d *os.File
-		d, err = openTransferChildChecked(h, part, true, checkCase, windows.FILE_OPEN, windows.FILE_GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
-		if err != nil {
-			return nil, nil, err
-		}
-		parents = append(parents, d)
-		dir = d
-		h = windows.Handle(d.Fd())
-	}
-	return dir, closeParents, nil
-}
-
 func checkMirrorDirectoryConflicts(ctx context.Context, root *winutil.DirectoryObject, dirs []fileinventory.Directory, targetBefore *fileinventory.Inventory) error {
 	existing := map[string]bool{}
 	if targetBefore != nil {
@@ -160,32 +139,21 @@ func checkMirrorDirectoryConflicts(ctx context.Context, root *winutil.DirectoryO
 			missing[d.Path] = true
 			continue
 		}
-		parts, err := splitRelativePath(d.Path)
-		if err != nil {
-			return errors.New("非法相对目录路径")
-		}
-		dir, closeAll, err := openMirrorDirectory(root, parts)
-		if err != nil {
-			if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
-				missing[d.Path] = true
-				continue
+		_, closeAll, err := openMirrorPath(root, d.Path, true, windows.FILE_GENERIC_READ)
+		if err == nil {
+			if closeErr := closeAll(); closeErr != nil {
+				return fmt.Errorf("检查目标目录 %s: %w", d.Path, closeErr)
 			}
-			if errors.Is(err, windows.ERROR_DIRECTORY) {
-				continue
-			}
-			return fmt.Errorf("检查目标目录 %s: %w", d.Path, err)
+			continue
 		}
-		matched, matchErr := openedPathMatchesParts(dir, parts)
-		closeErr := closeAll()
-		if matchErr != nil {
-			return fmt.Errorf("检查目标目录 %s: %w", d.Path, errors.Join(matchErr, closeErr))
+		if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
+			missing[d.Path] = true
+			continue
 		}
-		if closeErr != nil {
-			return fmt.Errorf("检查目标目录 %s: %w", d.Path, closeErr)
+		if errors.Is(err, windows.ERROR_DIRECTORY) {
+			continue
 		}
-		if !matched {
-			return fmt.Errorf("目标目录 %s: %w", d.Path, errShortNameConflict)
-		}
+		return fmt.Errorf("检查目标目录 %s: %w", d.Path, err)
 	}
 	return nil
 }
@@ -241,13 +209,6 @@ func restoreMirrorDirectory(ctx context.Context, rootDir *winutil.DirectoryObjec
 			return err
 		}
 		parents = append(parents, dir)
-		matched, matchErr := openedFileMatchesName(dir, name)
-		if matchErr != nil {
-			return matchErr
-		}
-		if !matched {
-			return errShortNameConflict
-		}
 		root = windows.Handle(dir.Fd())
 	}
 	mtime := windows.NsecToFiletime(d.Modified.UnixNano())
@@ -292,20 +253,11 @@ func RecycleWithShell(trash func(string) error) func(string) error {
 }
 
 func mirrorSourceExists(sourceRoot *winutil.DirectoryObject, rel string) (bool, error) {
-	parts, err := splitRelativePath(rel)
-	if err != nil {
-		return false, err
-	}
-	f, close, e := openMirrorFile(sourceRoot, rel, windows.GENERIC_READ)
+	_, close, e := openMirrorPath(sourceRoot, rel, false, windows.GENERIC_READ)
 	if e == nil {
-		matched, matchErr := openedPathMatchesParts(f, parts)
-		closeErr := close()
-		if matchErr != nil {
-			return false, errors.Join(matchErr, closeErr)
-		}
-		return matched, closeErr
+		return true, close()
 	}
-	if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) {
+	if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) || errors.Is(e, errShortNameConflict) {
 		return false, nil
 	}
 	return false, e
@@ -338,7 +290,7 @@ func collectMirrorCandidates(ctx context.Context, roots *TransferRoots, targetFi
 		if exists {
 			continue
 		}
-		f, close, e := openMirrorFile(roots.target, entry.Path, windows.GENERIC_READ)
+		f, close, e := openMirrorPath(roots.target, entry.Path, false, windows.GENERIC_READ)
 		if e != nil {
 			if errors.Is(e, windows.ERROR_FILE_NOT_FOUND) || errors.Is(e, windows.ERROR_PATH_NOT_FOUND) {
 				return nil, nil, ErrMirrorChanged
@@ -366,7 +318,7 @@ func removeMirrorCandidate(ctx context.Context, roots *TransferRoots, rel string
 	if exists {
 		return ErrMirrorChanged
 	}
-	f, close, e := openMirrorFile(roots.target, rel, windows.GENERIC_READ|windows.DELETE)
+	f, close, e := openMirrorPath(roots.target, rel, false, windows.GENERIC_READ|windows.DELETE)
 	if e != nil {
 		return e
 	}
