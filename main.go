@@ -75,11 +75,21 @@ type application struct {
 	installation       winutil.Installation
 	lifecycle          lifecycle
 	manual             manualSession
+	liveTracker        *liveRunTracker
+	liveSnapshot       liveRunSnapshot
+	liveTickerStop     chan struct{}
 	window             *mygo.Window
 	tasks              *appcore.SavedTaskLibrary
 	taskError          error
 	recoveryNotice     localizedMessage
 	results            map[taskconfig.ID]savedTaskResult
+}
+
+func (a *application) stopLiveTicker() {
+	if a.liveTickerStop != nil {
+		close(a.liveTickerStop)
+		a.liveTickerStop = nil
+	}
 }
 
 func (a *application) view(c *ui.Context) {
@@ -128,7 +138,7 @@ func run() (result error) {
 	mygo.App.SetPath(mygo.PathCache, filepath.Join(install.Data, "cache"))
 	mygo.App.SetPath(mygo.PathLogs, filepath.Join(install.Data, "logs"))
 	mygo.App.OnBeforeQuit(a.beforeQuit)
-	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.stopWatches(watchesStopped); a.lifecycle.finish() })
+	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { a.stopLiveTicker(); a.stopWatches(watchesStopped); a.lifecycle.finish() })
 	mygo.App.OnQuit(func() { slog.Info("application-exited") })
 	var startupError error
 	mygo.App.WhenReady(func() {

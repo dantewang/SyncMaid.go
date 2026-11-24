@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -26,12 +27,14 @@ const (
 type manualBatch struct {
 	phase   batchPhase
 	pending []taskconfig.ID
+	total   int
 }
 
-func (b *manualBatch) clear() { b.phase = batchIdle; b.pending = nil }
+func (b *manualBatch) clear() { b.phase = batchIdle; b.pending = nil; b.total = 0 }
 func (b *manualBatch) begin(ids []taskconfig.ID) {
 	b.phase = batchServing
 	b.pending = append([]taskconfig.ID(nil), ids...)
+	b.total = len(ids)
 }
 func (b *manualBatch) next() (taskconfig.ID, bool) {
 	if b.phase != batchServing || len(b.pending) == 0 {
@@ -244,6 +247,10 @@ func (a *application) confirmMirror(ctx context.Context, p syncengine.MirrorPrev
 			a.manual.mirrorReply = reply
 			a.manual.mirrorShowAll = false
 			a.manual.mirrorPreviewTabDirs = false
+			if a.liveTracker != nil {
+				a.liveTracker.SetPaused(true, time.Now())
+				a.liveSnapshot = a.liveTracker.Snapshot(time.Now())
+			}
 		}
 	})
 	defer a.window.Update(func() {
@@ -252,6 +259,10 @@ func (a *application) confirmMirror(ctx context.Context, p syncengine.MirrorPrev
 			a.manual.mirrorReply = nil
 			a.manual.mirrorShowAll = false
 			a.manual.mirrorPreviewTabDirs = false
+			if a.liveTracker != nil {
+				a.liveTracker.SetPaused(false, time.Now())
+				a.liveSnapshot = a.liveTracker.Snapshot(time.Now())
+			}
 		}
 	})
 	select {
@@ -278,6 +289,10 @@ func (a *application) answerMirror(accept bool) {
 	s.mirrorReply = nil
 	s.mirrorShowAll = false
 	s.mirrorPreviewTabDirs = false
+	if a.liveTracker != nil {
+		a.liveTracker.SetPaused(false, time.Now())
+		a.liveSnapshot = a.liveTracker.Snapshot(time.Now())
+	}
 }
 func (a *application) mirrorPreviewView(c *ui.Context) {
 	p := a.manual.mirrorPreview

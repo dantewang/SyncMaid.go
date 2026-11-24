@@ -248,6 +248,42 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 		s.progress = syncengine.TransferProgress{}
 		s.destinationResults = syncengine.InitialDestinationResults(q)
 	}
+	batchIdx, batchTotal := 0, 0
+	if !automatic && a.batch.phase == batchServing && a.batch.total > 1 {
+		batchTotal = a.batch.total
+		batchIdx = a.batch.total - len(a.batch.pending)
+	}
+	a.stopLiveTicker()
+	tracker := newLiveRunTracker(id, name, q, automatic, batchIdx, batchTotal, time.Now())
+	a.liveTracker = tracker
+	a.liveSnapshot = tracker.Snapshot(time.Now())
+	stopTicker := make(chan struct{})
+	a.liveTickerStop = stopTicker
+	if a.window != nil {
+		go func() {
+			ticker := time.NewTicker(150 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stopTicker:
+					return
+				case <-ticker.C:
+					a.window.Update(func() {
+						if a.liveTracker != tracker {
+							return
+						}
+						a.liveSnapshot = tracker.Snapshot(time.Now())
+						if showResult && a.cards.running == id && s.id == id && a.liveSnapshot.CurrentDestID != "" {
+							if res, ok := a.liveSnapshot.Results[a.liveSnapshot.CurrentDestID]; ok {
+								s.destinationResults[a.liveSnapshot.CurrentDestID] = res
+								s.progress = res.Progress
+							}
+						}
+					})
+				}
+			}
+		}()
+	}
 	history := a.history
 	active := []taskconfig.ID(nil)
 	var taskSnapshot []taskconfig.Task
@@ -257,28 +293,26 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 	}
 	recordStart, recordStartErr := appcore.NewRunRecord(id, name, q, automatic, time.Now())
 	go func() {
-		last := time.Time{}
-		var lastID taskconfig.ID
-		var lastState syncengine.DestinationState
-		var lastStage string
 		notify := func(r syncengine.DestinationResult) {
-			if r.ID == lastID && r.State == lastState && r.Progress.Stage == lastStage && time.Since(last) < 100*time.Millisecond {
+			if !tracker.UpdateDestination(r) {
 				return
 			}
-			last = time.Now()
-			lastID = r.ID
-			lastState = r.State
-			lastStage = r.Progress.Stage
-			a.window.Update(func() {
-				if !showResult || a.cards.running != id || s.id != id {
-					return
-				}
-				s.destinationResults[r.ID] = r
-				s.progress = r.Progress
-				if r.State != syncengine.DestinationRunning {
-					s.progress.Stage = string(r.State)
-				}
-			})
+			if a.window != nil {
+				a.window.Update(func() {
+					if a.liveTracker != tracker {
+						return
+					}
+					a.liveSnapshot = tracker.Snapshot(time.Now())
+					if !showResult || a.cards.running != id || s.id != id {
+						return
+					}
+					s.destinationResults[r.ID] = r
+					s.progress = r.Progress
+					if r.State != syncengine.DestinationRunning {
+						s.progress.Stage = string(r.State)
+					}
+				})
+			}
 		}
 		historyView, recordEnd, results, err, historyErr := appcore.ExecuteRecordedRun(history, recordStart, recordStartErr, active, func() (syncengine.MultipleResult, error) {
 			var results syncengine.MultipleResult
@@ -294,6 +328,11 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 		})
 		a.window.Update(func() {
 			cancel()
+			if a.liveTracker == tracker {
+				a.stopLiveTicker()
+				tracker.Finish(results, err, recordEnd.Outcome, time.Now())
+				a.liveSnapshot = tracker.Snapshot(time.Now())
+			}
 			if errors.Is(err, context.Canceled) {
 				a.batch.clear()
 			}
@@ -348,6 +387,10 @@ func (a *application) stopManual() {
 	}
 	s.phase = manualStopping
 	s.message = messagef("正在停止并清理临时文件…")
+	if a.liveTracker != nil {
+		a.liveTracker.MarkStopping(time.Now())
+		a.liveSnapshot = a.liveTracker.Snapshot(time.Now())
+	}
 	s.cancel()
 }
 func (a *application) tryPrepareQuit(showStatus bool) bool {
