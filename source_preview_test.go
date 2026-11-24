@@ -305,3 +305,52 @@ func TestSourcePreviewSnapshotTopDirsSearchAndInMemoryEval(t *testing.T) {
 		t.Fatalf("EvaluateSourceSnapshot bypassed regex gate: r=%v err=%v", rBad, errBad)
 	}
 }
+
+func TestMatchPreviewPathsSyncAndMove(t *testing.T) {
+	firstID, secondID := taskconfig.NewID(), taskconfig.NewID()
+	files := []appcore.PreviewFile{
+		{Path: "images/a.png", Size: 10},
+		{Path: "images/b.jpg", Size: 20},
+		{Path: "docs/readme.txt", Size: 30},
+	}
+	q := syncengine.ManualTaskRequest{
+		Kind:   syncengine.ManualKind(taskconfig.Sync),
+		Source: `G:\Source`,
+		Destinations: []syncengine.ManualDestination{
+			{ID: firstID, Name: "First", Filters: []taskconfig.Rule{taskconfig.ExtensionFilter("png")}},
+			{ID: secondID, Name: "Second", Filters: syncengine.AllFileRules()},
+		},
+	}
+
+	hitsSecondSync, err := appcore.MatchPreviewPaths(context.Background(), files, q, secondID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hitsSecondSync["images/a.png"] || !hitsSecondSync["images/b.jpg"] || !hitsSecondSync["docs/readme.txt"] {
+		t.Fatalf("unexpected sync hits for second target: %+v", hitsSecondSync)
+	}
+
+	hitsFirstSync, err := appcore.MatchPreviewPaths(context.Background(), files, q, firstID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hitsFirstSync["images/a.png"] || hitsFirstSync["images/b.jpg"] || hitsFirstSync["docs/readme.txt"] {
+		t.Fatalf("unexpected sync hits for first target: %+v", hitsFirstSync)
+	}
+
+	// Move mode respects first-match routing: images/a.png is claimed by First, not Second.
+	q.Kind = syncengine.ManualKind(taskconfig.Moving)
+	hitsSecondMove, err := appcore.MatchPreviewPaths(context.Background(), files, q, secondID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hitsSecondMove["images/a.png"] || !hitsSecondMove["images/b.jpg"] || !hitsSecondMove["docs/readme.txt"] {
+		t.Fatalf("Move mode failed to respect first-match routing: %+v", hitsSecondMove)
+	}
+
+	// Unconfirmed legacy regex rules must still be rejected.
+	q.Destinations[1].Filters = []taskconfig.Rule{{Kind: "regex", Pattern: filterText("a")}}
+	if _, errBad := appcore.MatchPreviewPaths(context.Background(), files, q, secondID); !errors.Is(errBad, filefilter.ErrUnsupportedRegex) {
+		t.Fatalf("MatchPreviewPaths bypassed regex gate: %v", errBad)
+	}
+}

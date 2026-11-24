@@ -316,3 +316,55 @@ func ScanSourcePreview(ctx context.Context, q syncengine.ManualTaskRequest) (*Ro
 	}
 	return evaluatePreviewFiles(ctx, snap, files, q, matchers)
 }
+
+// MatchPreviewPaths evaluates which of the given preview files route to targetID
+// under the current task request, respecting Move first-match routing and regex gates.
+func MatchPreviewPaths(ctx context.Context, files []PreviewFile, q syncengine.ManualTaskRequest, targetID taskconfig.ID) (map[string]bool, error) {
+	hits := make(map[string]bool, len(files))
+	if len(files) == 0 || targetID == "" {
+		return hits, nil
+	}
+	q, matchers, err := preparePreviewMatchers(q)
+	if err != nil {
+		return nil, err
+	}
+	targetIdx := -1
+	for i, d := range q.Destinations {
+		if d.ID == targetID {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx < 0 {
+		return hits, nil
+	}
+	moving := syncengine.ManualKind(q.Kind) == taskconfig.Moving
+	for _, f := range files {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if moving {
+			for i, m := range matchers {
+				yes, err := m.Match(f.Path)
+				if err != nil {
+					return nil, err
+				}
+				if yes {
+					if i == targetIdx {
+						hits[f.Path] = true
+					}
+					break
+				}
+			}
+			continue
+		}
+		yes, err := matchers[targetIdx].Match(f.Path)
+		if err != nil {
+			return nil, err
+		}
+		if yes {
+			hits[f.Path] = true
+		}
+	}
+	return hits, nil
+}
