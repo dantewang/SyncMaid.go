@@ -453,5 +453,15 @@
   "不支持回收站": "Recycle Bin unsupported",
   "此目标所在卷或网络共享不支持回收站，请在目标编辑中切换为永久删除后再重新运行。": "This destination's volume or network share does not support the Recycle Bin. Edit the destination to use permanent delete and run again.",
   "此目标不支持回收站，Mirror 清理多余文件将失败。": "This destination does not support the Recycle Bin; Mirror cleanup will fail.",
-  "切换为永久删除": "Switch to permanent delete"
+  "切换为永久删除": "Switch to permanent delete",
+  "返回目标列表": "Back to destinations",
+  "正在编辑目标：%s": "Editing destination: %s",
+  "右侧「源预览」实时对照": "Live preview on the right",
+  "正在编辑：%s": "Editing: %s",
+  "点击下方扩展名可直接增删当前目标过滤规则": "Click extensions below to toggle rules for this destination",
+  "当前为所有文件，点击下方扩展名可按扩展名筛选搜索": "Matching all files; click extensions below to search",
+  "+ 点击直接加入规则": "+ Click to toggle rule",
+  "✓ 命中": "✓ Match",
+  "✕ 未命中": "✕ Miss",
+  "按目标实时分桶统计": "Live destination breakdown"
 }

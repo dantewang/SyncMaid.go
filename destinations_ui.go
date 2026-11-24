@@ -198,35 +198,70 @@ func (a *application) discardManual() {
 	a.syncWatches()
 }
 
-func (a *application) destinationModalView(c *ui.Context, locked bool, modalWidth float32) {
+func (a *application) destinationWorkspaceView(c *ui.Context) {
 	s := &a.manual
-	if modalWidth >= 660 {
-		ui.Row(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Gap(14).Children(func() {
-			porcelainScroll(c, &a.scrolls.destModal, func() {
-				ui.Column(c).FillWidth().Gap(8).Padding(0, 0, 8, 0).Children(func() {
+	locked := s.busy() || a.tasks == nil || a.selectedTaskIssue() != nil
+	_, hasDestOverlap := a.destinationOverlapMessage(s.targetID, s.target)
+	destTitle := strings.TrimSpace(s.targetName)
+	if destTitle == "" {
+		destTitle = a.tr("目标")
+	}
+
+	ui.Column(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Gap(0).Children(func() {
+		// Breadcrumb Header Strip
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Padding(8, 16).Background(ribbonBlueSoft).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+			porcelainCompactButton(c, "← "+a.tr("返回目标列表")).Disabled(s.busy()).OnClick(func() {
+				a.cancelDestination(s.targetID)
+				a.closeTaskEditor()
+			})
+			ui.Text(c, a.tr("正在编辑目标：%s", destTitle)).FontSize(13).FontWeight(600).TextColor(ribbonBlue).SingleLine().Ellipsis("…").Grow(1).Shrink(1).MinWidth(0)
+			if a.sourcePreview.open {
+				ui.Text(c, a.tr("右侧「源预览」实时对照")).FontSize(12).TextColor(porcelain.TextMuted).Shrink(0)
+			}
+		})
+
+		if a.taskError != nil {
+			ui.Column(c).FillWidth().Padding(8, 16, 0, 16).Gap(2).Children(func() {
+				ui.Text(c, a.tr("任务文件不可用，已阻止保存与运行: ")+a.taskError.Error()).FontSize(12).TextColor(porcelain.Danger)
+				ui.Text(c, a.tr("修复文件或备份问题后重新载入。不会以空列表覆盖。")).FontSize(12)
+			})
+		}
+		if issue := a.selectedTaskIssue(); issue != nil {
+			ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error()).FontSize(12).TextColor(porcelain.Warning).Padding(8, 16, 0, 16)
+		}
+		if syncengine.ManualKind(s.kind) == taskconfig.Moving {
+			ui.Text(c, a.tr("按目标顺序首个匹配；失败不转投后续目标。")).FontSize(12).TextColor(porcelain.TextMuted).Padding(8, 16, 0, 16)
+		}
+
+		// Scrollable Editor Workspace Body
+		porcelainScroll(c, &a.scrolls.destModal, func() {
+			ui.Column(c).FillWidth().Padding(14, 16).Gap(10).Children(func() {
+				ui.Column(c).FillWidth().Background(porcelain.Surface).Border(1, porcelain.Border).Padding(14, 16).Gap(8).Children(func() {
 					a.selectedTargetEditor(c, locked)
 					if s.message.key != "" {
 						ui.Text(c, a.render(s.message)).FontSize(12).TextColor(porcelain.Danger)
 					}
 				})
-			}).Grow(1).Shrink(1).MinWidth(0).FillHeight()
-			ui.Box(c).Width(248).FillHeight().Children(func() {
-				a.sourcePreviewModalPane(c, s.targetID)
 			})
-		})
-		return
-	}
-	porcelainScroll(c, &a.scrolls.destModal, func() {
-		ui.Column(c).FillWidth().Gap(8).Padding(0, 0, 8, 0).Children(func() {
-			a.selectedTargetEditor(c, locked)
-			if s.message.key != "" {
-				ui.Text(c, a.render(s.message)).FontSize(12).TextColor(porcelain.Danger)
+		}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
+
+		// Sticky Bottom Action Footer
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(10, 16).Background(porcelain.Surface).BorderWidth(1, 0, 0, 0).BorderColor(porcelain.Border).Children(func() {
+			if s.targetID != "" {
+				porcelainButton(c, a.tr("复制配置")).Disabled(locked).OnClick(func() { a.copyManualTarget(s.targetID) })
 			}
-			ui.Box(c).Height(190).FillWidth().Children(func() {
-				a.sourcePreviewModalPane(c, s.targetID)
+			ui.Box(c).Grow(1)
+			porcelainButton(c, a.tr("取消")).Disabled(s.busy()).OnClick(func() {
+				a.cancelDestination(s.targetID)
+				a.closeTaskEditor()
+			})
+			ribbonInkButton(c, a.tr("保存")).Disabled(locked || a.taskError != nil || hasDestOverlap).OnClick(func() {
+				if a.acceptDestination(s.targetID) {
+					a.createManual()
+				}
 			})
 		})
-	}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
+	})
 }
 
 func (a *application) manualTargetsView(c *ui.Context, locked bool) {

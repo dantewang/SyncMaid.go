@@ -21,7 +21,7 @@ type taskCardLayout struct {
 }
 
 func (a *application) cardActionAllowed() bool {
-	return a.batch.phase == batchIdle && a.sourcePreview.job == nil && !a.manual.busy() && !a.manual.dirty && a.tasks != nil && a.taskError == nil
+	return a.batch.phase == batchIdle && a.sourcePreview.job == nil && !a.manual.busy() && !a.manual.dirty && !a.cards.editor && a.tasks != nil && a.taskError == nil
 }
 
 func (a *application) editCard(id, destination taskconfig.ID) {
@@ -40,6 +40,7 @@ func (a *application) editCard(id, destination taskconfig.ID) {
 			}
 		}
 		a.cards.targetHidden = ""
+		a.sourcePreview.open = true
 	}
 	a.cards.destinations = destination != ""
 	a.cards.editor = true
@@ -52,6 +53,7 @@ func (a *application) openAddDestination(id taskconfig.ID) {
 	a.editCard(id, "")
 	if a.manual.id == id && a.cards.editor {
 		a.cards.destinations = true
+		a.sourcePreview.open = true
 		a.addManualTarget()
 	}
 }
@@ -60,6 +62,7 @@ func (a *application) openCopyDestination(id, destination taskconfig.ID) {
 	a.editCard(id, "")
 	if a.manual.id == id && a.cards.editor {
 		a.cards.destinations = true
+		a.sourcePreview.open = true
 		a.copyManualTarget(destination)
 	}
 }

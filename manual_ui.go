@@ -96,9 +96,6 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 		if s.id == "" {
 			heading = "新建任务"
 		}
-		if a.cards.destinations {
-			heading = "目标"
-		}
 		ui.Text(c, a.tr(heading)).FontSize(16).Bold().Grow(1)
 		porcelainIcon(c, "×", a.tr("关闭编辑")).Border(0, ui.Transparent).OnClick(a.closeTaskEditor)
 	})
@@ -109,32 +106,6 @@ func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 	}
 	if issue := a.selectedTaskIssue(); issue != nil {
 		ui.Text(c, a.tr("此任务不可运行或编辑: ")+issue.Error()).FontSize(12).TextColor(porcelain.Warning).Padding(6, 0, 0, 0)
-	}
-	if a.cards.destinations {
-		_, hasDestOverlap := a.destinationOverlapMessage(s.targetID, s.target)
-		ui.Column(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Padding(10, 0).Gap(6).Children(func() {
-			if syncengine.ManualKind(s.kind) == taskconfig.Moving {
-				ui.Text(c, a.tr("按目标顺序首个匹配；失败不转投后续目标。")).FontSize(12).TextColor(porcelain.TextMuted)
-			}
-			a.destinationModalView(c, locked, modalWidth)
-		})
-		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(10, 0, 0, 0).Children(func() {
-			if s.targetID != "" {
-				porcelainButton(c, a.tr("复制配置")).Disabled(locked).OnClick(func() { a.copyManualTarget(s.targetID) })
-			}
-			ui.Box(c).Grow(1)
-			porcelainButton(c, a.tr("取消")).Disabled(s.busy()).OnClick(func() {
-				a.cancelDestination(s.targetID)
-				a.closeTaskEditor()
-			})
-			ribbonInkButton(c, a.tr("保存")).Disabled(locked || a.taskError != nil || hasDestOverlap).OnClick(func() {
-				if a.acceptDestination(s.targetID) {
-					a.createManual()
-				}
-			})
-		})
-		return
 	}
 	sourceOverlap, hasSourceOverlap := a.sourceOverlapMessage()
 	porcelainScroll(c, &a.scrolls.taskModal, func() {

@@ -61,7 +61,7 @@ func (a *application) manualView(c *ui.Context) {
 			}
 			railBtn := func(target uiScreen, glyph, label string, click func()) {
 				active := screen == target
-				btn := ui.ButtonBase(c).Label(a.tr(label)).FillWidth().Height(54).Padding(6, 2).Disabled(modalLocked || a.manual.busy())
+				btn := ui.ButtonBase(c).Label(a.tr(label)).FillWidth().Height(54).Padding(6, 2).Disabled(modalLocked || a.manual.busy() || a.cards.editor)
 				fg := porcelain.TextMuted
 				bg := ui.Transparent
 				if active {
@@ -130,13 +130,9 @@ func (a *application) manualView(c *ui.Context) {
 		})
 	})
 
-	if a.cards.editor && screen == screenTasks {
+	if a.cards.editor && !a.cards.destinations && screen == screenTasks {
 		sheetWidth := min(float32(520), width-48)
 		sheetHeight := min(float32(560), height-48)
-		if a.cards.destinations {
-			sheetWidth = min(float32(840), width-48)
-			sheetHeight = min(float32(620), height-48)
-		}
 		ui.Overlay(c, func() {
 			back := ui.Box(c).Absolute().Left(0).Top(0).Size(width, height).Background(ui.Color{R: 25, G: 28, B: 34, A: 84}).Modal()
 			if back.OverlayShortcut(0, ui.KeyEscape) {
@@ -315,6 +311,8 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 		kindColor = ribbonMove
 	}
 
+	editingDest := a.cards.editor && a.cards.destinations && a.manual.id == id
+
 	centerCol := func() {
 		// Task Header
 		ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(12).Padding(12, 16).Background(porcelain.Surface).Children(func() {
@@ -324,7 +322,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 					ui.Text(c, kindTag).Font("Consolas").FontSize(12).TextColor(kindColor)
 					if parent, hasParent := a.findCascadeParent(t); hasParent {
 						parentID := parent.ID
-						ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ "+a.tr("接力自 %s", parent.Name)).Background(ui.Transparent).Children(func() {
+						ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ " + a.tr("接力自 %s", parent.Name)).Background(ui.Transparent).Children(func() {
 							ui.Text(c, "↳ "+a.tr("接力自 %s", parent.Name)).FontSize(12).TextColor(ribbonBlue)
 						}).Disabled(!a.cardActionAllowed()).OnClick(func() { a.selectManual(parentID) })
 					}
@@ -352,7 +350,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 				if a.sourcePreview.open {
 					previewBtn = previewBtn.Background(ribbonBlueSoft).Border(1, ribbonBlue).TextColor(ribbonBlue)
 				}
-				previewBtn.Disabled(!a.cardActionAllowed() && !a.sourcePreview.open).OnClick(func() {
+				previewBtn.Disabled(!a.cardActionAllowed() && !a.sourcePreview.open && !(editingDest && !a.manual.busy())).OnClick(func() {
 					if a.manual.id != id && a.cardActionAllowed() {
 						a.selectManual(id)
 					}
@@ -380,6 +378,11 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 					})
 				}
 			})
+		}
+
+		if editingDest {
+			a.destinationWorkspaceView(c)
+			return
 		}
 
 		porcelainScroll(c, &a.scrolls.taskDetail, func() {
@@ -515,7 +518,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 				children := a.findCascadeChildren(t, d)
 				if len(children) > 0 {
 					childID := children[0].ID
-					ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ "+a.tr("级联至 %s", children[0].Name)).Background(ui.Transparent).Children(func() {
+					ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ " + a.tr("级联至 %s", children[0].Name)).Background(ui.Transparent).Children(func() {
 						ui.Text(c, "↳ "+a.tr("级联至 %s", children[0].Name)).FontSize(12).TextColor(ribbonBlue)
 					}).Disabled(!a.cardActionAllowed()).OnClick(func() { a.selectManual(childID) })
 				}
@@ -542,8 +545,8 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 				porcelainCompactButton(c, "↑").Padding(0, 8).Tooltip(a.tr("上移")).Disabled(!a.cardActionAllowed() || !canUp).OnClick(func() { a.reorderSavedDestination(id, did, -1) })
 				porcelainCompactButton(c, "↓").Padding(0, 8).Tooltip(a.tr("下移")).Disabled(!a.cardActionAllowed() || !canDown).OnClick(func() { a.reorderSavedDestination(id, did, 1) })
 			}
-			porcelainCompactButton(c, a.tr("编辑")).Tooltip(a.tr("编辑目标")+" "+d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did) })
-			porcelainCompactButton(c, a.tr("删除")).Tooltip(a.tr("移除目标（仅配置）")+" "+d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.deleteSavedDestination(id, did) })
+			porcelainCompactButton(c, a.tr("编辑")).Tooltip(a.tr("编辑目标") + " " + d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did) })
+			porcelainCompactButton(c, a.tr("删除")).Tooltip(a.tr("移除目标（仅配置）") + " " + d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.deleteSavedDestination(id, did) })
 		})
 	})
 }

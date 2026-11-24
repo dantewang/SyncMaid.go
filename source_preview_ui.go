@@ -270,6 +270,36 @@ func (a *application) addPreviewExtension(group int, extension string) {
 	a.filterEdited()
 }
 
+func (a *application) previewExtensionSelected(group int, extension string) bool {
+	e := &a.manual.filterEditor
+	if e.Mode != appcore.FilterGrouped || group < 0 || group >= len(e.Groups) {
+		return false
+	}
+	for _, r := range e.Groups[group].Rows {
+		if r.Kind == "extension" && r.Extension != nil && strings.EqualFold(*r.Extension, extension) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *application) togglePreviewExtension(group int, extension string) {
+	p := &a.sourcePreview
+	e := &a.manual.filterEditor
+	if p.phase != previewReady || p.result == nil || !a.targetEditAllowed() || a.selectedMirror() || e.Mode != appcore.FilterGrouped || group < 0 || group >= len(e.Groups) {
+		return
+	}
+	rows := e.Groups[group].Rows
+	for j, r := range rows {
+		if r.Kind == "extension" && r.Extension != nil && strings.EqualFold(*r.Extension, extension) {
+			e.Groups[group].Rows = append(rows[:j], rows[j+1:]...)
+			a.filterEdited()
+			return
+		}
+	}
+	a.addPreviewExtension(group, extension)
+}
+
 func formatPreviewBytes(b int64) string {
 	switch {
 	case b >= 1<<30:
@@ -419,11 +449,20 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 		}
 
+		editingDest := a.cards.editor && a.cards.destinations && a.manual.targetID != ""
+		canToggleExt := editingDest && !a.selectedMirror() && a.manual.filterEditor.Mode == appcore.FilterGrouped && len(a.manual.filterEditor.Groups) > 0 && a.targetEditAllowed()
+
 		porcelainScroll(c, &a.scrolls.previewPanel, func() {
 			ui.Column(c).FillWidth().Padding(0, 0, 8, 0).Gap(0).Children(func() {
 				q := strings.TrimSpace(p.searchQuery)
 				if q != "" && r.Snapshot != nil {
 					matches, total := appcore.SearchSnapshotPaths(r.Snapshot, q, 50)
+					var hits map[string]bool
+					if editingDest {
+						if qDraft, err := a.previewDraft(); err == nil {
+							hits, _ = appcore.MatchPreviewPaths(context.Background(), matches, qDraft, a.manual.targetID)
+						}
+					}
 					summary := a.tr("命中 %d 项", total)
 					if total > len(matches) {
 						summary = a.tr("仅显示前 %d / 共 %d 项", len(matches), total)
@@ -436,6 +475,28 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 					for _, f := range matches {
 						fp := f.Path
 						selected := p.selectedPath == fp
+						if hits != nil {
+							rowBg := ui.Transparent
+							if selected {
+								rowBg = ribbonBlueSoft
+							}
+							ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Padding(6, 12).Background(rowBg).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+								ui.ButtonBase(c).Label(fp).Grow(1).Shrink(1).MinWidth(0).Justify(ui.Start).Background(ui.Transparent).Children(func() {
+									ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(2).Children(func() {
+										ui.Text(c, fp).Font("Consolas").FontSize(12).SingleLine().Ellipsis("…").Tooltip(fp)
+										ui.Text(c, formatPreviewBytes(f.Size)).FontSize(12).TextColor(porcelain.TextMuted)
+									})
+								}).OnClick(func() {
+									a.selectPreviewPath(fp)
+								})
+								if hits[fp] {
+									ui.Text(c, a.tr("✓ 命中")).FontSize(12).FontWeight(600).TextColor(ribbonBlue).Padding(1, 5).Background(ribbonBlueSoft).Border(1, ribbonBlue).Shrink(0)
+								} else {
+									ui.Text(c, a.tr("✕ 未命中")).FontSize(12).TextColor(porcelain.TextMuted).Padding(1, 5).Background(porcelain.Surface).Border(1, porcelain.Border).Shrink(0)
+								}
+							})
+							continue
+						}
 						row := ui.ButtonBase(c).Label(fp).FillWidth().Justify(ui.Start).Padding(6, 12).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border)
 						if selected {
 							row = row.Background(ribbonBlueSoft)
@@ -449,6 +510,62 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 							a.selectPreviewPath(fp)
 						})
 					}
+					return
+				}
+
+				if editingDest {
+					sel := r.Targets[a.manual.targetID]
+					pct := 0.0
+					if r.SourceFiles > 0 {
+						pct = float64(sel.Count) * 100 / float64(r.SourceFiles)
+					}
+					destTitle := strings.TrimSpace(a.manual.targetName)
+					if destTitle == "" {
+						destTitle = a.tr("目标")
+					}
+					ui.Column(c).FillWidth().Background(ribbonBlueSoft).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Padding(8, 12).Gap(3).Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+							ui.Text(c, a.tr("正在编辑：%s", destTitle)).FontSize(12).FontWeight(600).TextColor(ribbonBlue).Grow(1).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…")
+							ui.Text(c, fmt.Sprintf("%d (%.1f%%)", sel.Count, pct)).Font("Consolas").FontSize(12).FontWeight(600).TextColor(ribbonBlue).Shrink(0)
+						})
+						subHint := a.tr("当前为所有文件，点击下方扩展名可按扩展名筛选搜索")
+						if canToggleExt {
+							subHint = a.tr("点击下方扩展名可直接增删当前目标过滤规则")
+						}
+						ui.Text(c, subHint).FontSize(12).TextColor(porcelain.TextMuted)
+					})
+
+					if len(r.Extensions) > 0 {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Padding(8, 12, 4, 12).Children(func() {
+							ui.Text(c, a.tr("高频扩展名")).FontSize(12).FontWeight(600).Grow(1)
+							if canToggleExt {
+								ui.Text(c, a.tr("+ 点击直接加入规则")).FontSize(12).TextColor(ribbonBlue).Shrink(0)
+							}
+						})
+						ui.Row(c).Wrap().Gap(6).Padding(4, 12, 10, 12).Children(func() {
+							for _, ext := range r.Extensions {
+								extText := ext.Text
+								bg, border, fg := porcelain.Surface, porcelain.Border, porcelain.Text
+								if canToggleExt && a.previewExtensionSelected(0, extText) {
+									bg, border, fg = ribbonBlue, ribbonBlue, porcelain.AccentText
+								}
+								ui.ButtonBase(c).Label("."+extText).Padding(2, 6).Border(1, border).Background(bg).Children(func() {
+									ui.Text(c, fmt.Sprintf(".%s %d", extText, ext.Count)).Font("Consolas").FontSize(12).TextColor(fg)
+								}).OnClick(func() {
+									if canToggleExt {
+										a.togglePreviewExtension(0, extText)
+									} else {
+										p.searchQuery = "." + extText
+									}
+								})
+							}
+						})
+					}
+
+					ui.Row(c).FillWidth().Padding(6, 12).Background(ribbonRailBg).BorderWidth(1, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+						ui.Text(c, a.tr("按目标实时分桶统计")).FontSize(12).FontWeight(600).TextColor(porcelain.TextMuted)
+					})
+					a.renderPreviewBuckets(c, r, a.manual.targetID)
 					return
 				}
 
@@ -508,72 +625,50 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 					return
 				}
 
-				// Filtered or Move mode: Sampled Buckets
-				for i, d := range a.manual.targets {
-					sel := r.Targets[d.ID]
-					pct := "0.0%"
-					if r.SourceFiles > 0 {
-						pct = fmt.Sprintf("%.1f%%", float64(sel.Count)*100/float64(r.SourceFiles))
-					}
-					title := d.Name
-					if syncengine.ManualKind(a.manual.kind) == taskconfig.Moving {
-						title = fmt.Sprintf("%02d %s", i+1, d.Name)
-					}
-					ui.Row(c).FillWidth().Padding(7, 12).Background(porcelain.Surface).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
-						ui.Text(c, title).FontSize(12).FontWeight(600).Grow(1).SingleLine().Ellipsis("…")
-						ui.Text(c, fmt.Sprintf("%d (%s)", sel.Count, pct)).FontSize(12).TextColor(porcelain.TextMuted)
-					})
-					for _, sp := range sel.Samples {
-						samplePath := sp
-						ui.ButtonBase(c).Label(samplePath).FillWidth().Justify(ui.Start).Padding(5, 12).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
-							ui.Text(c, samplePath).Font("Consolas").FontSize(12).SingleLine().Ellipsis("…").Tooltip(samplePath)
-						}).OnClick(func() { a.selectPreviewPath(samplePath) })
-					}
-				}
-				if r.Unmatched.Count > 0 {
-					ui.Row(c).FillWidth().Padding(7, 12).Background(porcelain.Surface).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
-						ui.Text(c, a.tr("未匹配")).FontSize(12).TextColor(porcelain.TextMuted).Grow(1)
-						ui.Text(c, fmt.Sprint(r.Unmatched.Count)).FontSize(12).TextColor(porcelain.TextMuted)
-					})
-					for _, sp := range r.Unmatched.Samples {
-						samplePath := sp
-						ui.Text(c, samplePath).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted).Padding(4, 12).SingleLine().Ellipsis("…")
-					}
-				}
-				for _, item := range r.Contested {
-					ui.Text(c, a.tr("多规则匹配: %s", item.Path)).FontSize(12).TextColor(porcelain.Warning).Padding(4, 12).SingleLine().Ellipsis("…")
-				}
+				a.renderPreviewBuckets(c, r, "")
 			})
 		}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
 	})
 }
 
-func (a *application) sourcePreviewModalPane(c *ui.Context, targetID taskconfig.ID) {
-	p := &a.sourcePreview
-	ui.Column(c).FillHeight().FillWidth().Background(ribbonSidebarBg).Border(1, porcelain.Border).Gap(0).Children(func() {
-		ui.Row(c).FillWidth().Padding(8, 10).AlignItems(ui.Center).Background(porcelain.Surface).Children(func() {
-			ui.Text(c, a.tr("匹配预览")).FontSize(13).FontWeight(600).Grow(1)
-			btnLabel := a.tr("扫描")
-			if p.phase != previewIdle {
-				btnLabel = a.tr("刷新预览")
-			}
-			porcelainButton(c, btnLabel).Padding(3, 8).FontSize(12).Disabled(a.manual.busy() || a.manual.quitPending || p.job != nil || a.taskError != nil).OnClick(a.startSourcePreview)
+func (a *application) renderPreviewBuckets(c *ui.Context, r *appcore.RoutePreview, activeTargetID taskconfig.ID) {
+	for i, d := range a.manual.targets {
+		sel := r.Targets[d.ID]
+		pct := "0.0%"
+		if r.SourceFiles > 0 {
+			pct = fmt.Sprintf("%.1f%%", float64(sel.Count)*100/float64(r.SourceFiles))
+		}
+		title := d.Name
+		if syncengine.ManualKind(a.manual.kind) == taskconfig.Moving {
+			title = fmt.Sprintf("%02d %s", i+1, d.Name)
+		}
+		rowBg := porcelain.Surface
+		if activeTargetID != "" && d.ID == activeTargetID {
+			rowBg = ribbonBlueSoft
+			title = "▸ " + title
+		}
+		ui.Row(c).FillWidth().Padding(7, 12).Background(rowBg).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+			ui.Text(c, title).FontSize(12).FontWeight(600).Grow(1).SingleLine().Ellipsis("…")
+			ui.Text(c, fmt.Sprintf("%d (%s)", sel.Count, pct)).FontSize(12).TextColor(porcelain.TextMuted)
 		})
-		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
-		porcelainScroll(c, &a.scrolls.previewModal, func() {
-			ui.Column(c).FillWidth().Padding(8, 10).Gap(6).Children(func() {
-				a.sourcePreviewStatusText(c)
-				if p.phase == previewReady && p.result != nil {
-					r := p.result
-					if sel, ok := r.Targets[targetID]; ok {
-						text := a.tr("预览匹配: %d · %s", sel.Count, strings.Join(sel.Samples, ", "))
-						ui.Text(c, text).FontSize(12).FontWeight(600).MaxLines(2).Tooltip(text)
-						for _, sp := range sel.Samples {
-							ui.Text(c, "✓ "+sp).Font("Consolas").FontSize(12).SingleLine().Ellipsis("…").Tooltip(sp)
-						}
-					}
-				}
-			})
-		}).Grow(1).FillWidth()
-	})
+		for _, sp := range sel.Samples {
+			samplePath := sp
+			ui.ButtonBase(c).Label(samplePath).FillWidth().Justify(ui.Start).Padding(5, 12).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+				ui.Text(c, samplePath).Font("Consolas").FontSize(12).SingleLine().Ellipsis("…").Tooltip(samplePath)
+			}).OnClick(func() { a.selectPreviewPath(samplePath) })
+		}
+	}
+	if r.Unmatched.Count > 0 {
+		ui.Row(c).FillWidth().Padding(7, 12).Background(porcelain.Surface).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+			ui.Text(c, a.tr("未匹配")).FontSize(12).TextColor(porcelain.TextMuted).Grow(1)
+			ui.Text(c, fmt.Sprint(r.Unmatched.Count)).FontSize(12).TextColor(porcelain.TextMuted)
+		})
+		for _, sp := range r.Unmatched.Samples {
+			samplePath := sp
+			ui.Text(c, samplePath).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted).Padding(4, 12).SingleLine().Ellipsis("…")
+		}
+	}
+	for _, item := range r.Contested {
+		ui.Text(c, a.tr("多规则匹配: %s", item.Path)).FontSize(12).TextColor(porcelain.Warning).Padding(4, 12).SingleLine().Ellipsis("…")
+	}
 }
