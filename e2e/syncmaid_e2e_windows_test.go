@@ -301,11 +301,11 @@ func TestE2ETaskLifecyclePreviewRestartSyncAndLogWindow(t *testing.T) {
 	}
 
 	c.pressContains(win.ID, "link", "2个文件")
-	logWin := c.waitSecondWindow(win.ID, "TextOnly", 10*time.Second)
-	c.idle(logWin.ID)
-	c.waitText(logWin.ID, "同步日志", 5*time.Second)
-	c.waitText(logWin.ID, "完成", 5*time.Second)
-	c.waitText(logWin.ID, "已发布 2", 5*time.Second)
+	c.waitText(win.ID, "近期运行记录", 5*time.Second)
+	c.waitText(win.ID, "TextOnly", 5*time.Second)
+	c.waitText(win.ID, "已定位", 5*time.Second)
+	c.waitText(win.ID, "完成", 5*time.Second)
+	c.waitText(win.ID, "已发布 2", 5*time.Second)
 
 	c.quitViaSettings(win.ID, "设置", "退出")
 }
@@ -325,6 +325,10 @@ func TestE2EMirrorConfirmDeclineCloseAndDelete(t *testing.T) {
 	writeTestFile(t, filepath.Join(targetRecycle, "keep.txt"), "stay")
 	extraRecycle := filepath.Join(targetRecycle, "syncmaid-e2e-recycle.txt")
 	writeTestFile(t, extraRecycle, "trash-me")
+	for i := 1; i <= 8; i++ {
+		writeTestFile(t, filepath.Join(targetPerm, fmt.Sprintf("extra-guard-%d.txt", i)), "guard")
+		writeTestFile(t, filepath.Join(targetRecycle, fmt.Sprintf("extra-guard-%d.txt", i)), "guard")
+	}
 
 	proc := inst.start()
 	c := proc.client
@@ -479,6 +483,9 @@ func TestE2EMoveRoutingSuffixAndStop(t *testing.T) {
 	writeTestFile(t, filepath.Join(mirrorDst, "one.txt"), "one")
 	extraKeep := filepath.Join(mirrorDst, "extra-keep.txt")
 	writeTestFile(t, extraKeep, "keep")
+	for i := 1; i <= 8; i++ {
+		writeTestFile(t, filepath.Join(mirrorDst, fmt.Sprintf("extra-guard-%d.txt", i)), "guard")
+	}
 	writeTestFile(t, filepath.Join(afterSrc, "later.txt"), "later")
 	if err := os.MkdirAll(afterDst, 0o700); err != nil {
 		t.Fatal(err)
@@ -510,7 +517,7 @@ func TestE2EMoveRoutingSuffixAndStop(t *testing.T) {
 
 	c.press(win.ID, "button", "全部运行")
 	c.waitText(win.ID, "确认本次Mirror", 10*time.Second)
-	c.waitText(win.ID, "批次余下 1 项", 5*time.Second)
+	c.waitText(win.ID, "批次 2/3", 5*time.Second)
 	c.press(win.ID, "button", "停止")
 	c.waitNoText(win.ID, "确认本次Mirror", 10*time.Second)
 	c.waitText(win.ID, "+ 新建任务", 5*time.Second)
@@ -888,6 +895,78 @@ func TestE2ELargeSourcePreviewProfileAndTopologyCascade(t *testing.T) {
 	c.press(win.ID, "button", "Archive")
 	c.waitText(win.ID, "↳ 接力自 Big Mirror", 5*time.Second)
 	c.waitText(win.ID, "+ 新建任务", 5*time.Second)
+
+	c.quitViaSettings(win.ID, "设置", "退出")
+}
+
+func TestE2EExecutionProgressBannerAndHistoryAudit(t *testing.T) {
+	inst := newE2EInstall(t)
+	inst.seedLocale("zh-Hans")
+
+	sourceDir := filepath.Join(inst.workDir, "src")
+	sourceDir2 := filepath.Join(inst.workDir, "src2")
+	okTarget := filepath.Join(inst.workDir, "ok-target")
+	missingTarget := filepath.Join(inst.workDir, "missing-target")
+	writeTestFile(t, filepath.Join(sourceDir, "a.txt"), "alpha")
+	writeTestFile(t, filepath.Join(sourceDir2, "b.txt"), "beta")
+	if err := os.MkdirAll(okTarget, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	proc := inst.start()
+	c := proc.client
+	win := c.waitWindow("SyncMaid", boolPtr(true), 15*time.Second)
+	c.idle(win.ID)
+
+	// Task 1: healthy sync
+	c.press(win.ID, "button", "+ 新建任务")
+	c.setValue(win.ID, "任务名称", "GoodSync")
+	c.setValue(win.ID, "源文件夹路径", sourceDir)
+	c.press(win.ID, "button", "保存任务")
+	c.waitNoText(win.ID, "保存任务", 10*time.Second)
+	c.pressAfter(win.ID, "GoodSync", "button", "+ 添加目标")
+	c.setValue(win.ID, "目标名称", "OkDest")
+	c.setValue(win.ID, "目标文件夹路径", okTarget)
+	c.press(win.ID, "button", "保存")
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
+	c.pressAfter(win.ID, "GoodSync", "button", "▶ 运行")
+	c.waitText(win.ID, "全部已同步", 15*time.Second)
+
+	// Task 2: target path does not exist -> fails cleanly and records error in history
+	c.press(win.ID, "button", "+ 新建任务")
+	c.setValue(win.ID, "任务名称", "FailSync")
+	c.setValue(win.ID, "源文件夹路径", sourceDir2)
+	c.press(win.ID, "button", "保存任务")
+	c.waitNoText(win.ID, "保存任务", 10*time.Second)
+	c.pressAfter(win.ID, "FailSync", "button", "+ 添加目标")
+	c.setValue(win.ID, "目标名称", "BadDest")
+	c.setValue(win.ID, "目标文件夹路径", missingTarget)
+	c.press(win.ID, "button", "保存")
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
+	c.pressAfter(win.ID, "FailSync", "button", "▶ 运行")
+	c.waitText(win.ID, "1个中有1个失败", 15*time.Second)
+
+	// Click destination status link on FailSync -> jumps to History, filtered and located
+	c.pressContains(win.ID, "link", "失败")
+	c.waitText(win.ID, "近期运行记录", 5*time.Second)
+	c.waitText(win.ID, "已定位", 5*time.Second)
+	c.waitText(win.ID, "任务: FailSync ×", 5*time.Second)
+	c.waitText(win.ID, "目录不可访问", 5*time.Second)
+
+	// Clear task filter -> both FailSync and GoodSync appear in timeline
+	c.press(win.ID, "button", "任务: FailSync ×")
+	c.waitText(win.ID, "GoodSync", 5*time.Second)
+
+	// Abnormal filter isolates FailSync
+	c.press(win.ID, "button", "仅异常")
+	c.waitNoText(win.ID, "GoodSync", 5*time.Second)
+	c.waitText(win.ID, "FailSync", 5*time.Second)
+
+	// All filter restores GoodSync and Diagnostics toggle reveals IDs
+	c.press(win.ID, "button", "全部")
+	c.waitText(win.ID, "GoodSync", 5*time.Second)
+	c.press(win.ID, "button", "诊断详情")
+	c.waitText(win.ID, "目标ID:", 5*time.Second)
 
 	c.quitViaSettings(win.ID, "设置", "退出")
 }

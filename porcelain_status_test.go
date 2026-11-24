@@ -394,3 +394,155 @@ func TestDestinationRecycleProbeAndSwitchToPermanent(t *testing.T) {
 		t.Fatal("expected manual session to be marked dirty after switching delete mode")
 	}
 }
+
+func TestGlobalExecutionBannerStatesAndDrawer(t *testing.T) {
+	taskID := taskconfig.NewID()
+	d1, d2 := taskconfig.NewID(), taskconfig.NewID()
+
+	a := &application{
+		locale: "zh-Hans",
+		manual: manualSession{phase: manualRunning},
+		liveSnapshot: liveRunSnapshot{
+			Active:           true,
+			TaskID:           taskID,
+			TaskName:         "DocsBackup",
+			Kind:             taskconfig.Sync,
+			Origin:           appcore.OriginManual,
+			BatchIndex:       1,
+			BatchTotal:       3,
+			CurrentDestID:    d2,
+			CurrentDestIndex: 1,
+			TotalDests:       2,
+			CurrentDestName:  "NAS",
+			Stage:            "同步中",
+			SubStage:         "校验中",
+			CurrentPath:      "photos/DSC01.ARW",
+			Fraction:         0.42,
+			Elapsed:          72 * time.Second,
+			HasETA:           true,
+			ETA:              160 * time.Second,
+			ByteRateBps:      84.5 * 1024 * 1024,
+			Progress: syncengine.TransferProgress{
+				Stage:          "同步中",
+				SubStage:       "校验中",
+				Path:           "photos/DSC01.ARW",
+				Total:          450,
+				Copied:         128,
+				TotalBytes:     4 << 30,
+				ProcessedBytes: 1 << 30,
+				Deferred:       1,
+			},
+			Destinations: []liveDestSnapshot{
+				{ID: d1, Name: "LocalD", Result: syncengine.DestinationResult{ID: d1, Name: "LocalD", State: syncengine.DestinationSucceeded, Progress: syncengine.TransferProgress{Copied: 450}}, Fraction: 1},
+				{ID: d2, Name: "NAS", Result: syncengine.DestinationResult{ID: d2, Name: "NAS", State: syncengine.DestinationRunning, Progress: syncengine.TransferProgress{Stage: "同步中", Total: 450, Copied: 128, TotalBytes: 4 << 30, ProcessedBytes: 1 << 30}}, Fraction: 0.42},
+			},
+			Events: []liveEvent{
+				{At: time.Now(), Level: liveEventWarn, Message: messagef("延迟文件（被占用或变化）：%s", "temp/lock.db")},
+			},
+		},
+	}
+
+	// Compact banner renders stage, task/target, percentage, ETA, substage, and counters.
+	compact := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(&porcelain)
+		ui.Column(c).Fill().Children(func() { a.globalExecutionBanner(c, 960) })
+	}, 960, 220)
+	for _, want := range []string{"DocsBackup", "目标 2/2: NAS", "批次 1/3", "42%", "photos/DSC01.ARW", "校验中", "延迟 1", "详情 ⌄"} {
+		if !compact.HasText(want) {
+			t.Fatalf("compact banner missing %q in %v", want, compact.Texts())
+		}
+	}
+
+	// Clicking Details expands the split drawer with destination list and in-memory events.
+	compact.Click(a.tr("详情 ⌄"))
+	if !a.liveDrawerOpen {
+		t.Fatal("expected liveDrawerOpen to toggle true")
+	}
+	expanded := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(&porcelain)
+		ui.Column(c).Fill().Children(func() { a.globalExecutionBanner(c, 960) })
+	}, 960, 420)
+	for _, want := range []string{"目标执行进度 (2)", "LocalD", "实时活动（内存缓冲）", "temp/lock.db"} {
+		if !expanded.HasText(want) {
+			t.Fatalf("expanded drawer missing %q in %v", want, expanded.Texts())
+		}
+	}
+
+	// Waiting confirmation pauses timer and displays warning state.
+	a.liveSnapshot.WaitingConfirm = true
+	a.liveSnapshot.Stage = "等待删除确认"
+	a.liveSnapshot.HasETA = false
+	a.liveSnapshot.Progress.PlannedRemoveFiles = 38
+	paused := ui.NewTester(func(c *ui.Context) {
+		c.SetTheme(&porcelain)
+		ui.Column(c).Fill().Children(func() { a.globalExecutionBanner(c, 960) })
+	}, 960, 420)
+	for _, want := range []string{"已暂停", "计时已暂停", "待移除 38 个多余文件"} {
+		if !paused.HasText(want) {
+			t.Fatalf("paused banner missing %q in %v", want, paused.Texts())
+		}
+	}
+}
+
+func TestHistoryAuditFiltersAndLiveMerge(t *testing.T) {
+	liveTaskID, okTaskID, failTaskID, deletedTaskID := taskconfig.NewID(), taskconfig.NewID(), taskconfig.NewID(), taskconfig.NewID()
+	destFail := taskconfig.NewID()
+	now := time.Date(2026, 11, 25, 2, 0, 0, 0, time.UTC)
+
+	a := &application{
+		locale: "zh-Hans",
+		tasks: &appcore.SavedTaskLibrary{
+			Tasks: []taskconfig.Task{
+				{ID: liveTaskID, Name: "LiveTask"},
+				{ID: okTaskID, Name: "AutoOK"},
+				{ID: failTaskID, Name: "FailTask"},
+			},
+		},
+		liveSnapshot: liveRunSnapshot{
+			Active:   true,
+			TaskID:   liveTaskID,
+			TaskName: "LiveTask",
+			Kind:     taskconfig.Sync,
+			Origin:   appcore.OriginManual,
+			Started:  now,
+			Stage:    "同步中",
+			Fraction: 0.5,
+			Events:   []liveEvent{{At: now, Level: liveEventInfo, Message: messagef("开始运行任务：%s", "LiveTask")}},
+		},
+		historyView: appcore.RunHistoryData{
+			Recent: []appcore.RunRecord{
+				{ID: taskconfig.NewID(), TaskID: deletedTaskID, Name: "OldRemoved", Origin: appcore.OriginManual, Started: now.Add(-3 * time.Hour), Ended: now.Add(-2 * time.Hour), Outcome: appcore.OutcomeSucceeded},
+				{ID: taskconfig.NewID(), TaskID: okTaskID, Name: "AutoOK", Origin: appcore.OriginScheduled, Started: now.Add(-2 * time.Hour), Ended: now.Add(-time.Hour), Outcome: appcore.OutcomeSucceeded},
+				{ID: taskconfig.NewID(), TaskID: failTaskID, Name: "FailTask", Origin: appcore.OriginWatch, Started: now.Add(-time.Hour), Ended: now.Add(-30 * time.Minute), Outcome: appcore.OutcomeFailed, Goals: []appcore.RunGoal{{ID: destFail, Name: "NasZ", State: syncengine.DestinationFailed, Error: "access denied"}}},
+			},
+		},
+	}
+
+	all := a.historyEntries()
+	if len(all) != 4 || !all[0].IsLive || !all[3].DeletedTask {
+		t.Fatalf("unexpected all entries: %+v", all)
+	}
+
+	tt := ui.NewTester(a.historyViewContent, 960, 620)
+	if !tt.HasText("实时执行状态") || !tt.HasText("已删除") {
+		t.Fatalf("historyViewContent missing live merge or deleted badge: %v", tt.Texts())
+	}
+
+	tt.Click(a.tr("仅异常"))
+	abn := a.historyEntries()
+	if len(abn) != 1 || abn[0].Record.TaskID != failTaskID {
+		t.Fatalf("abnormal filter entries = %+v, want only FailTask", abn)
+	}
+
+	tt.Click(a.tr("自动触发"))
+	auto := a.historyEntries()
+	if len(auto) != 2 {
+		t.Fatalf("auto filter entries = %d, want 2 (scheduled + watch)", len(auto))
+	}
+
+	a.openDestinationLog(failTaskID, destFail)
+	tt2 := ui.NewTester(a.historyViewContent, 960, 620)
+	if !tt2.HasText("已定位") || !tt2.HasText("任务: FailTask ×") {
+		t.Fatalf("openDestinationLog did not filter and highlight destination: %v", tt2.Texts())
+	}
+}
