@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
-	"syncmaid/internal/winutil"
 )
 
 var ErrMirrorDeclined = errors.New("未确认本次删除；多余文件保持不变")
@@ -82,13 +81,16 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 	if len(sourceInv.Files()) == 0 {
 		return p, errors.New("源没有普通文件，Mirror禁止删除")
 	}
+	backend := newLocalWindowsBackend(roots, recycle)
+	caps := backend.Capabilities()
+
 	// Scan target once before copy: an incomplete/unsupported target blocks before
 	// any copy, and its file list establishes pre-existing deletion candidates.
-	targetBefore, e := fileinventory.Scan(ctx, roots.target.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+	targetBefore, e := backend.ListTree(ctx)
 	if e != nil {
 		return p, e
 	}
-	if e = checkMirrorDirectoryConflicts(ctx, roots.target, sourceInv.Directories(), targetBefore); e != nil {
+	if e = backend.CheckDirectoryConflicts(ctx, sourceInv.Directories(), targetBefore); e != nil {
 		return p, e
 	}
 	if copyFiles != nil {
@@ -99,16 +101,16 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 	if e != nil {
 		return p, e
 	}
-	paths, targetStamps, e := collectMirrorCandidates(ctx, roots, targetBefore.Files(), sourceInv)
+	paths, e := backend.CollectExtraFiles(ctx, targetBefore, sourceInv)
 	if e != nil {
 		return p, e
 	}
-	preview := MirrorPreview{DestinationID: d.ID, Name: d.Name, Target: winutil.PathLabel(roots.target.Path), Mode: DestinationDeleteMode(d), Paths: paths}
+	preview := MirrorPreview{DestinationID: d.ID, Name: d.Name, Target: caps.TargetLabel, Mode: DestinationDeleteMode(d), Paths: paths}
 	if len(preview.Paths) == 0 {
 		dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, nil)
-		return p, restoreMirrorDirectories(ctx, roots.target, sourceInv.Directories(), targetBefore, dirty)
+		return p, backend.RestoreDirectories(ctx, sourceInv.Directories(), targetBefore, dirty)
 	}
-	if preview.Mode == taskconfig.Recycle && (roots.target.Network || roots.target.Removable || roots.target.Fat) {
+	if preview.Mode == taskconfig.Recycle && !caps.SupportsRecycle {
 		return p, errors.New("此目标不支持回收确认；多余文件未移除。若需要，请明确选择永久删除后重新运行。")
 	}
 	p.Stage = "等待删除确认"
@@ -142,7 +144,7 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 		if notify != nil {
 			notify(p)
 		}
-		e = removeMirrorCandidate(ctx, roots, rel, targetStamps[rel], preview.Mode, recycle)
+		e = backend.DeleteExtraFile(ctx, rel, preview.Mode)
 		if e != nil {
 			return p, fmt.Errorf("%s: %w", rel, e)
 		}
@@ -152,5 +154,5 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 		}
 	}
 	dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, preview.Paths)
-	return p, restoreMirrorDirectories(ctx, roots.target, sourceInv.Directories(), targetBefore, dirty)
+	return p, backend.RestoreDirectories(ctx, sourceInv.Directories(), targetBefore, dirty)
 }
