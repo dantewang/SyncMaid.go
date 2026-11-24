@@ -117,8 +117,25 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 		return p, e
 	}
 	if sourceInv == nil {
+		p.Stage = "扫描源文件夹"
+		if notify != nil {
+			notify(p)
+		}
 		var scanErr error
-		sourceInv, scanErr = fileinventory.Scan(ctx, roots.source.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+		sourceInv, scanErr = fileinventory.Scan(ctx, roots.source.Path, fileinventory.Options{
+			MaxEntries: 200000,
+			MaxDepth:   128,
+			OnProgress: func(sp fileinventory.ScanProgress) {
+				p.Stage = "扫描源文件夹"
+				p.Path = sp.CurrentPath
+				p.ScanFiles = sp.Files
+				p.ScanDirs = sp.Dirs
+				p.ScanBytes = sp.Bytes
+				if notify != nil {
+					notify(p)
+				}
+			},
+		})
 		if scanErr != nil {
 			return p, scanErr
 		}
@@ -131,7 +148,23 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 
 	// Scan target once before copy: an incomplete/unsupported target blocks before
 	// any copy, and its file list establishes pre-existing deletion candidates.
-	targetBefore, e := backend.ListTree(ctx)
+	p.Stage = "扫描目标目录"
+	p.Path = ""
+	p.ScanFiles, p.ScanDirs, p.ScanBytes = 0, 0, 0
+	if notify != nil {
+		notify(p)
+	}
+	listCtx := WithScanProgress(ctx, func(sp fileinventory.ScanProgress) {
+		p.Stage = "扫描目标目录"
+		p.Path = sp.CurrentPath
+		p.ScanFiles = sp.Files
+		p.ScanDirs = sp.Dirs
+		p.ScanBytes = sp.Bytes
+		if notify != nil {
+			notify(p)
+		}
+	})
+	targetBefore, e := backend.ListTree(listCtx)
 	if e != nil {
 		return p, e
 	}
@@ -215,6 +248,9 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 		aborted             bool
 		actuallyRemoved     []string
 	)
+	p.PlannedRemoveFiles = len(paths)
+	p.PlannedRemoveDirs = len(extraDirs)
+	p.SubStage = ""
 	for _, rel := range paths {
 		if e = ctx.Err(); e != nil {
 			return p, e

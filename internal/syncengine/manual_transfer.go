@@ -27,6 +27,24 @@ func TransferCopier(verifyContents bool) func(context.Context, *os.File, *os.Fil
 	return CopyUnverified
 }
 
+type verifyProgressKey struct{}
+
+// WithVerifyProgress attaches an optional callback invoked during SHA-256 readback verification.
+func WithVerifyProgress(ctx context.Context, fn func(int64)) context.Context {
+	if fn == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, verifyProgressKey{}, fn)
+}
+
+func verifyProgressFromContext(ctx context.Context) func(int64) {
+	if ctx == nil {
+		return nil
+	}
+	fn, _ := ctx.Value(verifyProgressKey{}).(func(int64))
+	return fn
+}
+
 func copyWithVerify(ctx context.Context, source, temp *os.File, verifyContents bool, progress func(int64)) error {
 	info, err := source.Stat()
 	if err != nil {
@@ -61,7 +79,7 @@ func copyWithVerify(ctx context.Context, source, temp *os.File, verifyContents b
 		return err
 	}
 	actual := sha256.New()
-	if _, err := CopyTransfer(ctx, actual, temp, buffer, nil); err != nil {
+	if _, err := CopyTransfer(ctx, actual, temp, buffer, verifyProgressFromContext(ctx)); err != nil {
 		return err
 	}
 	if string(h.Sum(nil)) != string(actual.Sum(nil)) {

@@ -19,15 +19,29 @@ import (
 // ManualRequest is a session task, deliberately separate from persisted legacy tasks.
 type ManualRequest struct{ Source, Target string }
 type TransferProgress struct {
-	Stage, Path                                string
-	Total, Copied, Unchanged                   int
-	Bytes                                      int64
-	Removed, RemovedDirs                       int
-	Deferred                                   int
-	DeferredPaths                              []string
-	Moved, Retained, Failed, Unmatched         int
-	SourceFiles                                int
-	SourceEmpty                                bool
+	Stage, Path                        string
+	Total, Copied, Unchanged           int
+	Bytes                              int64
+	Removed, RemovedDirs               int
+	Deferred                           int
+	DeferredPaths                      []string
+	Moved, Retained, Failed, Unmatched int
+	SourceFiles                        int
+	SourceEmpty                        bool
+
+	// In-memory runtime fields only; excluded from persisted run-history-go.json.
+	SubStage           string `json:"-"`
+	ScanFiles          int    `json:"-"`
+	ScanDirs           int    `json:"-"`
+	ScanBytes          int64  `json:"-"`
+	TotalBytes         int64  `json:"-"`
+	ProcessedBytes     int64  `json:"-"`
+	PlannedCopyFiles   int    `json:"-"`
+	PlannedCopyBytes   int64  `json:"-"`
+	PlannedRemoveFiles int    `json:"-"`
+	PlannedRemoveDirs  int    `json:"-"`
+	CurrentFileSize    int64  `json:"-"`
+	CurrentFileDone    int64  `json:"-"`
 }
 
 const (
@@ -254,8 +268,20 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 	}
 	if inventory == nil {
 		p.Stage = "扫描源文件夹"
+		p.SubStage = ""
 		update()
-		inventory, err = fileinventory.Scan(ctx, r.source.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+		inventory, err = fileinventory.Scan(ctx, r.source.Path, fileinventory.Options{
+			MaxEntries: 200000,
+			MaxDepth:   128,
+			OnProgress: func(sp fileinventory.ScanProgress) {
+				p.Stage = "扫描源文件夹"
+				p.Path = sp.CurrentPath
+				p.ScanFiles = sp.Files
+				p.ScanDirs = sp.Dirs
+				p.ScanBytes = sp.Bytes
+				update()
+			},
+		})
 		if err != nil {
 			return p, err
 		} // No destination mutation before a complete source scan.
@@ -264,6 +290,8 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 	p.SourceFiles = len(raw)
 	p.SourceEmpty = inventory.Empty()
 	p.Stage = "准备过滤"
+	p.SubStage = ""
+	p.Path = ""
 	update()
 	var files []fileinventory.File
 	var filterErr error
@@ -276,6 +304,11 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 		return p, filterErr
 	}
 	p.Total = len(files)
+	var totalBytes int64
+	for _, entry := range files {
+		totalBytes += entry.Size
+	}
+	p.TotalBytes = totalBytes
 	if len(files) == 0 {
 		p.Stage = "无匹配文件"
 		update()
@@ -288,6 +321,17 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 		for _, tf := range list {
 			targetFiles[tf.Path] = tf
 		}
+		var plannedFiles int
+		var plannedBytes int64
+		for _, entry := range files {
+			if existing, ok := targetFiles[entry.Path]; ok && !TransferNeeded(entry.Size, entry.Modified, existing.Size, existing.Modified) {
+				continue
+			}
+			plannedFiles++
+			plannedBytes += entry.Size
+		}
+		p.PlannedCopyFiles = plannedFiles
+		p.PlannedCopyBytes = plannedBytes
 	}
 	p.Stage = "同步中"
 	update()
@@ -297,17 +341,42 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 		if targetFiles != nil {
 			if existing, ok := targetFiles[entry.Path]; ok && !TransferNeeded(entry.Size, entry.Modified, existing.Size, existing.Modified) {
 				p.Unchanged++
+				p.ProcessedBytes += entry.Size
 				update()
 				continue
 			}
 		}
 		p.Path = entry.Path
+		p.CurrentFileSize = entry.Size
+		p.CurrentFileDone = 0
+		p.SubStage = "写入中"
 		update()
+		var fileWritten int64
+		var verifyDone int64
+		verifyCtx := WithVerifyProgress(ctx, func(n int64) {
+			verifyDone += n
+			p.SubStage = "校验中"
+			p.CurrentFileDone = verifyDone
+			update()
+		})
 		var copied bool
-		copied, err = transferFile(ctx, r, entry, ops, func(n int64) { p.Bytes += n; update() })
+		copied, err = transferFile(verifyCtx, r, entry, ops, func(n int64) {
+			fileWritten += n
+			p.Bytes += n
+			p.ProcessedBytes += n
+			p.CurrentFileDone = fileWritten
+			p.SubStage = "写入中"
+			update()
+		})
+		p.CurrentFileSize = 0
+		p.CurrentFileDone = 0
+		p.SubStage = ""
 		if err != nil {
 			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 				return p, err
+			}
+			if entry.Size > fileWritten {
+				p.ProcessedBytes += entry.Size - fileWritten
 			}
 			if isDeferrableTransferError(err) {
 				recordDeferred(&p, entry.Path)
@@ -326,6 +395,9 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 			}
 			continue
 		}
+		if entry.Size > fileWritten {
+			p.ProcessedBytes += entry.Size - fileWritten
+		}
 		consecutiveFailures = 0
 		if copied {
 			p.Copied++
@@ -341,6 +413,7 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 		return p, err
 	}
 	p.Stage = "已完成"
+	p.SubStage = ""
 	p.Path = ""
 	update()
 	return p, nil

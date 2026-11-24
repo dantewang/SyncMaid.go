@@ -34,10 +34,20 @@ const (
 	readBatch         = 256
 )
 
+// ScanProgress reports in-flight read-only scan counts using metadata already read.
+type ScanProgress struct {
+	Entries     int
+	Files       int
+	Dirs        int
+	Bytes       int64
+	CurrentPath string
+}
+
 // Options bounds a scan. Zero or negative values select the defaults.
 type Options struct {
-	MaxEntries int // directory entries seen, including unsupported ones
-	MaxDepth   int // nesting below the root; the root's children are depth 1
+	MaxEntries int                // directory entries seen, including unsupported ones
+	MaxDepth   int                // nesting below the root; the root's children are depth 1
+	OnProgress func(ScanProgress) // optional throttled progress callback
 }
 
 // File is a regular file. Path is root-relative with '/' separators, keeping
@@ -214,6 +224,7 @@ func scanWith(ctx context.Context, root string, opts Options, open func(string) 
 		e.Unsupported, e.UnsupportedTotal = s.unsupported, s.unsupportedTotal
 		return nil, e
 	}
+	s.maybeReport("", true)
 	slices.SortFunc(s.files, func(a, b File) int { return cmp.Compare(a.Path, b.Path) })
 	slices.SortFunc(s.dirs, func(a, b Directory) int { return cmp.Compare(a.Path, b.Path) })
 	return &Inventory{root: root, files: s.files, dirs: s.dirs, complete: true}, nil

@@ -8,21 +8,44 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 )
 
 var errFoundRegularFile = errors.New("found regular file")
 
 type scanner struct {
-	ctx              context.Context
-	opts             Options
-	root             string
-	stopOnFirstFile  bool
-	entries          int
-	files            []File
-	dirs             []Directory
-	unsupported      []UnsupportedEntry
-	unsupportedTotal int
+	ctx               context.Context
+	opts              Options
+	root              string
+	stopOnFirstFile   bool
+	entries           int
+	bytes             int64
+	files             []File
+	dirs              []Directory
+	unsupported       []UnsupportedEntry
+	unsupportedTotal  int
+	lastReport        time.Time
+	lastReportEntries int
+}
+
+func (s *scanner) maybeReport(path string, force bool) {
+	if s.opts.OnProgress == nil || s.stopOnFirstFile {
+		return
+	}
+	now := time.Now()
+	if !force && s.entries-s.lastReportEntries < 256 && now.Sub(s.lastReport) < 100*time.Millisecond {
+		return
+	}
+	s.lastReportEntries = s.entries
+	s.lastReport = now
+	s.opts.OnProgress(ScanProgress{
+		Entries:     s.entries,
+		Files:       len(s.files),
+		Dirs:        len(s.dirs),
+		Bytes:       s.bytes,
+		CurrentPath: path,
+	})
 }
 
 func (s *scanner) fail(kind ErrorKind, path string, err error) *ScanError {
@@ -154,10 +177,13 @@ func (s *scanner) entry(entry fs.DirEntry, rel string, subdirs *[]string) error 
 		if s.stopOnFirstFile {
 			return errFoundRegularFile
 		}
-		s.files = append(s.files, File{Path: path, Size: info.Size(), Modified: info.ModTime().UTC()})
+		size := info.Size()
+		s.bytes += size
+		s.files = append(s.files, File{Path: path, Size: size, Modified: info.ModTime().UTC()})
 	default:
 		s.addUnsupported(path, "special file: "+mode.Type().String())
 	}
+	s.maybeReport(rel, false)
 	return nil
 }
 

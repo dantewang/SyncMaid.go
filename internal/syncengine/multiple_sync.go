@@ -72,6 +72,24 @@ func InitialDestinationResults(q ManualTaskRequest) MultipleResult {
 	return r
 }
 
+type scanProgressKey struct{}
+
+// WithScanProgress attaches an optional callback invoked during directory inventory scans.
+func WithScanProgress(ctx context.Context, fn func(fileinventory.ScanProgress)) context.Context {
+	if fn == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, scanProgressKey{}, fn)
+}
+
+func scanProgressFromContext(ctx context.Context) func(fileinventory.ScanProgress) {
+	if ctx == nil {
+		return nil
+	}
+	fn, _ := ctx.Value(scanProgressKey{}).(func(fileinventory.ScanProgress))
+	return fn
+}
+
 // Each target runs in configuration order. A failure is recorded, not turned
 // into success or a reason to skip healthy targets. Cancellation stops the rest.
 // Events are value copies; the final map is handed over only after work ends.
@@ -138,7 +156,25 @@ func RunMultipleConfirmed(ctx context.Context, q ManualTaskRequest, notify func(
 			if e == nil {
 				if !sourceScanned {
 					sourceScanned = true
-					sourceInv, sourceScanErr = fileinventory.Scan(ctx, plan.source.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+					r.Progress.Stage = "扫描源文件夹"
+					if notify != nil {
+						notify(r)
+					}
+					sourceInv, sourceScanErr = fileinventory.Scan(ctx, plan.source.Path, fileinventory.Options{
+						MaxEntries: 200000,
+						MaxDepth:   128,
+						OnProgress: func(sp fileinventory.ScanProgress) {
+							r.Progress.Stage = "扫描源文件夹"
+							r.Progress.Path = sp.CurrentPath
+							r.Progress.ScanFiles = sp.Files
+							r.Progress.ScanDirs = sp.Dirs
+							r.Progress.ScanBytes = sp.Bytes
+							results[d.ID] = r
+							if notify != nil {
+								notify(r)
+							}
+						},
+					})
 				}
 				if sourceScanErr != nil {
 					e = sourceScanErr

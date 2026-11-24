@@ -459,3 +459,47 @@ func TestCloseErrorKeepsCauseAndKind(t *testing.T) {
 	}
 	assertKind(t, err, Enumeration)
 }
+
+func TestScanOnProgressMonotonicAndExactTotals(t *testing.T) {
+	root := t.TempDir()
+	totalWant := int64(0)
+	for i := range readBatch*2 + 20 {
+		sub := root
+		if i%2 == 0 {
+			sub = filepath.Join(root, "sub")
+		}
+		p := filepath.Join(sub, fmt.Sprintf("f%04d.bin", i))
+		data := strings.Repeat("x", (i%17)+1)
+		totalWant += int64(len(data))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var reports []ScanProgress
+	inv, err := Scan(context.Background(), root, Options{
+		OnProgress: func(p ScanProgress) {
+			reports = append(reports, p)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) < 2 {
+		t.Fatalf("expected throttled progress updates plus final update, got %d", len(reports))
+	}
+	for i := 1; i < len(reports); i++ {
+		if reports[i].Entries < reports[i-1].Entries ||
+			reports[i].Files < reports[i-1].Files ||
+			reports[i].Dirs < reports[i-1].Dirs ||
+			reports[i].Bytes < reports[i-1].Bytes {
+			t.Fatalf("non-monotonic progress: prev=%+v cur=%+v", reports[i-1], reports[i])
+		}
+	}
+	last := reports[len(reports)-1]
+	if last.Files != len(inv.Files()) || last.Dirs != len(inv.Directories()) || last.Bytes != totalWant {
+		t.Fatalf("final progress = %+v; want files=%d dirs=%d bytes=%d", last, len(inv.Files()), len(inv.Directories()), totalWant)
+	}
+}

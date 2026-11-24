@@ -92,7 +92,32 @@ func RunMove(ctx context.Context, q ManualTaskRequest, notify func(DestinationRe
 		return failAll(e)
 	}
 	defer func() { err = errors.Join(err, plan.close(ctx)) }()
-	files, stamps, e := scanMoveFiles(ctx, plan.source)
+	firstID := q.Destinations[0].ID
+	scanCtx := WithScanProgress(ctx, func(sp fileinventory.ScanProgress) {
+		r := results[firstID]
+		r.Progress.Stage = "扫描源文件夹"
+		r.Progress.Path = sp.CurrentPath
+		r.Progress.ScanFiles = sp.Files
+		r.Progress.ScanDirs = sp.Dirs
+		r.Progress.ScanBytes = sp.Bytes
+		results[firstID] = r
+		if notify != nil {
+			notify(r)
+		}
+	})
+	scanCtx = withMoveStampProgress(scanCtx, func(done, total int, rel string) {
+		r := results[firstID]
+		r.Progress.Stage = "校验源文件身份"
+		r.Progress.Path = rel
+		r.Progress.SourceFiles = total
+		r.Progress.Total = total
+		r.Progress.Copied = done
+		results[firstID] = r
+		if notify != nil {
+			notify(r)
+		}
+	})
+	files, stamps, e := scanMoveFiles(scanCtx, plan.source)
 	if e != nil {
 		return failAll(e)
 	}
@@ -103,7 +128,11 @@ func RunMove(ctx context.Context, q ManualTaskRequest, notify func(DestinationRe
 	var failures []error
 	for i, d := range q.Destinations {
 		r := results[d.ID]
-		r.Progress = TransferProgress{SourceFiles: len(files), Total: len(routes[i]), Unmatched: unmatched}
+		var totalBytes int64
+		for _, f := range routes[i] {
+			totalBytes += f.Size
+		}
+		r.Progress = TransferProgress{SourceFiles: len(files), Total: len(routes[i]), TotalBytes: totalBytes, Unmatched: unmatched}
 		emit := func() {
 			if r.State != DestinationRunning && r.State != DestinationWaiting && r.Ended.IsZero() {
 				r.Ended = time.Now()
@@ -163,13 +192,37 @@ func RunMove(ctx context.Context, q ManualTaskRequest, notify func(DestinationRe
 				break
 			}
 			r.Progress.Stage = "移动中"
+			r.Progress.SubStage = "写入中"
 			r.Progress.Path = f.Path
+			r.Progress.CurrentFileSize = f.Size
+			r.Progress.CurrentFileDone = 0
 			emit()
 			rel := f.Path
 			if d.Flatten {
 				rel = path.Base(rel)
 			}
-			published, e := moveFile(ctx, roots, f, rel, stamps[f.Path], d.Collision, d.VerifyContents, func(n int64) { r.Progress.Bytes += n; emit() })
+			var fileWritten int64
+			var verifyDone int64
+			moveCtx := WithVerifyProgress(ctx, func(n int64) {
+				verifyDone += n
+				r.Progress.SubStage = "校验中"
+				r.Progress.CurrentFileDone = verifyDone
+				emit()
+			})
+			published, e := moveFile(moveCtx, roots, f, rel, stamps[f.Path], d.Collision, d.VerifyContents, func(n int64) {
+				fileWritten += n
+				r.Progress.Bytes += n
+				r.Progress.ProcessedBytes += n
+				r.Progress.CurrentFileDone = fileWritten
+				r.Progress.SubStage = "写入中"
+				emit()
+			})
+			if ctx.Err() == nil && f.Size > fileWritten {
+				r.Progress.ProcessedBytes += f.Size - fileWritten
+			}
+			r.Progress.CurrentFileSize = 0
+			r.Progress.CurrentFileDone = 0
+			r.Progress.SubStage = ""
 			if published {
 				r.Progress.Copied++
 			}

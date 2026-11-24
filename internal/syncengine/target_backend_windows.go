@@ -40,7 +40,11 @@ func (b *localWindowsBackend) Capabilities() TargetCapabilities {
 }
 
 func (b *localWindowsBackend) ListTree(ctx context.Context) (*fileinventory.Inventory, error) {
-	return fileinventory.Scan(ctx, b.roots.target.Path, fileinventory.Options{MaxEntries: 200000, MaxDepth: 128})
+	return fileinventory.Scan(ctx, b.roots.target.Path, fileinventory.Options{
+		MaxEntries: 200000,
+		MaxDepth:   128,
+		OnProgress: scanProgressFromContext(ctx),
+	})
 }
 
 func (b *localWindowsBackend) CheckDirectoryConflicts(ctx context.Context, sourceDirs []fileinventory.Directory, targetBefore *fileinventory.Inventory) error {

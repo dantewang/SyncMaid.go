@@ -334,3 +334,58 @@ func TestCheckOrdinaryDirectoryPolicy(t *testing.T) {
 		t.Fatalf("expected access denied to propagate, got %v", err)
 	}
 }
+
+func TestProgressTracksBytesSubStageAndMirrorPlan(t *testing.T) {
+	q := manualFixture(t)
+	manualWrite(t, filepath.Join(q.Source, "copy.bin"), strings.Repeat("a", 128))
+	manualWrite(t, filepath.Join(q.Source, "same.bin"), strings.Repeat("b", 64))
+	manualWrite(t, filepath.Join(q.Target, "same.bin"), strings.Repeat("b", 64))
+	stamp := time.Unix(1700000000, 0)
+	for _, p := range []string{filepath.Join(q.Source, "same.bin"), filepath.Join(q.Target, "same.bin")} {
+		if e := os.Chtimes(p, stamp, stamp); e != nil {
+			t.Fatal(e)
+		}
+	}
+
+	var sawVerify bool
+	var prevProcessed int64
+	p, err := RunManualWithFilters(context.Background(), q, func(tp TransferProgress) {
+		if tp.SubStage == "校验中" {
+			sawVerify = true
+		}
+		if tp.ProcessedBytes < prevProcessed {
+			t.Fatalf("ProcessedBytes decreased: %d -> %d", prevProcessed, tp.ProcessedBytes)
+		}
+		prevProcessed = tp.ProcessedBytes
+	}, TransferIO{Copy: CopyChecked, Publish: PublishTransfer}, AllFileRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawVerify {
+		t.Fatal("expected verify substage callback during CopyChecked")
+	}
+	if p.TotalBytes != 192 || p.ProcessedBytes != 192 || p.Bytes != 128 || p.Copied != 1 || p.Unchanged != 1 {
+		t.Fatalf("unexpected Add-only progress: %+v", p)
+	}
+
+	// Mirror mode should compute exact planned copy and removal counts.
+	manualWrite(t, filepath.Join(q.Target, "extra1.txt"), "x")
+	manualWrite(t, filepath.Join(q.Target, "extra2.txt"), "y")
+	manualWrite(t, filepath.Join(q.Source, "copy2.bin"), strings.Repeat("c", 50))
+	d := ManualDestination{
+		ID:             taskconfig.NewID(),
+		Name:           "Mirror",
+		Path:           q.Target,
+		Strategy:       taskconfig.Mirror,
+		DeleteMode:     taskconfig.Permanent,
+		Filters:        AllFileRules(),
+		VerifyContents: false,
+	}
+	mp, err := RunMirrorSession(context.Background(), q, d, nil, nil, nil, func(context.Context, MirrorPreview) error { return nil }, nil, noRecycle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mp.PlannedCopyFiles != 1 || mp.PlannedCopyBytes != 50 || mp.PlannedRemoveFiles != 2 || mp.Removed != 2 {
+		t.Fatalf("unexpected Mirror plan progress: %+v", mp)
+	}
+}
