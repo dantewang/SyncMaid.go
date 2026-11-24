@@ -333,16 +333,20 @@ func (a *application) destinationLogView(c *ui.Context) {
 			ui.Text(c, a.tr("无法打开日志文件：%s", a.logOpenError.Error())).TextColor(porcelain.Danger)
 		}
 		porcelainScroll(c, &a.scrolls.destLog, func() {
-			ui.Column(c).FillWidth().Padding(10).Gap(6).Children(func() {
+			ui.Column(c).FillWidth().Gap(0).Children(func() {
 				count := 0
 				for _, r := range records {
 					for _, g := range r.Goals {
 						if g.ID != a.logDestination {
 							continue
 						}
+						rowBg := porcelain.Surface
+						if count%2 == 1 {
+							rowBg = ribbonRailBg
+						}
 						count++
-						ui.Row(c).FillWidth().Gap(10).Children(func() {
-							ui.Text(c, r.Started.Local().Format("01-02 15:04:05")).Font("Consolas").FontSize(14).TextColor(porcelain.TextMuted)
+						ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(12).Padding(10, 12).Background(rowBg).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+							ui.Text(c, r.Started.Local().Format("01-02 15:04:05")).Font("Consolas").FontSize(14).TextColor(porcelain.TextMuted).Shrink(0)
 							color := porcelain.Text
 							if g.Error != "" || r.Error != "" {
 								color = porcelain.Danger
@@ -355,7 +359,7 @@ func (a *application) destinationLogView(c *ui.Context) {
 								if dur := formatRunDuration(r.Started, r.Ended); dur != "" {
 									stateText += " · " + dur
 								}
-								ui.Text(c, stateText).Font("Consolas").FontSize(14).TextColor(color)
+								ui.Text(c, stateText).Font("Consolas").FontSize(14).FontWeight(600).TextColor(color)
 								if r.SourcePath != "" {
 									ui.Text(c, a.tr("源目录: ")+r.SourcePath).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
 								}
@@ -382,10 +386,12 @@ func (a *application) destinationLogView(c *ui.Context) {
 					}
 				}
 				if count == 0 {
-					ui.Text(c, a.tr("暂无可用运行记录。")).TextColor(porcelain.TextMuted)
+					ui.Box(c).Padding(12).Children(func() {
+						ui.Text(c, a.tr("暂无可用运行记录。")).TextColor(porcelain.TextMuted)
+					})
 				}
 			})
-		}).Grow(1).Shrink(1).MinHeight(0).FillWidth().Background(rgb(0xECECEE))
+		}).Grow(1).Shrink(1).MinHeight(0).FillWidth().Border(1, porcelain.Border).Background(porcelain.Surface)
 		ui.Row(c).FillWidth().Gap(10).Children(func() {
 			porcelainButton(c, a.tr("诊断详情")).Height(32).MinWidth(96).OnClick(func() { a.logDetails = !a.logDetails })
 			ui.Box(c).Grow(1)
