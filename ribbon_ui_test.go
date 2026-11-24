@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"syncmaid/internal/appcore"
@@ -232,5 +233,114 @@ func TestPorcelainScrollDynamicGutter(t *testing.T) {
 	rc, ok = tt.Find("inner-content")
 	if !ok || rc.W != 300-scrollbarGutterWidth {
 		t.Fatalf("expected width %v when scrollbar gutter active, got ok=%v rect=%+v", 300-scrollbarGutterWidth, ok, rc)
+	}
+}
+
+func TestEmbeddedDestinationWorkspaceAndPreviewLinkage(t *testing.T) {
+	taskID := taskconfig.NewID()
+	destID := taskconfig.NewID()
+	extPng := "png"
+	task := taskconfig.Task{
+		ID:         taskID,
+		Name:       "Eagle",
+		Kind:       taskconfig.Sync,
+		Trigger:    taskconfig.Trigger{Kind: "manual"},
+		SourcePath: `D:\BigSource`,
+		Destinations: []taskconfig.Destination{{
+			ID:       destID,
+			Name:     "ImagesOnly",
+			Strategy: taskconfig.AddOnly,
+			Target:   taskconfig.Target{Kind: "local", Path: `D:\Target\Images`},
+			Filters:  []taskconfig.Rule{{Kind: "extension", Extension: &extPng}},
+		}},
+	}
+	snap := &appcore.SourceSnapshot{
+		Source:      `D:\BigSource`,
+		FolderCount: 2,
+		TotalBytes:  3072,
+		Files: []appcore.PreviewFile{
+			{Path: "Media/a.png", Size: 1024},
+			{Path: "Media/b.jpg", Size: 1024},
+			{Path: "Docs/readme.txt", Size: 1024},
+		},
+		Extensions: []appcore.PreviewExtension{
+			{Text: "png", Count: 1},
+			{Text: "jpg", Count: 1},
+			{Text: "txt", Count: 1},
+		},
+	}
+
+	a := &application{
+		locale: "zh-Hans",
+		tasks:  &appcore.SavedTaskLibrary{Tasks: []taskconfig.Task{task}},
+	}
+	a.manual.onEdit = a.manualEdited
+	a.editCard(taskID, destID)
+	if !a.cards.editor || !a.cards.destinations || !a.sourcePreview.open {
+		t.Fatalf("expected embedded workspace and source preview to open: editor=%t dest=%t preview=%t", a.cards.editor, a.cards.destinations, a.sourcePreview.open)
+	}
+
+	a.sourcePreview.phase = previewReady
+	a.sourcePreview.cachedSnapshot = snap
+	q, err := a.previewDraft()
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := appcore.EvaluateSourceSnapshot(context.Background(), snap, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.sourcePreview.result = res
+
+	renderDetail := func(c *ui.Context) {
+		c.SetTheme(&porcelain)
+		ui.Column(c).Fill().Children(func() {
+			a.selectedTaskDetailView(c, task, 1040)
+		})
+	}
+
+	tt := ui.NewTester(renderDetail, 1040, 640)
+	for _, want := range []string{
+		"← " + a.tr("返回目标列表"),
+		a.tr("正在编辑目标：%s", "ImagesOnly"),
+		a.tr("源预览"),
+		a.tr("正在编辑：%s", "ImagesOnly"),
+		a.tr("+ 点击直接加入规则"),
+		"1 (33.3%)",
+	} {
+		if !tt.HasText(want) {
+			t.Fatalf("missing %q in workspace+preview view: %v", want, tt.Texts())
+		}
+	}
+
+	// Clicking .jpg in the Source Preview sidebar toggles it in the active destination's filter rules.
+	tt.Click(".jpg")
+	if len(a.manual.filterEditor.Groups[0].Rows) != 2 {
+		t.Fatalf("expected 2 filter rules after clicking .jpg, got %d", len(a.manual.filterEditor.Groups[0].Rows))
+	}
+	tt = ui.NewTester(renderDetail, 1040, 640)
+	if !tt.HasText("2 (66.7%)") {
+		t.Fatalf("expected live match count 2 (66.7%%), got %v", tt.Texts())
+	}
+
+	// Clicking .jpg again removes it.
+	tt.Click(".jpg")
+	if len(a.manual.filterEditor.Groups[0].Rows) != 1 {
+		t.Fatalf("expected 1 filter rule after toggling .jpg off, got %d", len(a.manual.filterEditor.Groups[0].Rows))
+	}
+
+	// Searching in Source Preview while editing shows per-file match/miss badges.
+	a.sourcePreview.searchQuery = "."
+	tt = ui.NewTester(renderDetail, 1040, 640)
+	if !tt.HasText(a.tr("✓ 命中")) || !tt.HasText(a.tr("✕ 未命中")) {
+		t.Fatalf("expected live match/miss badges during search, got %v", tt.Texts())
+	}
+	a.sourcePreview.searchQuery = ""
+
+	// Clicking back returns to destination list and discards unsaved edits.
+	tt = ui.NewTester(renderDetail, 1040, 640)
+	tt.Click("← " + a.tr("返回目标列表"))
+	if a.cards.editor || a.manual.dirty {
+		t.Fatalf("expected back button to close workspace and discard edits: editor=%t dirty=%t", a.cards.editor, a.manual.dirty)
 	}
 }

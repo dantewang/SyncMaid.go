@@ -237,6 +237,8 @@ func TestE2ETaskLifecyclePreviewRestartSyncAndLogWindow(t *testing.T) {
 	c.waitText(win.ID, "尚未添加目标", 5*time.Second)
 
 	c.pressAfter(win.ID, "E2E Sync", "button", "+ 添加目标")
+	c.waitText(win.ID, "返回目标列表", 5*time.Second)
+	c.waitText(win.ID, "源预览", 5*time.Second)
 	c.setValue(win.ID, "目标名称", "TextOnly")
 	c.setValue(win.ID, "目标文件夹路径", targetTxt)
 	c.press(win.ID, "button", "仅匹配")
@@ -248,17 +250,19 @@ func TestE2ETaskLifecyclePreviewRestartSyncAndLogWindow(t *testing.T) {
 	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
 	c.press(win.ID, "button", "+ 添加目标")
+	c.waitText(win.ID, "返回目标列表", 5*time.Second)
 	c.setValue(win.ID, "目标名称", "AllFiles")
 	c.setValue(win.ID, "目标文件夹路径", targetAll)
 
 	c.press(win.ID, "button", "扫描")
-	c.waitText(win.ID, "源文件: 3", 10*time.Second)
-	c.waitText(win.ID, "预览匹配: 3", 5*time.Second)
+	c.waitText(win.ID, "3 文件 · 1 文件夹", 10*time.Second)
+	c.waitText(win.ID, "3 (100.0%)", 5*time.Second)
+	c.setValue(win.ID, "搜索源路径", "notes.txt")
+	c.waitText(win.ID, "✓ 命中", 5*time.Second)
+	c.press(win.ID, "button", "清除")
 
 	c.press(win.ID, "button", "保存")
 	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
-	c.press(win.ID, "button", "源预览")
-	c.waitText(win.ID, "3 文件 · 1 文件夹", 5*time.Second)
 	c.waitText(win.ID, "2 (66.7%)", 5*time.Second)
 	c.waitText(win.ID, "3 (100.0%)", 5*time.Second)
 	c.press(win.ID, "button", "源预览")
@@ -814,8 +818,7 @@ func TestE2ELargeSourcePreviewProfileAndTopologyCascade(t *testing.T) {
 	c.press(win.ID, "button", "保存")
 	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 
-	// 2. Open Source Preview panel: all-files mode renders TopDirs + Extensions Profile & instant search.
-	c.press(win.ID, "button", "源预览")
+	// 2. Source Preview panel was opened alongside destination editing: all-files mode renders TopDirs + Extensions Profile & instant search.
 	c.press(win.ID, "button", "扫描源目录")
 	c.waitText(win.ID, "顶层目录分布", 10*time.Second)
 	c.waitText(win.ID, "Media/", 5*time.Second)
@@ -829,15 +832,18 @@ func TestE2ELargeSourcePreviewProfileAndTopologyCascade(t *testing.T) {
 	c.press(win.ID, "button", "清除")
 	c.waitText(win.ID, "顶层目录分布", 5*time.Second)
 
-	// 3. Adding a filtered Add-only target switches the open panel from Profile to Sampled Buckets.
+	// 3. Adding a filtered Add-only target shows live linkage in the side-by-side panel and switches to Sampled Buckets after saving.
 	c.pressAfter(win.ID, "Big Mirror", "button", "+ 添加目标")
+	c.waitText(win.ID, "返回目标列表", 5*time.Second)
 	c.setValue(win.ID, "目标名称", "Docs Only")
 	c.setValue(win.ID, "目标文件夹路径", txtTargetDir)
 	c.press(win.ID, "button", "仅匹配")
+	c.waitText(win.ID, "+ 点击直接加入规则", 5*time.Second)
 	c.press(win.ID, "button", "扩展名")
 	c.setValue(win.ID, "新规则", "txt")
 	c.press(win.ID, "button", "添加")
 	c.waitText(win.ID, "扩展名 txt", 5*time.Second)
+	c.waitText(win.ID, "10 (38.5%)", 5*time.Second)
 	c.press(win.ID, "button", "保存")
 	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
 

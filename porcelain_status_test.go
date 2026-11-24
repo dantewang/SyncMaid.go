@@ -275,16 +275,16 @@ func TestEditorInlineOverlapHintsAndSaveDisable(t *testing.T) {
 	a.manual.source = `G:\EagleRes`
 	a.cards.destinations = true
 	a.manual.target = `Z:\Archive\Nested`
-	destModal := ui.NewTester(func(c *ui.Context) {
+	destWorkspace := ui.NewTester(func(c *ui.Context) {
 		c.SetTheme(&porcelain)
 		ui.Column(c).Fill().Children(func() {
-			a.taskEditorView(c, 720)
+			a.destinationWorkspaceView(c)
 		})
 	}, 760, 620)
-	if !destModal.HasText("Downloads") {
-		t.Fatalf("missing destination overlap hint naming Downloads: %v", destModal.Texts())
+	if !destWorkspace.HasText("Downloads") {
+		t.Fatalf("missing destination overlap hint naming Downloads: %v", destWorkspace.Texts())
 	}
-	if saveBtn, ok := destModal.Access(a.tr("保存")); !ok || !saveBtn.Disabled {
+	if saveBtn, ok := destWorkspace.Access(a.tr("保存")); !ok || !saveBtn.Disabled {
 		t.Fatalf("expected Save button to be disabled on destination overlap: ok=%t info=%+v", ok, saveBtn)
 	}
 
