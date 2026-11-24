@@ -50,7 +50,9 @@ func TestMirrorFailureIsolatedAndPersistence(t *testing.T) {
 	q.Destinations[0].Strategy = taskconfig.Mirror
 	q.Destinations[0].DeleteMode = taskconfig.Permanent
 	manualWrite(t, filepath.Join(p.Source, "f.txt"), "input")
-	manualWrite(t, filepath.Join(p.Target, "extra.txt"), "keep")
+	for i := 0; i < 10; i++ {
+		manualWrite(t, filepath.Join(p.Target, "extra-"+string(rune('a'+i))+".txt"), "keep")
+	}
 	r, err := syncengine.RunMultipleConfirmed(context.Background(), q, nil, func(context.Context, syncengine.MirrorPreview) error { return syncengine.ErrMirrorDeclined }, nil)
 	if !errors.Is(err, syncengine.ErrMirrorDeclined) || r[q.Destinations[0].ID].State != syncengine.DestinationFailed || r[q.Destinations[1].ID].State != syncengine.DestinationSucceeded {
 		t.Fatal(r, err)
@@ -128,6 +130,62 @@ func TestMovePersistenceAndGuards(t *testing.T) {
 	_, _, e = syncengine.PrepareMoveRoutes(context.Background(), nil, []syncengine.ManualDestination{{ID: taskconfig.NewID(), Strategy: taskconfig.Move, Filters: []taskconfig.Rule{{Kind: "regex", Pattern: filterText("a")}}}})
 	if !errors.Is(e, filefilter.ErrUnsupportedRegex) {
 		t.Fatal(e)
+	}
+}
+
+func TestMirrorThresholdPersistenceAndUIControls(t *testing.T) {
+	data := t.TempDir()
+	l, err := appcore.LoadSavedTasks(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, _ := multiFixture(t)
+	q.Destinations = q.Destinations[:1]
+	q.Destinations[0].Strategy = taskconfig.Mirror
+	q.Destinations[0].DeleteMode = taskconfig.Permanent
+	q.Destinations[0].MassDeleteThreshold = 0.33
+	q.Destinations[0].MassDeleteThresholdSet = true
+
+	l, id, err := saveMultiple(l, "", "MirrorThreshold", q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err = appcore.LoadSavedTasks(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := l.Find(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Destinations[0].MassDeleteThreshold != 0.33 {
+		t.Fatalf("persisted threshold = %v, want 0.33", task.Destinations[0].MassDeleteThreshold)
+	}
+
+	a := &application{locale: "zh-Hans", tasks: l}
+	a.selectManual(id)
+	if a.manual.mirrorThresholdText != "33" {
+		t.Fatalf("mirrorThresholdText = %q, want 33", a.manual.mirrorThresholdText)
+	}
+
+	tt := ui.NewTester(func(c *ui.Context) { a.destinationModeView(c, false) }, 720, 420)
+	if tt.HasText("当前") {
+		t.Fatalf("unexpected '当前' badge in threshold UI: %v", tt.Texts())
+	}
+	if tt.HasText("源目录为空时始终禁止删除") {
+		t.Fatalf("help section should be collapsed by default: %v", tt.Texts())
+	}
+	tt.Click(a.tr("阈值规则说明"))
+	if !a.manual.mirrorThresholdHelpOpen {
+		t.Fatal("expected ? icon click to toggle help section open")
+	}
+	tt2 := ui.NewTester(func(c *ui.Context) { a.destinationModeView(c, false) }, 720, 420)
+	if !tt2.HasText("33%") {
+		t.Fatalf("expected expanded help text with 33%%: %v", tt2.Texts())
+	}
+	tt2.Click(a.tr("关闭 (0%)"))
+	if a.manual.mirrorThresholdText != "0" || a.manual.targets[0].MassDeleteThreshold != 0 || !a.manual.targets[0].MassDeleteThresholdSet {
+		t.Fatalf("expected 0%% preset to update threshold, got text=%q dest=%+v", a.manual.mirrorThresholdText, a.manual.targets[0])
 	}
 }
 

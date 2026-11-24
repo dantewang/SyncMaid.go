@@ -12,16 +12,18 @@ import (
 )
 
 type ManualDestination struct {
-	Matcher        *filefilter.Matcher
-	FilterError    error
-	ID             taskconfig.ID
-	Name, Path     string
-	Filters        []taskconfig.Rule
-	Strategy       taskconfig.Strategy
-	DeleteMode     taskconfig.DeleteMode
-	VerifyContents bool
-	Flatten        bool
-	Collision      taskconfig.CollisionPolicy
+	Matcher                *filefilter.Matcher
+	FilterError            error
+	ID                     taskconfig.ID
+	Name, Path             string
+	Filters                []taskconfig.Rule
+	Strategy               taskconfig.Strategy
+	DeleteMode             taskconfig.DeleteMode
+	VerifyContents         bool
+	Flatten                bool
+	Collision              taskconfig.CollisionPolicy
+	MassDeleteThreshold    float64
+	MassDeleteThresholdSet bool
 }
 type ManualTaskRequest struct {
 	regexTask    *taskconfig.Task

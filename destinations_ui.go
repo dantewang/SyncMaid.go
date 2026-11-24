@@ -4,7 +4,9 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"golang.org/x/sys/windows"
+	"math"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
@@ -86,11 +88,33 @@ func (a *application) destinationRecycleUnsupported(d syncengine.ManualDestinati
 	return ok && st.known && st.path == p && st.unsupported
 }
 
+func formatThresholdPercent(v float64) string {
+	return strconv.Itoa(int(math.Round(v * 100)))
+}
+
+func parseThresholdPercent(text string) (float64, bool) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(trimmed)
+	if err != nil || n < 0 || n > 100 {
+		return 0, false
+	}
+	return float64(n) / 100.0, true
+}
+
 func (s *manualSession) flushTarget() {
 	for i := range s.targets {
 		if s.targets[i].ID == s.targetID {
 			s.targets[i].Name = s.targetName
 			s.targets[i].Path = s.target
+			if syncengine.DestinationStrategy(s.targets[i]) == taskconfig.Mirror {
+				if v, ok := parseThresholdPercent(s.mirrorThresholdText); ok {
+					s.targets[i].MassDeleteThreshold = v
+					s.targets[i].MassDeleteThresholdSet = true
+				}
+			}
 			return
 		}
 	}
@@ -109,6 +133,8 @@ func (s *manualSession) selectTarget(id taskconfig.ID) {
 			s.targetID = id
 			s.targetName = d.Name
 			s.target = d.Path
+			s.mirrorThresholdText = formatThresholdPercent(syncengine.DestinationMassDeleteThreshold(d))
+			s.mirrorThresholdHelpOpen = false
 			s.loadFilterDraft(id)
 			return
 		}
@@ -123,7 +149,13 @@ func (a *application) addManualTarget() {
 	}
 	s := &a.manual
 	s.flushTarget()
-	d := syncengine.ManualDestination{ID: taskconfig.NewID(), Name: a.tr("目标 %d", len(s.targets)+1), Filters: syncengine.AllFileRules()}
+	d := syncengine.ManualDestination{
+		ID:                     taskconfig.NewID(),
+		Name:                   a.tr("目标 %d", len(s.targets)+1),
+		Filters:                syncengine.AllFileRules(),
+		MassDeleteThreshold:    syncengine.DefaultMassDeleteThreshold,
+		MassDeleteThresholdSet: true,
+	}
 	if syncengine.ManualKind(s.kind) == taskconfig.Moving {
 		d.Strategy = taskconfig.Move
 		d.Collision = taskconfig.Skip
@@ -408,6 +440,12 @@ func (a *application) acceptDestination(id taskconfig.ID) bool {
 		if overlap, hasOverlap := a.destinationOverlapMessage(id, d.Path); hasOverlap {
 			s.message = overlap
 			return false
+		}
+		if id == s.targetID && syncengine.DestinationStrategy(d) == taskconfig.Mirror {
+			if _, ok := parseThresholdPercent(s.mirrorThresholdText); !ok {
+				s.message = messagef("删除确认阈值须为 0 到 100 的整数")
+				return false
+			}
 		}
 		delete(s.destinationEdits, id)
 		if syncengine.ManualKind(s.kind) == taskconfig.Moving && syncengine.IsAllFileRules(d.Filters) {

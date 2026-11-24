@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"math"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
@@ -103,6 +105,9 @@ func (a *application) setDestinationMode(strategy taskconfig.Strategy, mode task
 		}
 		d.Strategy = strategy
 		d.DeleteMode = mode
+		if strategy == taskconfig.Mirror && strings.TrimSpace(a.manual.mirrorThresholdText) == "" {
+			a.manual.mirrorThresholdText = formatThresholdPercent(syncengine.DestinationMassDeleteThreshold(*d))
+		}
 		a.manual.edited()
 		if strategy == taskconfig.Mirror && syncengine.DestinationDeleteMode(*d) == taskconfig.Recycle {
 			a.triggerRecycleProbe(d.ID, d.Path)
@@ -110,11 +115,27 @@ func (a *application) setDestinationMode(strategy taskconfig.Strategy, mode task
 		return
 	}
 }
+func (a *application) setMirrorThreshold(pct int) {
+	if !a.targetEditAllowed() || syncengine.ManualKind(a.manual.kind) == taskconfig.Moving {
+		return
+	}
+	for i := range a.manual.targets {
+		d := &a.manual.targets[i]
+		if d.ID != a.manual.targetID {
+			continue
+		}
+		d.MassDeleteThreshold = float64(pct) / 100.0
+		d.MassDeleteThresholdSet = true
+		a.manual.mirrorThresholdText = strconv.Itoa(pct)
+		a.manual.edited()
+		return
+	}
+}
 func (a *application) destinationModeView(c *ui.Context, locked bool) {
 	for _, d := range a.manual.targets {
 		if d.ID == a.manual.targetID {
 			ui.Text(c, a.tr("同步策略")).FontSize(13).FontWeight(600)
-			porcelainChoice(c, "sync", a.tr("镜像"), a.tr("复制新增和更改的文件；多余文件须每次确认后移除。"), syncengine.DestinationStrategy(d) == taskconfig.Mirror, locked, func() { a.setDestinationMode(taskconfig.Mirror, syncengine.DestinationDeleteMode(d)) }).Tooltip(a.tr("Mirror同步全部文件；每次移除多余文件前须确认。空源禁止删除，不清理空目录。"))
+			porcelainChoice(c, "sync", a.tr("镜像"), a.tr("复制新增和更改的文件；清理多余文件与空目录，达到阈值时确认。"), syncengine.DestinationStrategy(d) == taskconfig.Mirror, locked, func() { a.setDestinationMode(taskconfig.Mirror, syncengine.DestinationDeleteMode(d)) }).Tooltip(a.tr("Mirror同步全部文件并清理多余空目录；删除比例达到阈值时确认。空源始终禁止删除。"))
 			porcelainChoice(c, "＋", a.tr("仅添加"), a.tr("复制新增和更改的文件；从不删除目标中的文件。"), syncengine.DestinationStrategy(d) == taskconfig.AddOnly, locked, func() { a.setDestinationMode(taskconfig.AddOnly, syncengine.DestinationDeleteMode(d)) }).Tooltip(a.tr("复制新增和更改的文件；从不删除目标中的文件。"))
 			if syncengine.DestinationStrategy(d) == taskconfig.Mirror {
 				ui.Text(c, a.tr("镜像删除策略")).FontSize(13).FontWeight(600)
@@ -126,6 +147,55 @@ func (a *application) destinationModeView(c *ui.Context, locked bool) {
 					ui.Row(c).Gap(8).Children(func() {
 						ui.Text(c, a.tr("此目标不支持回收站，Mirror 清理多余文件将失败。")).FontSize(12).TextColor(porcelain.Danger).Grow(1)
 						porcelainButton(c, a.tr("切换为永久删除")).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Permanent) })
+					})
+				}
+				currentPct := int(math.Round(syncengine.DestinationMassDeleteThreshold(d) * 100))
+				validCustom := true
+				if strings.TrimSpace(a.manual.mirrorThresholdText) != "" {
+					if parsed, ok := parseThresholdPercent(a.manual.mirrorThresholdText); ok {
+						currentPct = int(math.Round(parsed * 100))
+					} else {
+						validCustom = false
+					}
+				}
+				isPreset := validCustom && (currentPct == 25 || currentPct == 50 || currentPct == 75 || currentPct == 0)
+
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+					ui.Text(c, a.tr("大规模删除确认阈值")).FontSize(13).FontWeight(600)
+					helpBtn := porcelainIcon(c, "help", a.tr("阈值规则说明"))
+					if a.manual.mirrorThresholdHelpOpen {
+						helpBtn = helpBtn.Background(ribbonBlueSoft).Border(1, ribbonBlue)
+					}
+					helpBtn.Disabled(locked).OnClick(func() {
+						a.manual.mirrorThresholdHelpOpen = !a.manual.mirrorThresholdHelpOpen
+					})
+				})
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Row(c).Gap(0).Children(func() {
+						porcelainSegment(c, "25%", validCustom && currentPct == 25).Disabled(locked).OnClick(func() { a.setMirrorThreshold(25) })
+						porcelainSegment(c, a.tr("50% 推荐"), validCustom && currentPct == 50).Disabled(locked).OnClick(func() { a.setMirrorThreshold(50) })
+						porcelainSegment(c, "75%", validCustom && currentPct == 75).Disabled(locked).OnClick(func() { a.setMirrorThreshold(75) })
+						porcelainSegment(c, a.tr("关闭 (0%)"), validCustom && currentPct == 0).Disabled(locked).OnClick(func() { a.setMirrorThreshold(0) })
+					})
+					ui.Text(c, a.tr("自定义")).FontSize(12).TextColor(porcelain.TextMuted)
+					customBorder, customBg := porcelain.Border, porcelain.Surface
+					if !validCustom {
+						customBorder = porcelain.Danger
+					} else if !isPreset {
+						customBorder, customBg = ribbonBlue, ribbonBlueSoft
+					}
+					ui.Row(c).AlignItems(ui.Center).Gap(4).Padding(2, 6).Border(1, customBorder).Background(customBg).Children(func() {
+						ui.TextInput(c, &a.manual.mirrorThresholdText).Width(46).Height(26).FontSize(13).Label(a.tr("自定义删除阈值百分比")).ReadOnly(locked).OnChange(a.manual.edited)
+						ui.Text(c, "%").FontSize(12).TextColor(porcelain.TextMuted)
+					})
+				})
+				if a.manual.mirrorThresholdHelpOpen {
+					ui.Column(c).FillWidth().Border(1, porcelain.Border).Background(porcelain.SurfaceHover).Padding(8, 10).Children(func() {
+						if validCustom && currentPct == 0 {
+							ui.Text(c, a.tr("已关闭比例确认：多余文件将自动按所选策略移除。源目录为空时始终禁止删除。")).FontSize(12).TextColor(porcelain.TextMuted)
+						} else {
+							ui.Text(c, a.tr("当目标原有文件数 ≥ 10，且本次计划删除比例 ≥ %d%% 时弹窗确认；低于阈值自动移除。源目录为空时始终禁止删除。", currentPct)).FontSize(12).TextColor(porcelain.TextMuted)
+						}
 					})
 				}
 				return

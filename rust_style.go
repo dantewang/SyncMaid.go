@@ -42,6 +42,7 @@ var porcelainGlyphs = func() map[string]*ui.SVG {
 		"filter": "funnel",
 		"copy":   "copy",
 		"check":  "check",
+		"help":   "help-circle",
 	}
 	out := map[string]*ui.SVG{}
 	for key, name := range names {

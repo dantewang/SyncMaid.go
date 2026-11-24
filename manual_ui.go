@@ -61,6 +61,8 @@ type manualSession struct {
 	mirrorReply             chan error
 	mirrorShowAll           bool
 	mirrorPreviewTabDirs    bool
+	mirrorThresholdText     string
+	mirrorThresholdHelpOpen bool
 }
 
 type savedTaskResult struct {

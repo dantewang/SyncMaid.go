@@ -54,13 +54,14 @@ func (a *application) selectManual(id taskconfig.ID) {
 	a.cards.navigation = id
 	s := manualSession{onEdit: a.manualEdited, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
 	for _, d := range t.Destinations {
-		s.targets = append(s.targets, cloneManualDestination(syncengine.ManualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy}))
+		s.targets = append(s.targets, cloneManualDestination(syncengine.ManualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, VerifyContents: d.VerifyContents, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy, MassDeleteThreshold: d.MassDeleteThreshold, MassDeleteThresholdSet: true}))
 	}
 	if len(s.targets) > 0 {
 		d := s.targets[0]
 		s.targetID = d.ID
 		s.targetName = d.Name
 		s.target = d.Path
+		s.mirrorThresholdText = formatThresholdPercent(syncengine.DestinationMassDeleteThreshold(d))
 		s.loadFilterDraft(d.ID)
 	}
 	if t.Trigger.SettleSeconds != nil {

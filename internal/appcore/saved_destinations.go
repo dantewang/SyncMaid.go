@@ -91,7 +91,7 @@ func MultipleRequestFromSaved(t taskconfig.Task) (syncengine.ManualTaskRequest, 
 		if strings.TrimSpace(d.Name) == "" {
 			return syncengine.ManualTaskRequest{}, errors.New("目标名称为空")
 		}
-		q.Destinations = append(q.Destinations, syncengine.ManualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, VerifyContents: d.VerifyContents, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy})
+		q.Destinations = append(q.Destinations, syncengine.ManualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, VerifyContents: d.VerifyContents, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy, MassDeleteThreshold: d.MassDeleteThreshold, MassDeleteThresholdSet: true})
 	}
 	return q, nil
 }
@@ -171,6 +171,9 @@ func (l *SavedTaskLibrary) PrepareMultiple(id taskconfig.ID, name string, q sync
 		}
 		d.Strategy = syncengine.DestinationStrategy(edit)
 		d.DeleteMode = syncengine.DestinationDeleteMode(edit)
+		if edit.MassDeleteThresholdSet {
+			d.MassDeleteThreshold = edit.MassDeleteThreshold
+		}
 		d.FlattenStructure = edit.Flatten
 		if task.Kind == taskconfig.Moving {
 			d.CollisionPolicy = edit.Collision

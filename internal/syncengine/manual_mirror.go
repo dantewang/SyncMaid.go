@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+
 	"syncmaid/internal/fileinventory"
 	"syncmaid/internal/taskconfig"
 )
@@ -11,12 +13,27 @@ import (
 var ErrMirrorDeclined = errors.New("未确认本次删除；多余文件保持不变")
 var ErrMirrorChanged = errors.New("目录或文件已变化，请重新运行并检查新预览")
 
+const (
+	DefaultMassDeleteThreshold  = 0.5
+	MinTargetFilesForRatioGuard = 10
+)
+
+type MirrorGuardVerdict uint8
+
+const (
+	MirrorGuardAllowed MirrorGuardVerdict = iota
+	MirrorGuardEmptySource
+	MirrorGuardNeedsConfirmation
+)
+
 type MirrorPreview struct {
 	DestinationID taskconfig.ID
 	Name, Target  string
 	Mode          taskconfig.DeleteMode
 	Paths         []string
 	Dirs          []string
+	TargetFiles   int
+	Threshold     float64
 }
 type MirrorConfirmation func(context.Context, MirrorPreview) error
 
@@ -31,6 +48,27 @@ func DestinationDeleteMode(d ManualDestination) taskconfig.DeleteMode {
 		return taskconfig.Recycle
 	}
 	return d.DeleteMode
+}
+func DestinationMassDeleteThreshold(d ManualDestination) float64 {
+	if !d.MassDeleteThresholdSet {
+		return DefaultMassDeleteThreshold
+	}
+	return d.MassDeleteThreshold
+}
+
+func EvaluateMirrorGuard(deleteCount, targetFileCount int, sourceEmpty bool, threshold float64) MirrorGuardVerdict {
+	if deleteCount == 0 {
+		return MirrorGuardAllowed
+	}
+	if sourceEmpty {
+		return MirrorGuardEmptySource
+	}
+	if threshold > 0 &&
+		targetFileCount >= MinTargetFilesForRatioGuard &&
+		float64(deleteCount) >= float64(targetFileCount)*threshold {
+		return MirrorGuardNeedsConfirmation
+	}
+	return MirrorGuardAllowed
 }
 
 func ValidateDestinationMode(d ManualDestination) error {
@@ -48,6 +86,12 @@ func ValidateDestinationMode(d ManualDestination) error {
 	}
 	if mode := DestinationDeleteMode(d); mode != taskconfig.Recycle && mode != taskconfig.Permanent {
 		return errors.New("不支持的删除方式")
+	}
+	if d.MassDeleteThresholdSet {
+		v := d.MassDeleteThreshold
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1 {
+			return errors.New("大规模删除确认阈值须在 0% 到 100% 之间")
+		}
 	}
 	return nil
 }
@@ -113,15 +157,32 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 			return p, e
 		}
 	}
-	preview := MirrorPreview{DestinationID: d.ID, Name: d.Name, Target: caps.TargetLabel, Mode: DestinationDeleteMode(d), Paths: paths, Dirs: extraDirs}
-	if len(preview.Paths) == 0 && len(preview.Dirs) == 0 {
+	if len(paths) == 0 && len(extraDirs) == 0 {
 		dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, nil)
 		return p, backend.RestoreDirectories(ctx, sourceInv.Directories(), targetBefore, dirty)
 	}
-	if preview.Mode == taskconfig.Recycle && !caps.SupportsRecycle {
+	mode := DestinationDeleteMode(d)
+	if mode == taskconfig.Recycle && !caps.SupportsRecycle {
 		return p, errors.New("此目标不支持回收确认；多余文件未移除。若需要，请明确选择永久删除后重新运行。")
 	}
-	if len(preview.Paths) > 0 {
+
+	targetFiles := len(targetBefore.Files())
+	threshold := DestinationMassDeleteThreshold(d)
+	verdict := EvaluateMirrorGuard(len(paths), targetFiles, len(sourceInv.Files()) == 0, threshold)
+	if verdict == MirrorGuardEmptySource {
+		return p, errors.New("源没有普通文件，Mirror禁止删除")
+	}
+	if verdict == MirrorGuardNeedsConfirmation {
+		preview := MirrorPreview{
+			DestinationID: d.ID,
+			Name:          d.Name,
+			Target:        caps.TargetLabel,
+			Mode:          mode,
+			Paths:         paths,
+			Dirs:          extraDirs,
+			TargetFiles:   targetFiles,
+			Threshold:     threshold,
+		}
 		p.Stage = "等待删除确认"
 		if notify != nil {
 			notify(p)
@@ -136,6 +197,7 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 			return p, e
 		}
 	}
+
 	if e = ctx.Err(); e != nil {
 		return p, e
 	}
@@ -146,6 +208,7 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 	if !hasRegular {
 		return p, errors.New("源没有普通文件，Mirror禁止删除")
 	}
+
 	var (
 		firstErr            error
 		consecutiveFailures int
@@ -161,7 +224,7 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 		if notify != nil {
 			notify(p)
 		}
-		e = backend.DeleteExtraFile(ctx, rel, preview.Mode)
+		e = backend.DeleteExtraFile(ctx, rel, mode)
 		if e != nil {
 			if errors.Is(e, context.Canceled) || ctx.Err() != nil {
 				return p, e
@@ -196,6 +259,7 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 			notify(p)
 		}
 	}
+
 	if !aborted && caps.SupportsDirectories {
 		for _, dirRel := range extraDirs {
 			if e = ctx.Err(); e != nil {
@@ -206,7 +270,7 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 			if notify != nil {
 				notify(p)
 			}
-			removed, e := backend.DeleteExtraEmptyDir(ctx, dirRel, preview.Mode)
+			removed, e := backend.DeleteExtraEmptyDir(ctx, dirRel, mode)
 			if e != nil {
 				if errors.Is(e, context.Canceled) || ctx.Err() != nil {
 					return p, e
@@ -243,6 +307,7 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 			}
 		}
 	}
+
 	dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, actuallyRemoved)
 	restoreErr := backend.RestoreDirectories(ctx, sourceInv.Directories(), targetBefore, dirty)
 	p.Path = ""

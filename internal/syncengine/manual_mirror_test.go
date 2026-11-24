@@ -24,11 +24,37 @@ func mirrorFixture(t *testing.T) (ManualRequest, ManualDestination) {
 	d.DeleteMode = taskconfig.Permanent
 	return p, d
 }
+func seedSharedGuardFiles(t *testing.T, source, target string, count int) {
+	t.Helper()
+	now := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
+	for i := 0; i < count; i++ {
+		name := filepath.Join("guard", "g-"+string(rune('a'+i))+".txt")
+		sp := filepath.Join(source, name)
+		tp := filepath.Join(target, name)
+		manualWrite(t, sp, "same")
+		manualWrite(t, tp, "same")
+		if err := os.Chtimes(sp, now, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(tp, now, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+func seedExtraTargetFiles(t *testing.T, target string, count int) {
+	t.Helper()
+	for i := 0; i < count; i++ {
+		manualWrite(t, filepath.Join(target, "z-extra-"+string(rune('a'+i))+".txt"), "extra")
+	}
+}
 func acceptMirror(context.Context, MirrorPreview) error { return nil }
 func noRecycle(string) error                            { return errors.New("unexpected recycle") }
 func TestMirrorPermanentAndDeclined(t *testing.T) {
 	for _, accept := range []bool{false, true} {
 		p, d := mirrorFixture(t)
+		seedSharedGuardFiles(t, p.Source, p.Target, 9)
+		d.MassDeleteThreshold = 0.1
+		d.MassDeleteThresholdSet = true
 		called := 0
 		progress, err := RunMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v MirrorPreview) error {
 			called++
@@ -91,6 +117,7 @@ func TestMirrorExpiredPreviewAndCancellation(t *testing.T) {
 	for _, kind := range []string{"source-reappeared", "source-emptied", "target-changed", "replacement", "cancel", "nil"} {
 		t.Run(kind, func(t *testing.T) {
 			p, d := mirrorFixture(t)
+			seedExtraTargetFiles(t, p.Target, 9)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			confirm := MirrorConfirmation(func(context.Context, MirrorPreview) error {
@@ -119,7 +146,7 @@ func TestMirrorExpiredPreviewAndCancellation(t *testing.T) {
 			progress, err := RunMirrorWith(ctx, p, d, nil, confirm, RunManualFiltered, noRecycle)
 			switch kind {
 			case "source-reappeared", "target-changed":
-				if err != nil || progress.Deferred != 1 || progress.Removed != 0 {
+				if err != nil || progress.Deferred != 1 || progress.Removed != 9 {
 					t.Fatal(progress, err)
 				}
 			case "replacement":
@@ -284,6 +311,10 @@ func TestMirrorDistinctUnicodeCaseFoldingAndRealCaseInsensitivity(t *testing.T) 
 			t.Fatalf("precondition failed for target file: data=%q err=%v", data, err)
 		}
 
+		seedSharedGuardFiles(t, p.Source, p.Target, 9)
+		d.MassDeleteThreshold = 0.1
+		d.MassDeleteThresholdSet = true
+
 		var gotPreview []string
 		progress, err := RunMirrorSession(context.Background(), p, d, nil, nil, nil, func(_ context.Context, v MirrorPreview) error {
 			gotPreview = append([]string(nil), v.Paths...)
@@ -292,7 +323,7 @@ func TestMirrorDistinctUnicodeCaseFoldingAndRealCaseInsensitivity(t *testing.T) 
 		if !errors.Is(err, ErrMirrorDeclined) {
 			t.Fatalf("expected ErrMirrorDeclined, got %v", err)
 		}
-		if progress.Copied != 1 || progress.Unchanged != 0 || progress.Removed != 0 {
+		if progress.Copied != 1 || progress.Unchanged != 9 || progress.Removed != 0 {
 			t.Fatalf("unexpected progress: %+v", progress)
 		}
 		if len(gotPreview) != 1 || gotPreview[0] != "\u1c90.txt" {
@@ -310,7 +341,7 @@ func TestMirrorDistinctUnicodeCaseFoldingAndRealCaseInsensitivity(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if progress.Copied != 0 || progress.Unchanged != 1 || progress.Removed != 1 {
+		if progress.Copied != 0 || progress.Unchanged != 10 || progress.Removed != 1 {
 			t.Fatalf("unexpected progress on second pass: %+v", progress)
 		}
 		if _, err := os.Stat(dstOtherFile); !errors.Is(err, os.ErrNotExist) {
@@ -748,8 +779,11 @@ func TestMirrorReplacedShortTargetWithLongAliasNeverDeletes(t *testing.T) {
 		d := q.Destinations[0]
 		d.Strategy = taskconfig.Mirror
 		d.DeleteMode = taskconfig.Permanent
+		d.MassDeleteThreshold = 0.1
+		d.MassDeleteThresholdSet = true
 
 		manualWrite(t, filepath.Join(p.Source, "keep.txt"), "source")
+		seedSharedGuardFiles(t, p.Source, p.Target, 9)
 		shortPath := filepath.Join(p.Target, shortName)
 		manualWrite(t, shortPath, "old1")
 		if err := os.Chtimes(shortPath, old, old); err != nil {
@@ -757,7 +791,7 @@ func TestMirrorReplacedShortTargetWithLongAliasNeverDeletes(t *testing.T) {
 		}
 
 		var longPath string
-		_, err := RunMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v MirrorPreview) error {
+		progress, err := RunMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v MirrorPreview) error {
 			if len(v.Paths) != 1 || v.Paths[0] != shortName {
 				t.Fatalf("unexpected preview: %+v", v)
 			}
@@ -773,28 +807,89 @@ func TestMirrorReplacedShortTargetWithLongAliasNeverDeletes(t *testing.T) {
 	})
 }
 
-func TestMirrorConsecutiveFailureFuse(t *testing.T) {
-	p, d := mirrorFixture(t)
-	d.DeleteMode = taskconfig.Recycle
-	if err := os.Remove(filepath.Join(p.Target, "extra.txt")); err != nil {
-		t.Fatal(err)
+func TestEvaluateMirrorGuard(t *testing.T) {
+	if got := EvaluateMirrorGuard(0, 100, true, 0.5); got != MirrorGuardAllowed {
+		t.Fatalf("zero deletes should be allowed, got %v", got)
 	}
-	for i := 0; i < 12; i++ {
-		manualWrite(t, filepath.Join(p.Target, fmt.Sprintf("fail-%02d.txt", i)), "x")
+	if got := EvaluateMirrorGuard(1, 100, true, 0.0); got != MirrorGuardEmptySource {
+		t.Fatalf("empty source must always block, got %v", got)
 	}
+	if got := EvaluateMirrorGuard(9, 9, false, 0.5); got != MirrorGuardAllowed {
+		t.Fatalf("below min target file floor should allow, got %v", got)
+	}
+	if got := EvaluateMirrorGuard(4, 10, false, 0.5); got != MirrorGuardAllowed {
+		t.Fatalf("4/10 with 0.5 threshold should allow, got %v", got)
+	}
+	if got := EvaluateMirrorGuard(5, 10, false, 0.5); got != MirrorGuardNeedsConfirmation {
+		t.Fatalf("5/10 with 0.5 threshold should need confirmation, got %v", got)
+	}
+	if got := EvaluateMirrorGuard(99, 100, false, 0.0); got != MirrorGuardAllowed {
+		t.Fatalf("0.0 threshold should allow without confirmation, got %v", got)
+	}
+}
 
-	sentinel := errors.New("recycle refused")
-	attempts := 0
-	progress, err := RunMirrorWith(context.Background(), p, d, nil, acceptMirror, RunManualFiltered, func(string) error {
-		attempts++
-		return sentinel
+func TestMirrorRatioGuardAutoDeleteVsConfirm(t *testing.T) {
+	t.Run("below-threshold-auto-deletes", func(t *testing.T) {
+		p, d := mirrorFixture(t)
+		// mirrorFixture already has 1 extra ("extra.txt") and 1 keep ("keep.txt").
+		// Add 5 more shared and 3 more extra => 10 target files total, 4 extra (40% < 50%).
+		seedSharedGuardFiles(t, p.Source, p.Target, 5)
+		seedExtraTargetFiles(t, p.Target, 3)
+
+		called := 0
+		progress, err := RunMirrorWith(context.Background(), p, d, nil, func(context.Context, MirrorPreview) error {
+			called++
+			return nil
+		}, RunManualFiltered, noRecycle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if called != 0 || progress.Removed != 4 {
+			t.Fatalf("expected auto-delete of 4 files without confirm, got called=%d progress=%+v", called, progress)
+		}
 	})
-	if !errors.Is(err, sentinel) {
-		t.Fatalf("expected sentinel failure, got %v", err)
-	}
-	if attempts != MaxConsecutiveFailures || progress.Failed != MaxConsecutiveFailures {
-		t.Fatalf("expected fuse at %d failures, got attempts=%d failed=%d", MaxConsecutiveFailures, attempts, progress.Failed)
-	}
+
+	t.Run("at-threshold-confirms-with-dirs", func(t *testing.T) {
+		p, d := mirrorFixture(t)
+		seedSharedGuardFiles(t, p.Source, p.Target, 5)
+		seedExtraTargetFiles(t, p.Target, 4)
+		if err := os.MkdirAll(filepath.Join(p.Target, "old-dir", "sub"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// 5 shared + 5 extra (extra.txt + 4 z-extra) = 10 target files, 5 extra = 50% >= 0.5 threshold.
+		var preview MirrorPreview
+		called := 0
+		progress, err := RunMirrorWith(context.Background(), p, d, nil, func(_ context.Context, v MirrorPreview) error {
+			called++
+			preview = v
+			return nil
+		}, RunManualFiltered, noRecycle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if called != 1 || len(preview.Paths) != 5 || len(preview.Dirs) != 2 {
+			t.Fatalf("unexpected confirm preview: called=%d preview=%+v", called, preview)
+		}
+		if progress.Removed != 5 || progress.RemovedDirs != 2 {
+			t.Fatalf("unexpected progress: %+v", progress)
+		}
+	})
+
+	t.Run("zero-threshold-disables-ratio-confirm", func(t *testing.T) {
+		p, d := mirrorFixture(t)
+		seedExtraTargetFiles(t, p.Target, 9)
+		d.MassDeleteThreshold = 0
+		d.MassDeleteThresholdSet = true
+
+		called := 0
+		progress, err := RunMirrorWith(context.Background(), p, d, nil, func(context.Context, MirrorPreview) error {
+			called++
+			return nil
+		}, RunManualFiltered, noRecycle)
+		if err != nil || called != 0 || progress.Removed != 10 {
+			t.Fatalf("expected 0%% threshold to auto-delete 10 files, called=%d progress=%+v err=%v", called, progress, err)
+		}
+	})
 }
 
 func TestMirrorCleansExtraEmptyDirsDeepestFirstAndPreservesNonEmpty(t *testing.T) {
@@ -826,4 +921,74 @@ func TestMirrorCleansExtraEmptyDirsDeepestFirstAndPreservesNonEmpty(t *testing.T
 		t.Fatalf("expected empty dir tree to be removed, stat err=%v", e)
 	}
 	manualRead(t, filepath.Join(p.Target, "late", "sub", "keep-new.txt"), "new")
+}
+
+func TestMirrorDefersChangedSourceAndExtraWithoutAborting(t *testing.T) {
+	q, p := multiFixture(t)
+	q.Destinations = q.Destinations[:1]
+	d := &q.Destinations[0]
+	d.Strategy = taskconfig.Mirror
+	d.DeleteMode = taskconfig.Permanent
+	d.MassDeleteThreshold = 0.1
+	d.MassDeleteThresholdSet = true
+
+	manualWrite(t, filepath.Join(p.Source, "defer.txt"), "initial")
+	manualWrite(t, filepath.Join(p.Source, "ok.txt"), "ok")
+	manualWrite(t, filepath.Join(p.Target, "defer.txt"), "old-target")
+	manualWrite(t, filepath.Join(p.Target, "extra1.txt"), "e1")
+	manualWrite(t, filepath.Join(p.Target, "extra2.txt"), "e2")
+	seedSharedGuardFiles(t, p.Source, p.Target, 8)
+
+	changedSource := false
+	results, err := RunMultipleConfirmed(context.Background(), q, func(r DestinationResult) {
+		if r.Progress.Stage == "同步中" && r.Progress.Path == "defer.txt" && !changedSource {
+			changedSource = true
+			manualWrite(t, filepath.Join(p.Source, "defer.txt"), "changed-mid-run")
+		}
+	}, func(_ context.Context, v MirrorPreview) error {
+		manualWrite(t, filepath.Join(p.Target, "extra1.txt"), "changed-in-target")
+		return nil
+	}, noRecycle)
+	if err != nil {
+		t.Fatalf("expected deferred-only run to complete without error, got %v", err)
+	}
+	res := results[d.ID]
+	if res.State != DestinationIncomplete {
+		t.Fatalf("expected DestinationIncomplete, got %q", res.State)
+	}
+	if res.Progress.Copied != 1 || res.Progress.Removed != 1 || res.Progress.Deferred != 2 {
+		t.Fatalf("unexpected counts: %+v", res.Progress)
+	}
+	manualRead(t, filepath.Join(p.Target, "ok.txt"), "ok")
+	manualRead(t, filepath.Join(p.Target, "defer.txt"), "old-target")
+	manualRead(t, filepath.Join(p.Target, "extra1.txt"), "changed-in-target")
+	if _, e := os.Stat(filepath.Join(p.Target, "extra2.txt")); !errors.Is(e, os.ErrNotExist) {
+		t.Fatalf("expected extra2.txt to be removed, err=%v", e)
+	}
+}
+
+func TestMirrorConsecutiveFailureFuse(t *testing.T) {
+	p, d := mirrorFixture(t)
+	d.DeleteMode = taskconfig.Recycle
+	d.MassDeleteThreshold = 0
+	d.MassDeleteThresholdSet = true
+	if err := os.Remove(filepath.Join(p.Target, "extra.txt")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 12; i++ {
+		manualWrite(t, filepath.Join(p.Target, fmt.Sprintf("fail-%02d.txt", i)), "x")
+	}
+
+	sentinel := errors.New("recycle refused")
+	attempts := 0
+	progress, err := RunMirrorWith(context.Background(), p, d, nil, acceptMirror, RunManualFiltered, func(string) error {
+		attempts++
+		return sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("expected sentinel failure, got %v", err)
+	}
+	if attempts != MaxConsecutiveFailures || progress.Failed != MaxConsecutiveFailures {
+		t.Fatalf("expected fuse at %d failures, got attempts=%d failed=%d", MaxConsecutiveFailures, attempts, progress.Failed)
+	}
 }
