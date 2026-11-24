@@ -85,7 +85,7 @@ func ValidateRunHistory(d RunHistoryData) error {
 				return errors.New("未知目标结果")
 			}
 			p := g.Counts
-			if p.Total < 0 || p.Copied < 0 || p.Unchanged < 0 || p.Bytes < 0 || p.Moved < 0 || p.Removed < 0 || p.Deferred < 0 || p.Retained < 0 || p.Failed < 0 || p.Unmatched < 0 || p.SourceFiles < 0 {
+			if p.Total < 0 || p.Copied < 0 || p.Unchanged < 0 || p.Bytes < 0 || p.Moved < 0 || p.Removed < 0 || p.RemovedDirs < 0 || p.Deferred < 0 || p.Retained < 0 || p.Failed < 0 || p.Unmatched < 0 || p.SourceFiles < 0 {
 				return errors.New("运行计数不能为负数")
 			}
 		}

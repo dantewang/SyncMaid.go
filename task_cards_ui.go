@@ -298,6 +298,7 @@ func (a *application) destinationStatus(r syncengine.DestinationResult, exists b
 	span := now.Sub(r.Ended)
 	files := max(r.Progress.Copied, r.Progress.Moved)
 	removed := r.Progress.Removed
+	removedDirs := r.Progress.RemovedDirs
 	ago := a.tr("刚刚同步")
 	if span >= 24*time.Hour {
 		ago = a.tr("%d天前同步", int(span.Hours()/24))
@@ -310,10 +311,20 @@ func (a *application) destinationStatus(r syncengine.DestinationResult, exists b
 		ago = a.tr(string(r.State))
 	}
 	if removed > 0 {
+		status := a.tr("%s · %d个文件 · 移除%d个", ago, files, removed)
 		if files == 0 {
-			return a.tr("%s · 移除%d个文件", ago, removed)
+			status = a.tr("%s · 移除%d个文件", ago, removed)
 		}
-		return a.tr("%s · %d个文件 · 移除%d个", ago, files, removed)
+		if removedDirs > 0 {
+			return status + " · " + a.tr("清理%d个空目录", removedDirs)
+		}
+		return status
+	}
+	if removedDirs > 0 {
+		if files == 0 {
+			return a.tr("%s · 清理%d个空目录", ago, removedDirs)
+		}
+		return a.tr("%s · %d个文件 · 清理%d个空目录", ago, files, removedDirs)
 	}
 	return a.tr("%s · %d个文件", ago, files)
 }

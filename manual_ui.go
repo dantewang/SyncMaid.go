@@ -60,6 +60,7 @@ type manualSession struct {
 	mirrorPreview           *syncengine.MirrorPreview
 	mirrorReply             chan error
 	mirrorShowAll           bool
+	mirrorPreviewTabDirs    bool
 }
 
 type savedTaskResult struct {

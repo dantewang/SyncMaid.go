@@ -157,7 +157,7 @@ func RunMultipleConfirmed(ctx context.Context, q ManualTaskRequest, notify func(
 			case e == nil:
 				if p.Deferred > 0 {
 					r.State = DestinationIncomplete
-				} else if p.Total == 0 && p.Removed == 0 {
+				} else if p.Total == 0 && p.Removed == 0 && p.RemovedDirs == 0 {
 					r.State = DestinationNoMatches
 				} else {
 					r.State = DestinationSucceeded

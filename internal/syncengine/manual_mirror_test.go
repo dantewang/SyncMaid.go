@@ -796,3 +796,34 @@ func TestMirrorConsecutiveFailureFuse(t *testing.T) {
 		t.Fatalf("expected fuse at %d failures, got attempts=%d failed=%d", MaxConsecutiveFailures, attempts, progress.Failed)
 	}
 }
+
+func TestMirrorCleansExtraEmptyDirsDeepestFirstAndPreservesNonEmpty(t *testing.T) {
+	p, d := mirrorFixture(t)
+	if err := os.Remove(filepath.Join(p.Target, "extra.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(p.Target, "empty", "a", "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(p.Target, "late", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	seededLate := false
+	progress, err := RunMirrorWith(context.Background(), p, d, func(tp TransferProgress) {
+		if tp.Stage == "清理多余空目录" && !seededLate {
+			seededLate = true
+			manualWrite(t, filepath.Join(p.Target, "late", "sub", "keep-new.txt"), "new")
+		}
+	}, nil, RunManualFiltered, noRecycle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.RemovedDirs != 3 {
+		t.Fatalf("expected 3 empty dirs removed, got %+v", progress)
+	}
+	if _, e := os.Stat(filepath.Join(p.Target, "empty")); !errors.Is(e, os.ErrNotExist) {
+		t.Fatalf("expected empty dir tree to be removed, stat err=%v", e)
+	}
+	manualRead(t, filepath.Join(p.Target, "late", "sub", "keep-new.txt"), "new")
+}

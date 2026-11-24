@@ -470,5 +470,11 @@
   "镜像删除策略": "Mirror delete policy",
   "部分完成": "Incomplete",
   "部分完成 · 延迟 %d 个文件": "Incomplete · %d deferred",
-  "部分完成 · 延迟 %d 个": "Incomplete · %d deferred"
+  "部分完成 · 延迟 %d 个": "Incomplete · %d deferred",
+  "确认本次Mirror：%s · %s · %d个文件 · %d个空目录": "Confirm this Mirror run: %s · %s · %d files · %d empty folders",
+  "多余文件 (%d)": "Extra files (%d)",
+  "多余空目录 (%d)": "Extra empty folders (%d)",
+  "清理%d个空目录": "cleaned %d empty folders",
+  "%s · 清理%d个空目录": "%s · cleaned %d empty folders",
+  "%s · %d个文件 · 清理%d个空目录": "%s · %d files · cleaned %d empty folders"
 }

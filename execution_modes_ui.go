@@ -173,6 +173,7 @@ func (a *application) confirmMirror(ctx context.Context, p syncengine.MirrorPrev
 			a.manual.mirrorPreview = &p
 			a.manual.mirrorReply = reply
 			a.manual.mirrorShowAll = false
+			a.manual.mirrorPreviewTabDirs = false
 		}
 	})
 	defer a.window.Update(func() {
@@ -180,6 +181,7 @@ func (a *application) confirmMirror(ctx context.Context, p syncengine.MirrorPrev
 			a.manual.mirrorPreview = nil
 			a.manual.mirrorReply = nil
 			a.manual.mirrorShowAll = false
+			a.manual.mirrorPreviewTabDirs = false
 		}
 	})
 	select {
@@ -205,6 +207,7 @@ func (a *application) answerMirror(accept bool) {
 	s.mirrorPreview = nil
 	s.mirrorReply = nil
 	s.mirrorShowAll = false
+	s.mirrorPreviewTabDirs = false
 }
 func (a *application) mirrorPreviewView(c *ui.Context) {
 	p := a.manual.mirrorPreview
@@ -215,18 +218,43 @@ func (a *application) mirrorPreviewView(c *ui.Context) {
 	if p.Mode == taskconfig.Permanent {
 		action = a.tr("永久删除（不可撤销）")
 	}
+	hasDirs := len(p.Dirs) > 0
+	showDirs := hasDirs && a.manual.mirrorPreviewTabDirs
 	ui.Column(c).Grow(1).FillWidth().Gap(12).Padding(16).Children(func() {
-		ui.Text(c, fmt.Sprintf(a.tr("确认本次Mirror：%s · %s · %d个文件"), p.Name, action, len(p.Paths))).FontSize(17).Bold()
+		if hasDirs {
+			ui.Text(c, a.tr("确认本次Mirror：%s · %s · %d个文件 · %d个空目录", p.Name, action, len(p.Paths), len(p.Dirs))).FontSize(17).Bold()
+		} else {
+			ui.Text(c, fmt.Sprintf(a.tr("确认本次Mirror：%s · %s · %d个文件"), p.Name, action, len(p.Paths))).FontSize(17).Bold()
+		}
 		porcelainPath(c, p.Target)
 		large := len(p.Paths) > 20
-		if large {
+		if hasDirs || large {
 			ui.Row(c).Gap(6).Children(func() {
-				porcelainSegment(c, a.tr("按目录汇总"), !a.manual.mirrorShowAll).OnClick(func() { a.manual.mirrorShowAll = false })
-				porcelainSegment(c, a.tr("全部路径"), a.manual.mirrorShowAll).OnClick(func() { a.manual.mirrorShowAll = true })
+				if hasDirs {
+					porcelainSegment(c, a.tr("多余文件 (%d)", len(p.Paths)), !showDirs).OnClick(func() { a.manual.mirrorPreviewTabDirs = false })
+					porcelainSegment(c, a.tr("多余空目录 (%d)", len(p.Dirs)), showDirs).OnClick(func() { a.manual.mirrorPreviewTabDirs = true })
+				}
+				if !showDirs && large {
+					porcelainSegment(c, a.tr("按目录汇总"), !a.manual.mirrorShowAll).OnClick(func() { a.manual.mirrorShowAll = false })
+					porcelainSegment(c, a.tr("全部路径"), a.manual.mirrorShowAll).OnClick(func() { a.manual.mirrorShowAll = true })
+				}
 			})
 		}
 		porcelainScroll(c, &a.scrolls.mirrorConfirm, func() {
 			ui.Column(c).FillWidth().Padding(10).Gap(4).Children(func() {
+				if showDirs {
+					limit := len(p.Dirs)
+					if limit > 200 {
+						limit = 200
+					}
+					for _, dirPath := range p.Dirs[:limit] {
+						ui.Text(c, dirPath).Font("Consolas").FontSize(13)
+					}
+					if limit < len(p.Dirs) {
+						ui.Text(c, a.tr("仅显示前 %d / 共 %d 项", limit, len(p.Dirs))).FontSize(12).TextColor(porcelain.TextMuted)
+					}
+					return
+				}
 				if large && !a.manual.mirrorShowAll {
 					for _, g := range groupMirrorPaths(p.Paths) {
 						dirLabel := g.Dir

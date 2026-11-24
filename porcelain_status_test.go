@@ -95,6 +95,9 @@ func TestRelativeStatusAndLogRetainRealCountsAndErrors(t *testing.T) {
 	if color := destinationHealthColor(r, true); color != porcelain.Warning {
 		t.Fatalf("incomplete color = %v, want Warning", color)
 	}
+	if got := a.destinationStatus(syncengine.DestinationResult{State: syncengine.DestinationSucceeded, Ended: now, Progress: syncengine.TransferProgress{Removed: 2, RemovedDirs: 3}}, true, now); got != "刚刚同步 · 移除2个文件 · 清理3个空目录" {
+		t.Fatalf("removed+dirs status = %q", got)
+	}
 }
 
 func TestDestinationCardStatusDoesNotOverflowNarrowWidth(t *testing.T) {

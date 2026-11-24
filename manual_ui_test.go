@@ -7,6 +7,7 @@ import (
 	"syncmaid/internal/appcore"
 	"testing"
 
+	"github.com/egoist/mygo/ui"
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
@@ -127,5 +128,32 @@ func TestMovePersistenceAndGuards(t *testing.T) {
 	_, _, e = syncengine.PrepareMoveRoutes(context.Background(), nil, []syncengine.ManualDestination{{ID: taskconfig.NewID(), Strategy: taskconfig.Move, Filters: []taskconfig.Rule{{Kind: "regex", Pattern: filterText("a")}}}})
 	if !errors.Is(e, filefilter.ErrUnsupportedRegex) {
 		t.Fatal(e)
+	}
+}
+
+func TestMirrorPreviewShowsExtraDirsWithoutFooterNote(t *testing.T) {
+	a := &application{
+		locale: "zh-Hans",
+		manual: manualSession{
+			mirrorPreview: &syncengine.MirrorPreview{
+				Name:   "NAS",
+				Target: `D:\Backups`,
+				Mode:   taskconfig.Recycle,
+				Paths:  []string{"old.txt"},
+				Dirs:   []string{"empty/sub", "empty"},
+			},
+		},
+	}
+	tt := ui.NewTester(func(c *ui.Context) { a.mirrorPreviewView(c) }, 720, 480)
+	if !tt.HasText("2个空目录") {
+		t.Fatalf("expected empty dir count in preview header: %v", tt.Texts())
+	}
+	if tt.HasText("空目录仅在") {
+		t.Fatalf("unexpected footer note in preview: %v", tt.Texts())
+	}
+	tt.Click(a.tr("多余空目录 (%d)", 2))
+	tt2 := ui.NewTester(func(c *ui.Context) { a.mirrorPreviewView(c) }, 720, 480)
+	if !tt2.HasText("empty/sub") {
+		t.Fatalf("expected extra empty dir in preview list: %v", tt2.Texts())
 	}
 }

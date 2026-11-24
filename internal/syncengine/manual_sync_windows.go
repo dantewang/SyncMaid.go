@@ -19,15 +19,15 @@ import (
 // ManualRequest is a session task, deliberately separate from persisted legacy tasks.
 type ManualRequest struct{ Source, Target string }
 type TransferProgress struct {
-	Stage, Path                        string
-	Total, Copied, Unchanged           int
-	Bytes                              int64
-	Removed                            int
-	Deferred                           int
-	DeferredPaths                      []string
-	Moved, Retained, Failed, Unmatched int
-	SourceFiles                        int
-	SourceEmpty                        bool
+	Stage, Path                                string
+	Total, Copied, Unchanged                   int
+	Bytes                                      int64
+	Removed, RemovedDirs                       int
+	Deferred                                   int
+	DeferredPaths                              []string
+	Moved, Retained, Failed, Unmatched         int
+	SourceFiles                                int
+	SourceEmpty                                bool
 }
 
 const (

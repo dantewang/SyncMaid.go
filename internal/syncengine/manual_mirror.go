@@ -16,6 +16,7 @@ type MirrorPreview struct {
 	Name, Target  string
 	Mode          taskconfig.DeleteMode
 	Paths         []string
+	Dirs          []string
 }
 type MirrorConfirmation func(context.Context, MirrorPreview) error
 
@@ -105,25 +106,35 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 	if e != nil {
 		return p, e
 	}
-	preview := MirrorPreview{DestinationID: d.ID, Name: d.Name, Target: caps.TargetLabel, Mode: DestinationDeleteMode(d), Paths: paths}
-	if len(preview.Paths) == 0 {
+	var extraDirs []string
+	if caps.SupportsDirectories {
+		extraDirs, e = backend.CollectExtraDirs(ctx, targetBefore, sourceInv)
+		if e != nil {
+			return p, e
+		}
+	}
+	preview := MirrorPreview{DestinationID: d.ID, Name: d.Name, Target: caps.TargetLabel, Mode: DestinationDeleteMode(d), Paths: paths, Dirs: extraDirs}
+	if len(preview.Paths) == 0 && len(preview.Dirs) == 0 {
 		dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, nil)
 		return p, backend.RestoreDirectories(ctx, sourceInv.Directories(), targetBefore, dirty)
 	}
 	if preview.Mode == taskconfig.Recycle && !caps.SupportsRecycle {
 		return p, errors.New("此目标不支持回收确认；多余文件未移除。若需要，请明确选择永久删除后重新运行。")
 	}
-	p.Stage = "等待删除确认"
-	if notify != nil {
-		notify(p)
-	}
-	if confirm == nil {
-		return p, ErrMirrorDeclined
-	}
-	confirmation := preview
-	confirmation.Paths = append([]string(nil), preview.Paths...)
-	if e = confirm(ctx, confirmation); e != nil {
-		return p, e
+	if len(preview.Paths) > 0 {
+		p.Stage = "等待删除确认"
+		if notify != nil {
+			notify(p)
+		}
+		if confirm == nil {
+			return p, ErrMirrorDeclined
+		}
+		confirmation := preview
+		confirmation.Paths = append([]string(nil), preview.Paths...)
+		confirmation.Dirs = append([]string(nil), preview.Dirs...)
+		if e = confirm(ctx, confirmation); e != nil {
+			return p, e
+		}
 	}
 	if e = ctx.Err(); e != nil {
 		return p, e
@@ -138,6 +149,7 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 	var (
 		firstErr            error
 		consecutiveFailures int
+		aborted             bool
 		actuallyRemoved     []string
 	)
 	for _, rel := range paths {
@@ -172,6 +184,7 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 			}
 			if consecutiveFailures >= MaxConsecutiveFailures {
 				firstErr = fmt.Errorf("%w（连续失败 %d 次已中止）", firstErr, MaxConsecutiveFailures)
+				aborted = true
 				break
 			}
 			continue
@@ -181,6 +194,53 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 		actuallyRemoved = append(actuallyRemoved, rel)
 		if notify != nil {
 			notify(p)
+		}
+	}
+	if !aborted && caps.SupportsDirectories {
+		for _, dirRel := range extraDirs {
+			if e = ctx.Err(); e != nil {
+				return p, e
+			}
+			p.Stage = "清理多余空目录"
+			p.Path = dirRel
+			if notify != nil {
+				notify(p)
+			}
+			removed, e := backend.DeleteExtraEmptyDir(ctx, dirRel, preview.Mode)
+			if e != nil {
+				if errors.Is(e, context.Canceled) || ctx.Err() != nil {
+					return p, e
+				}
+				if isDeferrableTransferError(e) {
+					recordDeferred(&p, dirRel)
+					consecutiveFailures = 0
+					if notify != nil {
+						notify(p)
+					}
+					continue
+				}
+				p.Failed++
+				if firstErr == nil {
+					firstErr = fmt.Errorf("%s: %w", dirRel, e)
+				}
+				consecutiveFailures++
+				if notify != nil {
+					notify(p)
+				}
+				if consecutiveFailures >= MaxConsecutiveFailures {
+					firstErr = fmt.Errorf("%w（连续失败 %d 次已中止）", firstErr, MaxConsecutiveFailures)
+					break
+				}
+				continue
+			}
+			consecutiveFailures = 0
+			if removed {
+				p.RemovedDirs++
+				actuallyRemoved = append(actuallyRemoved, dirRel)
+				if notify != nil {
+					notify(p)
+				}
+			}
 		}
 	}
 	dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, actuallyRemoved)

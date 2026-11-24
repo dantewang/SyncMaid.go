@@ -24,6 +24,8 @@ type TargetBackend interface {
 	ListTree(ctx context.Context) (*fileinventory.Inventory, error)
 	CheckDirectoryConflicts(ctx context.Context, sourceDirs []fileinventory.Directory, targetBefore *fileinventory.Inventory) error
 	CollectExtraFiles(ctx context.Context, targetBefore, sourceInv *fileinventory.Inventory) ([]string, error)
+	CollectExtraDirs(ctx context.Context, targetBefore, sourceInv *fileinventory.Inventory) ([]string, error)
 	DeleteExtraFile(ctx context.Context, rel string, mode taskconfig.DeleteMode) error
+	DeleteExtraEmptyDir(ctx context.Context, rel string, mode taskconfig.DeleteMode) (removed bool, err error)
 	RestoreDirectories(ctx context.Context, sourceDirs []fileinventory.Directory, targetBefore *fileinventory.Inventory, dirty map[string]bool) error
 }
