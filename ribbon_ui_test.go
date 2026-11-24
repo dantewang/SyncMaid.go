@@ -302,7 +302,6 @@ func TestEmbeddedDestinationWorkspaceAndPreviewLinkage(t *testing.T) {
 	tt := ui.NewTester(renderDetail, 1040, 640)
 	for _, want := range []string{
 		"← " + a.tr("返回目标列表"),
-		a.tr("正在编辑目标：%s", "ImagesOnly"),
 		a.tr("源预览"),
 		a.tr("正在编辑：%s", "ImagesOnly"),
 		a.tr("+ 点击直接加入规则"),

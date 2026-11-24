@@ -266,7 +266,7 @@ func TestE2ETaskLifecyclePreviewRestartSyncAndLogWindow(t *testing.T) {
 	c.waitText(win.ID, "2 (66.7%)", 5*time.Second)
 	c.waitText(win.ID, "3 (100.0%)", 5*time.Second)
 	c.press(win.ID, "button", "源预览")
-	c.waitNoText(win.ID, "仅扫描源端", 5*time.Second)
+	c.waitNoText(win.ID, "快照", 5*time.Second)
 	c.waitText(win.ID, "TextOnly", 5*time.Second)
 	c.waitText(win.ID, "AllFiles", 5*time.Second)
 
@@ -850,7 +850,7 @@ func TestE2ELargeSourcePreviewProfileAndTopologyCascade(t *testing.T) {
 	c.waitNoText(win.ID, "顶层目录分布", 5*time.Second)
 	c.waitText(win.ID, "10 (38.5%)", 5*time.Second)
 	c.press(win.ID, "button", "源预览")
-	c.waitNoText(win.ID, "仅扫描源端", 5*time.Second)
+	c.waitNoText(win.ID, "快照", 5*time.Second)
 
 	// 4. Mirror confirmation with >20 extra files defaults to directory summary & toggles all paths.
 	c.pressAfter(win.ID, "Big Mirror", "button", "▶ 运行")
