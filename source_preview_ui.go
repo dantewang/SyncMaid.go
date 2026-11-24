@@ -408,16 +408,18 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 			} else if p.phase != previewIdle && p.phase != previewScanning && p.phase != previewStopping {
 				a.sourcePreviewStatusText(c)
 			}
-			sub := a.tr("仅扫描源端")
+			sub := ""
 			switch {
 			case p.phase == previewIdle:
-				sub = a.tr("仅扫描源端 · 未扫描")
+				sub = a.tr("未扫描")
 			case p.phase == previewScanning || p.phase == previewStopping:
-				sub = a.tr("仅扫描源端 · 扫描中")
+				sub = a.tr("扫描中")
 			case p.phase == previewReady && p.result != nil && p.result.Snapshot != nil && !p.result.Snapshot.ScannedAt.IsZero():
-				sub = a.tr("仅扫描源端 · %s 快照", p.result.Snapshot.ScannedAt.Local().Format("15:04"))
+				sub = a.tr("%s 快照", p.result.Snapshot.ScannedAt.Local().Format("15:04"))
 			}
-			ui.Text(c, sub).FontSize(12).TextColor(porcelain.TextMuted)
+			if sub != "" {
+				ui.Text(c, sub).FontSize(12).TextColor(porcelain.TextMuted)
+			}
 		})
 		ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 

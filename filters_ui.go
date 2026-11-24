@@ -86,7 +86,7 @@ func (a *application) taskDeletionIssue() error {
 
 func (a *application) filtersView(c *ui.Context, locked bool) {
 	e := &a.manual.filterEditor
-	ui.Text(c, a.tr("此目标的文件过滤")).FontSize(16).FontWeight(500)
+	ui.Text(c, a.tr("此目标的文件过滤")).FontSize(13).FontWeight(600)
 	readOnly := e.Mode == appcore.FilterReadOnly
 	ui.Row(c).Gap(0).Children(func() {
 		for _, item := range []struct {
@@ -105,29 +105,26 @@ func (a *application) filtersView(c *ui.Context, locked bool) {
 		a.filterGroupsView(c, locked)
 	}
 	if readOnly {
-		ui.Text(c, a.tr("复杂或不支持的规则已原样保留，只读。"))
-		ui.Text(c, a.tr("旧正则迁移")).Tooltip(a.tr("更多操作"))
+		ui.Text(c, a.tr("复杂或不支持的规则已原样保留，只读。")).FontSize(12)
+		ui.Text(c, a.tr("旧正则迁移")).FontSize(12).Tooltip(a.tr("更多操作"))
 		if a.tasks != nil {
 			if bundle, ok := a.tasks.Restored[a.manual.id][a.manual.targetID]; ok {
-				ui.Text(c, a.tr("已有正则确认记录；执行仍会检查全部规则、绑定及版本。"))
+				ui.Text(c, a.tr("已有正则确认记录；执行仍会检查全部规则、绑定及版本。")).FontSize(12)
 				if bundle.Err != nil {
-					ui.Text(c, a.tr("确认无效，需重新预览：")+bundle.Err.Error())
+					ui.Text(c, a.tr("确认无效，需重新预览：")+bundle.Err.Error()).FontSize(12)
 				}
 				return
 			}
 		}
-		ui.Text(c, a.tr("诊断: ")+e.Reason)
+		ui.Text(c, a.tr("诊断: ")+e.Reason).FontSize(12)
 		return
-	}
-	if e.Mode == appcore.FilterAll {
-		ui.Text(c, a.tr("此目标接收所有源文件。")).FontSize(12)
 	}
 	if e.Mode == appcore.FilterNone {
 		ui.Text(c, a.tr("此目标不接收文件；不会删除任何已有文件。")).FontSize(12)
 	}
 
 	if e.Error != "" {
-		ui.Text(c, a.tr("过滤错误: ")+a.tr(e.Error))
+		ui.Text(c, a.tr("过滤错误: ")+a.tr(e.Error)).FontSize(12)
 	}
 }
 
@@ -224,7 +221,7 @@ func (a *application) filterGroupsView(c *ui.Context, locked bool) {
 							display = *r.Rule
 						}
 						summary := a.ruleSummary([]taskconfig.Rule{display})
-						ui.Text(c, summary).SingleLine().Ellipsis("…").Tooltip(summary).Grow(1).Shrink(1).MinWidth(0)
+						ui.Text(c, summary).FontSize(13).SingleLine().Ellipsis("…").Tooltip(summary).Grow(1).Shrink(1).MinWidth(0)
 						porcelainIcon(c, "×", a.tr("删除规则")).Disabled(locked).OnClick(func() { g.Rows = append(g.Rows[:j], g.Rows[j+1:]...); a.filterEdited() })
 					})
 				}
@@ -232,7 +229,7 @@ func (a *application) filterGroupsView(c *ui.Context, locked bool) {
 					for k, key := range []string{"路径前缀", "扩展名", "通配符"} {
 						filterSegment(c, a.tr(key), g.Kind == k).Disabled(locked).OnClick(func() { g.Kind = k })
 					}
-					ui.TextInput(c, &g.Input).Label(a.tr("新规则")).Placeholder([]string{"photos/2024", "jpg", "**/*.png"}[g.Kind]).Grow(1).Shrink(1).MinWidth(100).Height(32).MaxLength(8192).ReadOnly(locked)
+					ui.TextInput(c, &g.Input).FontSize(13).Label(a.tr("新规则")).Placeholder([]string{"photos/2024", "jpg", "**/*.png"}[g.Kind]).Grow(1).Shrink(1).MinWidth(100).Height(32).MaxLength(8192).ReadOnly(locked)
 					porcelainButton(c, a.tr("添加")).Background(porcelain.Accent).TextColor(porcelain.AccentText).Disabled(locked || strings.TrimSpace(g.Input) == "" || len(g.Rows) >= 128).OnClick(func() { a.addFilterRule(i) })
 				})
 				if a.sourcePreview.phase == previewReady && a.sourcePreview.result != nil {

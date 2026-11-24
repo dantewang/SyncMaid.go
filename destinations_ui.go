@@ -202,10 +202,6 @@ func (a *application) destinationWorkspaceView(c *ui.Context) {
 	s := &a.manual
 	locked := s.busy() || a.tasks == nil || a.selectedTaskIssue() != nil
 	_, hasDestOverlap := a.destinationOverlapMessage(s.targetID, s.target)
-	destTitle := strings.TrimSpace(s.targetName)
-	if destTitle == "" {
-		destTitle = a.tr("目标")
-	}
 
 	ui.Column(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Gap(0).Children(func() {
 		// Breadcrumb Header Strip
@@ -214,10 +210,6 @@ func (a *application) destinationWorkspaceView(c *ui.Context) {
 				a.cancelDestination(s.targetID)
 				a.closeTaskEditor()
 			})
-			ui.Text(c, a.tr("正在编辑目标：%s", destTitle)).FontSize(13).FontWeight(600).TextColor(ribbonBlue).SingleLine().Ellipsis("…").Grow(1).Shrink(1).MinWidth(0)
-			if a.sourcePreview.open {
-				ui.Text(c, a.tr("右侧「源预览」实时对照")).FontSize(12).TextColor(porcelain.TextMuted).Shrink(0)
-			}
 		})
 
 		if a.taskError != nil {
@@ -348,11 +340,11 @@ func (a *application) copyManualTarget(id taskconfig.ID) {
 
 func (a *application) selectedTargetEditor(c *ui.Context, locked bool) {
 	s := &a.manual
-	ui.Text(c, a.tr("名称"))
-	ui.TextInput(c, &s.targetName).Height(32).Label(a.tr("目标名称")).Placeholder(a.tr("目标名称")).ReadOnly(locked).OnChange(s.edited)
-	ui.Text(c, a.tr("目标文件夹"))
+	ui.Text(c, a.tr("名称")).FontSize(13).FontWeight(600)
+	ui.TextInput(c, &s.targetName).Height(32).FontSize(13).Label(a.tr("目标名称")).Placeholder(a.tr("目标名称")).ReadOnly(locked).OnChange(s.edited)
+	ui.Text(c, a.tr("目标文件夹")).FontSize(13).FontWeight(600)
 	ui.Row(c).Gap(8).Children(func() {
-		ui.TextInput(c, &s.target).Height(32).Label(a.tr("目标文件夹路径")).Grow(1).Placeholder(a.tr("现有目标文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
+		ui.TextInput(c, &s.target).Height(32).FontSize(13).Label(a.tr("目标文件夹路径")).Grow(1).Placeholder(a.tr("现有目标文件夹绝对路径")).ReadOnly(locked).OnChange(s.edited)
 		porcelainButton(c, a.tr("浏览")).Label(a.tr("选择目标")).Disabled(locked).OnClick(func() { a.chooseFolder(false) })
 	})
 	if overlap, hasOverlap := a.destinationOverlapMessage(s.targetID, s.target); hasOverlap {

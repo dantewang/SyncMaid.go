@@ -463,5 +463,9 @@
   "+ 点击直接加入规则": "+ Click to toggle rule",
   "✓ 命中": "✓ Match",
   "✕ 未命中": "✕ Miss",
-  "按目标实时分桶统计": "Live destination breakdown"
+  "按目标实时分桶统计": "Live destination breakdown",
+  "未扫描": "Not scanned",
+  "扫描中": "Scanning",
+  "%s 快照": "%s snapshot",
+  "镜像删除策略": "Mirror delete policy"
 }

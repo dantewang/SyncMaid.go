@@ -105,7 +105,7 @@ func paintRibbonStripe(e ui.Element) ui.Element {
 }
 
 func porcelainChoice(c *ui.Context, glyph, title, body string, selected, disabled bool, choose func()) ui.Element {
-	e := ui.ButtonBase(c).Label(title).FillWidth().Justify(ui.Start).Gap(12).Padding(10, 12).MinHeight(68).Disabled(disabled)
+	e := ui.ButtonBase(c).Label(title).FillWidth().Justify(ui.Start).Gap(12).Padding(8, 12).MinHeight(58).Disabled(disabled)
 	bg, border := porcelain.Surface, porcelain.Border
 	if selected {
 		bg, border = ribbonBlueSoft, porcelain.Text
@@ -115,10 +115,10 @@ func porcelainChoice(c *ui.Context, glyph, title, body string, selected, disable
 		bg = porcelain.SurfaceHover
 	}
 	return e.Border(1, border).Background(bg).Children(func() {
-		ui.Icon(c, porcelainGlyphs[glyph]).Size(22, 22)
-		ui.Column(c).Grow(1).Shrink(1).Gap(4).Children(func() {
-			ui.Text(c, title).Bold()
-			ui.Text(c, body).FontSize(13).TextColor(porcelain.TextMuted)
+		ui.Icon(c, porcelainGlyphs[glyph]).Size(20, 20)
+		ui.Column(c).Grow(1).Shrink(1).Gap(2).Children(func() {
+			ui.Text(c, title).FontSize(14).FontWeight(600)
+			ui.Text(c, body).FontSize(12).TextColor(porcelain.TextMuted)
 		})
 	}).OnClick(choose)
 }
@@ -184,7 +184,7 @@ func porcelainSegment(c *ui.Context, text string, selected bool, glyph ...string
 		if len(glyph) > 0 && porcelainGlyphs[glyph[0]] != nil {
 			ui.Icon(c, porcelainGlyphs[glyph[0]]).Size(15, 15)
 		}
-		ui.Text(c, text).FontSize(14).TextColor(fg)
+		ui.Text(c, text).FontSize(13).TextColor(fg)
 	})
 }
 

@@ -113,14 +113,14 @@ func (a *application) setDestinationMode(strategy taskconfig.Strategy, mode task
 func (a *application) destinationModeView(c *ui.Context, locked bool) {
 	for _, d := range a.manual.targets {
 		if d.ID == a.manual.targetID {
-			ui.Text(c, a.tr("同步策略"))
-			porcelainChoice(c, "sync", a.tr("镜像"), a.tr("复制新增和更改的文件；多余文件须每次确认后移除。"), syncengine.DestinationStrategy(d) == taskconfig.Mirror, locked, func() { a.setDestinationMode(taskconfig.Mirror, syncengine.DestinationDeleteMode(d)) })
-			porcelainChoice(c, "＋", a.tr("仅添加"), a.tr("复制新增和更改的文件；从不删除目标中的文件。"), syncengine.DestinationStrategy(d) == taskconfig.AddOnly, locked, func() { a.setDestinationMode(taskconfig.AddOnly, syncengine.DestinationDeleteMode(d)) })
+			ui.Text(c, a.tr("同步策略")).FontSize(13).FontWeight(600)
+			porcelainChoice(c, "sync", a.tr("镜像"), a.tr("复制新增和更改的文件；多余文件须每次确认后移除。"), syncengine.DestinationStrategy(d) == taskconfig.Mirror, locked, func() { a.setDestinationMode(taskconfig.Mirror, syncengine.DestinationDeleteMode(d)) }).Tooltip(a.tr("Mirror同步全部文件；每次移除多余文件前须确认。空源禁止删除，不清理空目录。"))
+			porcelainChoice(c, "＋", a.tr("仅添加"), a.tr("复制新增和更改的文件；从不删除目标中的文件。"), syncengine.DestinationStrategy(d) == taskconfig.AddOnly, locked, func() { a.setDestinationMode(taskconfig.AddOnly, syncengine.DestinationDeleteMode(d)) }).Tooltip(a.tr("复制新增和更改的文件；从不删除目标中的文件。"))
 			if syncengine.DestinationStrategy(d) == taskconfig.Mirror {
-				ui.Text(c, a.tr("Mirror同步全部文件；每次移除多余文件前须确认。空源禁止删除，不清理空目录。"))
-				ui.Row(c).Gap(8).Children(func() {
-					ui.Button(c, a.tr("回收站")).Selected(syncengine.DestinationDeleteMode(d) == taskconfig.Recycle).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Recycle) })
-					ui.Button(c, a.tr("永久删除")).Selected(syncengine.DestinationDeleteMode(d) == taskconfig.Permanent).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Permanent) })
+				ui.Text(c, a.tr("镜像删除策略")).FontSize(13).FontWeight(600)
+				ui.Row(c).Gap(0).Children(func() {
+					porcelainSegment(c, a.tr("回收站"), syncengine.DestinationDeleteMode(d) == taskconfig.Recycle).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Recycle) })
+					porcelainSegment(c, a.tr("永久删除"), syncengine.DestinationDeleteMode(d) == taskconfig.Permanent).Disabled(locked).OnClick(func() { a.setDestinationMode(taskconfig.Mirror, taskconfig.Permanent) })
 				})
 				if syncengine.DestinationDeleteMode(d) == taskconfig.Recycle && a.destinationRecycleUnsupported(d) {
 					ui.Row(c).Gap(8).Children(func() {
@@ -133,6 +133,7 @@ func (a *application) destinationModeView(c *ui.Context, locked bool) {
 		}
 	}
 }
+
 type mirrorDirGroup struct {
 	Dir   string
 	Count int
@@ -309,7 +310,7 @@ func (a *application) setMoveFlatten(flatten bool) {
 func (a *application) moveOptionsView(c *ui.Context, locked bool) {
 	for _, d := range a.manual.targets {
 		if d.ID == a.manual.targetID {
-			ui.Text(c, a.tr("Move冲突处理：保留源，或在扩展名前加编号；都不覆盖已有文件。"))
+			ui.Text(c, a.tr("Move冲突处理：保留源，或在扩展名前加编号；都不覆盖已有文件。")).FontSize(13).FontWeight(600)
 			ui.Row(c).Gap(8).Children(func() {
 				ui.Button(c, a.tr("保留源")).Selected(d.Collision == "" || d.Collision == taskconfig.Skip).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Skip) })
 				ui.Button(c, a.tr("加编号")).Selected(d.Collision == taskconfig.Suffix).Disabled(locked).OnClick(func() { a.setMoveCollision(taskconfig.Suffix) })
