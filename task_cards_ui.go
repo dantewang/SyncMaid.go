@@ -207,7 +207,7 @@ func destinationHealthColor(r syncengine.DestinationResult, exists bool) ui.Colo
 		return porcelain.Text
 	case syncengine.DestinationFailed:
 		return porcelain.Danger
-	case syncengine.DestinationCanceled, syncengine.DestinationSkipped, syncengine.DestinationInterrupted:
+	case syncengine.DestinationIncomplete, syncengine.DestinationCanceled, syncengine.DestinationSkipped, syncengine.DestinationInterrupted:
 		return porcelain.Warning
 	default:
 		return porcelain.TextMuted
@@ -226,7 +226,7 @@ func (a *application) taskHealth(t taskconfig.Task) (string, ui.Color) {
 		return a.tr("尚未添加目标"), porcelain.TextMuted
 	}
 	result := a.results[id]
-	completed, matched, failed, retained, interrupted := 0, 0, 0, 0, false
+	completed, matched, failed, deferred, retained, interrupted := 0, 0, 0, 0, 0, false
 	currentResult := false
 	for _, d := range t.Destinations {
 		goal, exists := result.destinations[d.ID]
@@ -236,6 +236,10 @@ func (a *application) taskHealth(t taskconfig.Task) (string, ui.Color) {
 			completed++
 			matched++
 			retained += goal.Progress.Retained
+		case syncengine.DestinationIncomplete:
+			completed++
+			matched++
+			deferred += goal.Progress.Deferred
 		case syncengine.DestinationNoMatches:
 			completed++
 		case syncengine.DestinationFailed:
@@ -251,6 +255,8 @@ func (a *application) taskHealth(t taskconfig.Task) (string, ui.Color) {
 		return a.render(result.message), porcelain.Danger
 	case interrupted || result.outcome == "stopped" && currentResult:
 		return a.render(result.message), porcelain.Warning
+	case deferred > 0:
+		return a.tr("部分完成 · 延迟 %d 个文件", deferred), porcelain.Warning
 	case completed == len(t.Destinations) && matched == 0:
 		return a.tr(string(syncengine.DestinationNoMatches)), porcelain.Text
 	case completed == len(t.Destinations) && retained > 0:
@@ -271,6 +277,11 @@ func (a *application) destinationStatus(r syncengine.DestinationResult, exists b
 	if r.State != syncengine.DestinationSucceeded {
 		switch r.State {
 		case syncengine.DestinationCanceled, syncengine.DestinationSkipped:
+			return a.tr(string(r.State))
+		case syncengine.DestinationIncomplete:
+			if r.Progress.Deferred > 0 {
+				return a.tr("部分完成 · 延迟 %d 个", r.Progress.Deferred)
+			}
 			return a.tr(string(r.State))
 		case syncengine.DestinationInterrupted:
 			return a.tr(string(r.State)) + " · " + a.tr("查看日志")

@@ -44,6 +44,7 @@ const (
 	DestinationWaiting     DestinationState = "未开始"
 	DestinationRunning     DestinationState = "运行中"
 	DestinationSucceeded   DestinationState = "完成"
+	DestinationIncomplete  DestinationState = "部分完成"
 	DestinationNoMatches   DestinationState = "无匹配"
 	DestinationFailed      DestinationState = "失败"
 	DestinationCanceled    DestinationState = "已停止"
@@ -154,7 +155,9 @@ func RunMultipleConfirmed(ctx context.Context, q ManualTaskRequest, notify func(
 			r.Progress = p
 			switch {
 			case e == nil:
-				if p.Total == 0 {
+				if p.Deferred > 0 {
+					r.State = DestinationIncomplete
+				} else if p.Total == 0 && p.Removed == 0 {
 					r.State = DestinationNoMatches
 				} else {
 					r.State = DestinationSucceeded

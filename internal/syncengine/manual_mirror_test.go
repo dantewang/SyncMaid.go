@@ -3,6 +3,7 @@ package syncengine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,8 +117,19 @@ func TestMirrorExpiredPreviewAndCancellation(t *testing.T) {
 				confirm = nil
 			}
 			progress, err := RunMirrorWith(ctx, p, d, nil, confirm, RunManualFiltered, noRecycle)
-			if err == nil || progress.Removed != 0 {
-				t.Fatal(progress, err)
+			switch kind {
+			case "source-reappeared", "target-changed":
+				if err != nil || progress.Deferred != 1 || progress.Removed != 0 {
+					t.Fatal(progress, err)
+				}
+			case "replacement":
+				if err == nil || progress.Failed != 1 {
+					t.Fatalf("expected hard failure on replacement, got progress=%+v err=%v", progress, err)
+				}
+			default:
+				if err == nil || progress.Removed != 0 {
+					t.Fatal(progress, err)
+				}
 			}
 			if kind == "target-changed" {
 				manualRead(t, filepath.Join(p.Target, "extra.txt"), "changed")
@@ -752,11 +764,35 @@ func TestMirrorReplacedShortTargetWithLongAliasNeverDeletes(t *testing.T) {
 			longPath = replaceTarget(t, p.Target)
 			return nil
 		}, RunManualFiltered, noRecycle)
-		if !errors.Is(err, ErrMirrorChanged) {
-			t.Fatalf("expected ErrMirrorChanged, got %v", err)
+		if err != nil || progress.Deferred != 1 || progress.Removed != 0 {
+			t.Fatalf("expected deferred candidate with zero deletions, got progress=%+v err=%v", progress, err)
 		}
 		if data, readErr := os.ReadFile(longPath); readErr != nil || string(data) != "new2" {
 			t.Fatalf("replaced long file was altered or deleted: data=%q err=%v", data, readErr)
 		}
 	})
+}
+
+func TestMirrorConsecutiveFailureFuse(t *testing.T) {
+	p, d := mirrorFixture(t)
+	d.DeleteMode = taskconfig.Recycle
+	if err := os.Remove(filepath.Join(p.Target, "extra.txt")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 12; i++ {
+		manualWrite(t, filepath.Join(p.Target, fmt.Sprintf("fail-%02d.txt", i)), "x")
+	}
+
+	sentinel := errors.New("recycle refused")
+	attempts := 0
+	progress, err := RunMirrorWith(context.Background(), p, d, nil, acceptMirror, RunManualFiltered, func(string) error {
+		attempts++
+		return sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("expected sentinel failure, got %v", err)
+	}
+	if attempts != MaxConsecutiveFailures || progress.Failed != MaxConsecutiveFailures {
+		t.Fatalf("expected fuse at %d failures, got attempts=%d failed=%d", MaxConsecutiveFailures, attempts, progress.Failed)
+	}
 }

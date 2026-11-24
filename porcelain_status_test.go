@@ -87,6 +87,14 @@ func TestRelativeStatusAndLogRetainRealCountsAndErrors(t *testing.T) {
 	if text := a.destinationStatus(r, true, now); text != a.tr("已停止") {
 		t.Fatalf("stop status = %q, want %q", text, a.tr("已停止"))
 	}
+	r.State = syncengine.DestinationIncomplete
+	r.Progress = syncengine.TransferProgress{Deferred: 2}
+	if text := a.destinationStatus(r, true, now); text != "部分完成 · 延迟 2 个" {
+		t.Fatalf("incomplete status = %q", text)
+	}
+	if color := destinationHealthColor(r, true); color != porcelain.Warning {
+		t.Fatalf("incomplete color = %v, want Warning", color)
+	}
 }
 
 func TestDestinationCardStatusDoesNotOverflowNarrowWidth(t *testing.T) {

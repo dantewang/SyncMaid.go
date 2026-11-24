@@ -190,7 +190,7 @@ func TestManualScanFailureAndChangedSourceBlockWrites(t *testing.T) {
 			manualWrite(t, filepath.Join(q.Source, "a"), "changed size")
 		}
 	})
-	if e == nil || p.Copied != 0 {
+	if e != nil || p.Copied != 0 || p.Deferred != 1 {
 		t.Fatal(p, e)
 	}
 	manualRead(t, filepath.Join(q.Target, "a"), "old")

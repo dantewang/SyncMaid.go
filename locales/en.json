@@ -467,5 +467,8 @@
   "未扫描": "Not scanned",
   "扫描中": "Scanning",
   "%s 快照": "%s snapshot",
-  "镜像删除策略": "Mirror delete policy"
+  "镜像删除策略": "Mirror delete policy",
+  "部分完成": "Incomplete",
+  "部分完成 · 延迟 %d 个文件": "Incomplete · %d deferred",
+  "部分完成 · 延迟 %d 个": "Incomplete · %d deferred"
 }

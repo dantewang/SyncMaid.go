@@ -142,6 +142,7 @@ func FinishRunRecord(r RunRecord, results syncengine.MultipleResult, err error, 
 			g.Counts = result.Progress
 			g.Counts.Path = ""
 			g.Counts.Stage = "" // Counts only, never a per-file trace.
+			g.Counts.DeferredPaths = nil
 			if result.State == syncengine.DestinationFailed && r.Outcome == OutcomeSucceeded {
 				r.Outcome = OutcomeFailed
 			}

@@ -135,7 +135,12 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 	if !hasRegular {
 		return p, errors.New("源没有普通文件，Mirror禁止删除")
 	}
-	for _, rel := range preview.Paths {
+	var (
+		firstErr            error
+		consecutiveFailures int
+		actuallyRemoved     []string
+	)
+	for _, rel := range paths {
 		if e = ctx.Err(); e != nil {
 			return p, e
 		}
@@ -146,13 +151,49 @@ func RunMirrorSession(ctx context.Context, q ManualRequest, d ManualDestination,
 		}
 		e = backend.DeleteExtraFile(ctx, rel, preview.Mode)
 		if e != nil {
-			return p, fmt.Errorf("%s: %w", rel, e)
+			if errors.Is(e, context.Canceled) || ctx.Err() != nil {
+				return p, e
+			}
+			if isDeferrableTransferError(e) {
+				recordDeferred(&p, rel)
+				consecutiveFailures = 0
+				if notify != nil {
+					notify(p)
+				}
+				continue
+			}
+			p.Failed++
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%s: %w", rel, e)
+			}
+			consecutiveFailures++
+			if notify != nil {
+				notify(p)
+			}
+			if consecutiveFailures >= MaxConsecutiveFailures {
+				firstErr = fmt.Errorf("%w（连续失败 %d 次已中止）", firstErr, MaxConsecutiveFailures)
+				break
+			}
+			continue
 		}
+		consecutiveFailures = 0
 		p.Removed++
+		actuallyRemoved = append(actuallyRemoved, rel)
 		if notify != nil {
 			notify(p)
 		}
 	}
-	dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, preview.Paths)
-	return p, backend.RestoreDirectories(ctx, sourceInv.Directories(), targetBefore, dirty)
+	dirty := dirtyMirrorDirs(p.Copied > 0, sourceInv, targetBefore, actuallyRemoved)
+	restoreErr := backend.RestoreDirectories(ctx, sourceInv.Directories(), targetBefore, dirty)
+	p.Path = ""
+	if firstErr == nil && restoreErr == nil {
+		p.Stage = "已完成"
+		if p.Deferred > 0 {
+			p.Stage = "部分完成"
+		}
+		if notify != nil {
+			notify(p)
+		}
+	}
+	return p, errors.Join(firstErr, restoreErr)
 }

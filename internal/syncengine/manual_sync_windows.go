@@ -23,9 +23,32 @@ type TransferProgress struct {
 	Total, Copied, Unchanged           int
 	Bytes                              int64
 	Removed                            int
+	Deferred                           int
+	DeferredPaths                      []string
 	Moved, Retained, Failed, Unmatched int
 	SourceFiles                        int
 	SourceEmpty                        bool
+}
+
+const (
+	MaxConsecutiveFailures = 10
+	maxDeferredSamples     = 20
+)
+
+var ErrSourceChanged = errors.New("源文件已在扫描后改变，请重新运行")
+
+func isDeferrableTransferError(err error) bool {
+	return errors.Is(err, ErrSourceChanged) ||
+		errors.Is(err, ErrMirrorChanged) ||
+		errors.Is(err, windows.ERROR_SHARING_VIOLATION) ||
+		errors.Is(err, windows.ERROR_LOCK_VIOLATION)
+}
+
+func recordDeferred(p *TransferProgress, rel string) {
+	p.Deferred++
+	if rel != "" && len(p.DeferredPaths) < maxDeferredSamples {
+		p.DeferredPaths = append(p.DeferredPaths, rel)
+	}
 }
 
 type TransferRoots struct {
@@ -268,6 +291,8 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 	}
 	p.Stage = "同步中"
 	update()
+	var firstErr error
+	consecutiveFailures := 0
 	for _, entry := range files {
 		if targetFiles != nil {
 			if existing, ok := targetFiles[entry.Path]; ok && !TransferNeeded(entry.Size, entry.Modified, existing.Size, existing.Modified) {
@@ -280,16 +305,37 @@ func runManualWithSessionTarget(ctx context.Context, q ManualRequest, r *Transfe
 		update()
 		var copied bool
 		copied, err = transferFile(ctx, r, entry, ops, func(n int64) { p.Bytes += n; update() })
+		if err != nil {
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				return p, err
+			}
+			if isDeferrableTransferError(err) {
+				recordDeferred(&p, entry.Path)
+				consecutiveFailures = 0
+				update()
+				continue
+			}
+			p.Failed++
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%s: %w", entry.Path, err)
+			}
+			consecutiveFailures++
+			update()
+			if consecutiveFailures >= MaxConsecutiveFailures {
+				return p, fmt.Errorf("%w（连续失败 %d 次已中止）", firstErr, MaxConsecutiveFailures)
+			}
+			continue
+		}
+		consecutiveFailures = 0
 		if copied {
 			p.Copied++
-		}
-		if err != nil {
-			return p, fmt.Errorf("%s: %w", entry.Path, err)
-		}
-		if !copied {
+		} else {
 			p.Unchanged++
 		}
 		update()
+	}
+	if firstErr != nil {
+		return p, firstErr
 	}
 	if err = ctx.Err(); err != nil {
 		return p, err
@@ -358,7 +404,7 @@ func transferFileTo(ctx context.Context, roots *TransferRoots, entry fileinvento
 		return false, e
 	}
 	if stamp.Size() != entry.Size || !stamp.ModTime().Equal(entry.Modified) {
-		return false, errors.New("源文件已在扫描后改变，请重新运行")
+		return false, ErrSourceChanged
 	}
 	if expected != nil {
 		actual, e := mirrorFileStamp(source, roots.source.Fat, roots.source.Network)
