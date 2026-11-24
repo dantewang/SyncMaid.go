@@ -33,7 +33,7 @@ func TestDestinationLogOpenUsesShellPathAndKeepsHistoryError(t *testing.T) {
 	if a.logOpenError != openErr || a.historyError != historyErr {
 		t.Fatal("opening a file changed the history diagnostic")
 	}
-	view := ui.NewTester(a.destinationLogView, 720, 420)
+	view := ui.NewTester(a.historyViewContent, 960, 620)
 	presentation := strings.Join(view.Texts(), "\n")
 	for _, want := range []string{"无法打开日志文件：no file association", historyErr.Error()} {
 		if !strings.Contains(presentation, want) {

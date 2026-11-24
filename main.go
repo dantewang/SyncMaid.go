@@ -24,7 +24,8 @@ type appScrollStates struct {
 	settings      ui.ScrollState
 	historyList   ui.ScrollState
 	historyDetail ui.ScrollState
-	destLog       ui.ScrollState
+	liveDestList  ui.ScrollState
+	liveEvents    ui.ScrollState
 	mirrorConfirm ui.ScrollState
 	legacyImport  ui.ScrollState
 	regexList     ui.ScrollState
@@ -34,15 +35,16 @@ type appScrollStates struct {
 type application struct {
 	sourcePreview      sourcePreviewSession
 	scrolls            appScrollStates
-	batch              manualBatch
-	destinationLog     *mygo.Window
-	logTask            taskconfig.ID
-	logDestination     taskconfig.ID
-	logReading         bool
-	logFileAvailable   bool
-	logOpenError       error
-	logDetails         bool
-	historyDetails     bool
+	batch                manualBatch
+	logReading           bool
+	logFileAvailable     bool
+	logOpenError         error
+	historyDetails       bool
+	historyFilter        historyFilterKind
+	historyTaskFilter    taskconfig.ID
+	historyHighlightDest taskconfig.ID
+	liveDrawerOpen       bool
+	liveDrawerTabEvents  bool
 	cards              taskCardLayout
 	regexSession       *regexSession
 	importPreview      *appcore.LegacyImport
@@ -146,7 +148,6 @@ func run() (result error) {
 		a.languagePreference, a.languageError = checkLanguageFile(install.Data)
 		offLocale := mygo.App.OnLocaleChanged(func(tag string) {
 			a.locale = tag
-			redrawWindow(a.destinationLog)
 		})
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { offLocale() })
 		tray, err := mygo.NewTray(mygo.TrayOptions{

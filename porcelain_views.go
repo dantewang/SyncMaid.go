@@ -2,12 +2,15 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strings"
+	"syncmaid/internal/appcore"
 	"syncmaid/internal/filefilter"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -59,9 +62,10 @@ func (a *application) manualView(c *ui.Context) {
 				})
 				ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 			}
+			railDisabled := modalLocked || a.cards.editor || (a.manual.busy() && a.manual.phase != manualRunning && a.manual.phase != manualStopping && a.manual.phase != manualChecking)
 			railBtn := func(target uiScreen, glyph, label string, click func()) {
 				active := screen == target
-				btn := ui.ButtonBase(c).Label(a.tr(label)).FillWidth().Height(54).Padding(6, 2).Disabled(modalLocked || a.manual.busy() || a.cards.editor)
+				btn := ui.ButtonBase(c).Label(a.tr(label)).FillWidth().Height(54).Padding(6, 2).Disabled(railDisabled)
 				fg := porcelain.TextMuted
 				bg := ui.Transparent
 				if active {
@@ -84,7 +88,7 @@ func (a *application) manualView(c *ui.Context) {
 			}
 			railBtn(screenTasks, "□", "任务", func() { a.settingsOpen = false; a.topologyOpen = false; a.historyOpen = false })
 			railBtn(screenTopology, "move", "拓扑", func() { a.topologyOpen = true; a.settingsOpen = false; a.historyOpen = false })
-			railBtn(screenHistory, "clock", "历史", func() { a.historyOpen = true; a.settingsOpen = false; a.topologyOpen = false })
+			railBtn(screenHistory, "clock", "历史", a.openHistoryScreen)
 			ui.Box(c).Grow(1)
 			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 			railBtn(screenSettings, "⚙", "设置", func() { a.settingsOpen = !a.settingsOpen; a.historyOpen = false; a.topologyOpen = false })
@@ -93,18 +97,8 @@ func (a *application) manualView(c *ui.Context) {
 
 		// Main Stage
 		ui.Column(c).Grow(1).FillHeight().Gap(0).Children(func() {
-			if s.phase == manualRunning || s.phase == manualChecking || s.phase == manualStopping {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(8, 16).Background(ribbonBlueSoft).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
-					activity := a.render(a.watchActivity)
-					if s.phase == manualStopping {
-						activity = a.render(s.message)
-					}
-					ui.Text(c, activity).FontSize(12).Grow(1)
-					if a.batch.phase == batchServing {
-						ui.Text(c, a.tr("批次余下 %d 项", len(a.batch.pending))).FontSize(12).TextColor(porcelain.TextMuted)
-					}
-					ribbonDangerButton(c, a.tr("停止")).Padding(3, 10).FontSize(12).Disabled(s.phase == manualStopping).OnClick(a.stopManual)
-				})
+			if s.phase == manualRunning || s.phase == manualChecking || s.phase == manualStopping || a.liveSnapshot.Active {
+				a.globalExecutionBanner(c, width)
 			}
 			switch screen {
 			case screenMirrorConfirm:
@@ -332,7 +326,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 					ui.Text(c, a.taskTriggerText(t)).FontSize(12).TextColor(porcelain.TextMuted)
 					ui.Text(c, "·").FontSize(12).TextColor(porcelain.TextMuted)
 					statusColor := porcelain.TextMuted
-					if healthColor == porcelain.Danger || healthColor == porcelain.Warning {
+					if healthColor == porcelain.Danger || healthColor == porcelain.Warning || healthColor == ribbonBlue {
 						statusColor = healthColor
 					} else if healthColor == porcelain.Text {
 						statusColor = porcelain.Success
@@ -431,8 +425,14 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 	id := t.ID
 	did := d.ID
 	r, ok := result.destinations[did]
-	if running && a.manual.id == id && !a.manual.dirty {
-		r, ok = a.manual.destinationResults[did]
+	if running {
+		if a.liveSnapshot.Active && a.liveSnapshot.TaskID == id {
+			if liveRes, exists := a.liveSnapshot.Results[did]; exists {
+				r, ok = liveRes, true
+			}
+		} else if a.manual.id == id && !a.manual.dirty {
+			r, ok = a.manual.destinationResults[did]
+		}
 	}
 	mark := destinationHealthColor(r, ok)
 	if ok && r.State == syncengine.DestinationSkipped && result.outcome == "failed" {
@@ -484,6 +484,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 		interceptedBy = a.sourcePreview.selectedIntercepted[did]
 	}
 
+	isLiveDestRunning := running && ok && r.State == syncengine.DestinationRunning
 	cardBg := porcelain.Surface
 	cardBorder := porcelain.Border
 	if isOwner {
@@ -492,12 +493,30 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 	} else if interceptedBy > 0 {
 		cardBg = ribbonWarnSoft
 		cardBorder = porcelain.Warning
+	} else if isLiveDestRunning {
+		cardBg = ribbonBlueSoft
+		cardBorder = ribbonBlue
 	}
 
 	card := ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(10).Padding(12, 14).Background(cardBg).Border(1, cardBorder)
-	if t.Kind != taskconfig.Moving {
+	if t.Kind != taskconfig.Moving || isLiveDestRunning {
+		destFrac := -1.0
+		if isLiveDestRunning {
+			destFrac = computeProgressFraction(r, a.liveSnapshot.Stopping || a.manual.phase == manualStopping)
+		}
 		card = card.DrawOver(func(p *ui.Painter, rc ui.Rect) {
-			p.Fill(ui.Rect{X: rc.X, Y: rc.Y, W: 3, H: rc.H}, stripeColor, 0)
+			if t.Kind != taskconfig.Moving {
+				p.Fill(ui.Rect{X: rc.X, Y: rc.Y, W: 3, H: rc.H}, stripeColor, 0)
+			}
+			if isLiveDestRunning {
+				barW := rc.W
+				if destFrac >= 0 {
+					barW = rc.W * float32(destFrac)
+				}
+				if barW > 0 {
+					p.Fill(ui.Rect{X: rc.X, Y: rc.Y + rc.H - 2.5, W: barW, H: 2.5}, ribbonBlue, 0)
+				}
+			}
 		})
 	}
 	card.Children(func() {
@@ -549,4 +568,270 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 			porcelainCompactButton(c, a.tr("删除")).Tooltip(a.tr("移除目标（仅配置）") + " " + d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.deleteSavedDestination(id, did) })
 		})
 	})
+}
+
+func (a *application) globalExecutionBanner(c *ui.Context, width float32) {
+	s := &a.manual
+	snap := a.liveSnapshot
+	stopping := s.phase == manualStopping || snap.Stopping
+	isWarn := stopping || snap.WaitingConfirm
+
+	bg := ribbonBlueSoft
+	stripe := ribbonBlue
+	badgeBg := ribbonBlue
+	if isWarn {
+		bg = ribbonWarnSoft
+		stripe = porcelain.Warning
+		badgeBg = porcelain.Warning
+	}
+
+	banner := ui.Column(c).FillWidth().Background(bg).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).DrawOver(func(p *ui.Painter, r ui.Rect) {
+		p.Fill(ui.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, stripe, 0)
+	})
+	banner.Children(func() {
+		if snap.TaskID == "" {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(8, 16).Children(func() {
+				activity := a.render(a.watchActivity)
+				if s.phase == manualStopping {
+					activity = a.render(s.message)
+				}
+				ui.Text(c, activity).FontSize(12).Grow(1)
+				if a.batch.phase == batchServing {
+					ui.Text(c, a.tr("批次余下 %d 项", len(a.batch.pending))).FontSize(12).TextColor(porcelain.TextMuted)
+				}
+				ribbonDangerButton(c, a.tr("停止")).Padding(3, 10).FontSize(12).Disabled(s.phase == manualStopping).OnClick(a.stopManual)
+			})
+			return
+		}
+
+		stageText := a.tr(snap.Stage)
+		if stageText == "" {
+			stageText = a.tr("正在运行")
+		}
+		etaText := a.bannerETAText(snap, stopping)
+		pctText := a.tr("扫描中")
+		if stopping {
+			pctText = a.tr("停止中")
+		} else if snap.WaitingConfirm {
+			pctText = a.tr("已暂停")
+		} else if snap.Fraction >= 0 {
+			pctText = fmt.Sprintf("%d%%", int(math.Round(snap.Fraction*100)))
+		}
+
+		leftDetail, rightDetail := a.bannerDetailLines(snap, stopping)
+
+		ui.Column(c).FillWidth().Padding(8, 16).Gap(5).Children(func() {
+			// Row 1: Stage badge, task & target identity, elapsed/ETA, drawer & stop buttons
+			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Box(c).Background(badgeBg).Padding(2, 6).Children(func() {
+					ui.Text(c, stageText).FontSize(12).FontWeight(600).TextColor(porcelain.AccentText)
+				})
+				ui.ButtonBase(c).Role(ui.RoleLink).Label(snap.TaskName).Background(ui.Transparent).Children(func() {
+					ui.Text(c, snap.TaskName).FontSize(13).FontWeight(600).SingleLine().Ellipsis("…")
+				}).OnClick(func() {
+					a.settingsOpen = false
+					a.topologyOpen = false
+					a.historyOpen = false
+					if a.manual.id != snap.TaskID && !a.manual.dirty && !a.cards.editor {
+						a.selectManual(snap.TaskID)
+					}
+				})
+				if snap.TotalDests > 0 && snap.CurrentDestName != "" {
+					ui.Text(c, a.tr("目标 %d/%d: %s", snap.CurrentDestIndex+1, snap.TotalDests, snap.CurrentDestName)).FontSize(12).TextColor(porcelain.TextMuted)
+				}
+				if snap.BatchTotal > 1 {
+					ui.Text(c, a.tr("批次 %d/%d", snap.BatchIndex, snap.BatchTotal)).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
+				} else if snap.Origin != "" && snap.Origin != appcore.OriginManual {
+					ui.Text(c, a.tr(string(snap.Origin))).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
+				}
+				ui.Box(c).Grow(1)
+				ui.Text(c, a.tr("已用 %s", formatElapsedMMSS(snap.Elapsed))).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted)
+				ui.Text(c, etaText).Font("Consolas").FontSize(12).TextColor(porcelain.Text)
+				drawerLabel := a.tr("详情 ⌄")
+				if a.liveDrawerOpen {
+					drawerLabel = a.tr("收起 ⌃")
+				}
+				porcelainCompactButton(c, drawerLabel).Height(26).OnClick(func() {
+					a.liveDrawerOpen = !a.liveDrawerOpen
+				})
+				stopLabel := a.tr("停止")
+				if stopping {
+					stopLabel = a.tr("停止中…")
+				}
+				ribbonDangerButton(c, stopLabel).Padding(3, 10).FontSize(12).Disabled(stopping).OnClick(a.stopManual)
+			})
+
+			// Row 2: Progress bar + percentage
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Progress(c, snap.Fraction).Height(6).Grow(1)
+				ui.Text(c, pctText).Font("Consolas").FontSize(12).FontWeight(600).TextColor(badgeBg).Shrink(0)
+			})
+
+			// Row 3: Current path/substage + counters/rate
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Row(c).Grow(1).Shrink(1).MinWidth(0).AlignItems(ui.Center).Gap(6).Children(func() {
+					ui.Text(c, leftDetail).Font("Consolas").FontSize(12).TextColor(porcelain.Text).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…")
+					if !stopping && !snap.WaitingConfirm && snap.SubStage != "" {
+						ui.Text(c, a.tr(snap.SubStage)).FontSize(11).TextColor(ribbonBlue).Shrink(0)
+					}
+					if !stopping && snap.Stalled {
+						ui.Text(c, a.tr("写入/刷盘中…")).FontSize(11).TextColor(porcelain.Warning).Shrink(0)
+					}
+				})
+				if rightDetail != "" {
+					ui.Text(c, rightDetail).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted).Shrink(0)
+				}
+			})
+		})
+
+		if a.liveDrawerOpen {
+			ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
+			ui.Column(c).FillWidth().Height(200).Background(porcelain.Surface).Children(func() {
+				if width >= 860 {
+					ui.Row(c).Fill().Gap(0).Children(func() {
+						ui.Column(c).Grow(1).Shrink(1).MinWidth(0).FillHeight().Children(func() {
+							a.liveDrawerDestinations(c, snap)
+						})
+						ui.Box(c).Width(1).FillHeight().Background(porcelain.Border)
+						ui.Column(c).Grow(1).Shrink(1).MinWidth(0).FillHeight().Children(func() {
+							a.liveDrawerEvents(c, snap)
+						})
+					})
+				} else {
+					ui.Row(c).FillWidth().Padding(6, 12).Gap(6).Background(ribbonSidebarBg).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+						porcelainSegment(c, a.tr("目标进度"), !a.liveDrawerTabEvents).OnClick(func() { a.liveDrawerTabEvents = false })
+						porcelainSegment(c, a.tr("实时活动"), a.liveDrawerTabEvents).OnClick(func() { a.liveDrawerTabEvents = true })
+					})
+					ui.Column(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Children(func() {
+						if a.liveDrawerTabEvents {
+							a.liveDrawerEvents(c, snap)
+						} else {
+							a.liveDrawerDestinations(c, snap)
+						}
+					})
+				}
+			})
+		}
+	})
+}
+
+func (a *application) bannerETAText(snap liveRunSnapshot, stopping bool) string {
+	switch {
+	case stopping:
+		return a.tr("正在中止…")
+	case snap.WaitingConfirm || snap.ETAMode == "paused":
+		return a.tr("计时已暂停")
+	case snap.ETAMode == "scanning":
+		return a.tr("扫描中…")
+	case !snap.HasETA:
+		return a.tr("正在估算…")
+	case snap.ETAMode == "verify":
+		return a.tr("核对剩余 %s", formatETADuration(snap.ETA))
+	default:
+		return a.tr("预计剩余 %s", formatETADuration(snap.ETA))
+	}
+}
+
+func (a *application) bannerDetailLines(snap liveRunSnapshot, stopping bool) (left, right string) {
+	if stopping {
+		return a.tr("正在停止并清理临时文件…"), ""
+	}
+	p := snap.Progress
+	if snap.WaitingConfirm {
+		return a.tr("待移除 %d 个多余文件", p.PlannedRemoveFiles), ""
+	}
+	left = snap.CurrentPath
+	if left == "" {
+		left = a.tr(snap.Stage)
+	}
+	switch {
+	case snap.Stage == "扫描源文件夹" || snap.Stage == "扫描目标目录":
+		right = a.tr("已发现 %d 文件 · %d 目录 · %s", p.ScanFiles, p.ScanDirs, formatBytesHuman(p.ScanBytes))
+	case snap.Stage == "校验源文件身份":
+		right = fmt.Sprintf("%d / %d", p.Copied, p.Total)
+	case snap.Stage == "移除多余文件" || snap.Stage == "清理多余空目录":
+		right = a.tr("已移除 %d/%d 文件 · %d/%d 空目录", p.Removed, p.PlannedRemoveFiles, p.RemovedDirs, p.PlannedRemoveDirs)
+	case p.Total > 0:
+		done := destinationDoneFiles(p)
+		parts := []string{
+			fmt.Sprintf("%d/%d %s", done, p.Total, a.tr("文件")),
+			fmt.Sprintf("%s/%s", formatBytesHuman(p.ProcessedBytes), formatBytesHuman(p.TotalBytes)),
+			formatRateHuman(snap.ByteRateBps),
+		}
+		if p.Deferred > 0 {
+			parts = append(parts, a.tr("延迟 %d", p.Deferred))
+		}
+		if p.Failed > 0 {
+			parts = append(parts, a.tr("失败 %d", p.Failed))
+		}
+		right = strings.Join(parts, " · ")
+	}
+	return left, right
+}
+
+func (a *application) liveDrawerDestinations(c *ui.Context, snap liveRunSnapshot) {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Padding(6, 12).Background(ribbonSidebarBg).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+		ui.Text(c, fmt.Sprintf("%s (%d)", a.tr("目标执行进度"), len(snap.Destinations))).FontSize(12).FontWeight(600).Grow(1)
+	})
+	porcelainScroll(c, &a.scrolls.liveDestList, func() {
+		ui.Column(c).FillWidth().Gap(0).Children(func() {
+			now := time.Now()
+			for i, d := range snap.Destinations {
+				res := d.Result
+				rowBg := porcelain.Surface
+				stateColor := porcelain.TextMuted
+				if res.State == syncengine.DestinationRunning {
+					rowBg = ribbonBlueSoft
+					stateColor = ribbonBlue
+				} else if res.State == syncengine.DestinationSucceeded || res.State == syncengine.DestinationNoMatches {
+					stateColor = porcelain.Success
+				} else if res.State == syncengine.DestinationFailed {
+					stateColor = porcelain.Danger
+				} else if res.State != syncengine.DestinationWaiting {
+					stateColor = porcelain.Warning
+				}
+				ui.Column(c).FillWidth().Padding(6, 12).Gap(3).Background(rowBg).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+						ui.Text(c, fmt.Sprintf("%02d %s", i+1, d.Name)).FontSize(12).FontWeight(600).Grow(1).Shrink(1).MinWidth(0).SingleLine().Ellipsis("…")
+						ui.Text(c, a.destinationStatus(res, res.State != syncengine.DestinationWaiting, now)).Font("Consolas").FontSize(12).TextColor(stateColor).Shrink(0)
+					})
+					if res.State == syncengine.DestinationRunning {
+						ui.Progress(c, d.Fraction).Height(4).FillWidth()
+					}
+				})
+			}
+		})
+	}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
+}
+
+func (a *application) liveDrawerEvents(c *ui.Context, snap liveRunSnapshot) {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(5, 12).Background(ribbonSidebarBg).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+		ui.Text(c, a.tr("实时活动（内存缓冲）")).FontSize(12).FontWeight(600).Grow(1)
+		porcelainCompactButton(c, a.tr("复制")).Height(22).Padding(0, 8).OnClick(func() {
+			var lines []string
+			for _, ev := range snap.Events {
+				lines = append(lines, ev.At.Local().Format("15:04:05")+"  "+a.render(ev.Message))
+			}
+			if a.window != nil && len(lines) > 0 {
+				mygo.Clipboard.WriteText(strings.Join(lines, "\n"))
+			}
+		})
+	})
+	porcelainScroll(c, &a.scrolls.liveEvents, func() {
+		ui.Column(c).FillWidth().Gap(0).Children(func() {
+			for i := len(snap.Events) - 1; i >= 0; i-- {
+				ev := snap.Events[i]
+				fg := porcelain.Text
+				if ev.Level == liveEventWarn {
+					fg = porcelain.Warning
+				} else if ev.Level == liveEventError {
+					fg = porcelain.Danger
+				}
+				ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(8).Padding(5, 12).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
+					ui.Text(c, ev.At.Local().Format("15:04:05")).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted).Shrink(0)
+					ui.Text(c, a.render(ev.Message)).FontSize(12).TextColor(fg).Grow(1).Shrink(1).MinWidth(0)
+				})
+			}
+		})
+	}).Grow(1).Shrink(1).MinHeight(0).FillWidth()
 }

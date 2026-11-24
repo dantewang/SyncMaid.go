@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"math"
 	"strings"
 	"syncmaid/internal/syncengine"
 	"syncmaid/internal/taskconfig"
@@ -216,6 +218,21 @@ func destinationHealthColor(r syncengine.DestinationResult, exists bool) ui.Colo
 
 func (a *application) taskHealth(t taskconfig.Task) (string, ui.Color) {
 	id := t.ID
+	if a.liveSnapshot.Active && a.liveSnapshot.TaskID == id {
+		if a.liveSnapshot.Stopping || a.manual.phase == manualStopping {
+			return a.render(a.manual.message), porcelain.Warning
+		}
+		if a.liveSnapshot.WaitingConfirm {
+			return a.tr("等待删除确认"), porcelain.Warning
+		}
+		if a.liveSnapshot.Fraction >= 0 {
+			return fmt.Sprintf("%s %d%%", a.tr(a.liveSnapshot.Stage), int(math.Round(a.liveSnapshot.Fraction*100))), ribbonBlue
+		}
+		if a.liveSnapshot.Stage != "" {
+			return a.tr(a.liveSnapshot.Stage), ribbonBlue
+		}
+		return a.tr("正在运行…"), ribbonBlue
+	}
 	if a.cards.running == id && (a.manual.phase == manualRunning || a.manual.phase == manualChecking || a.manual.phase == manualStopping) {
 		if a.manual.phase == manualStopping {
 			return a.render(a.manual.message), porcelain.Warning
@@ -276,6 +293,21 @@ func (a *application) destinationStatus(r syncengine.DestinationResult, exists b
 	}
 	if r.State != syncengine.DestinationSucceeded {
 		switch r.State {
+		case syncengine.DestinationRunning:
+			p := r.Progress
+			switch {
+			case p.Stage == "扫描源文件夹" || p.Stage == "扫描目标目录":
+				return a.tr("%s · 已发现 %d 文件", a.tr(p.Stage), p.ScanFiles)
+			case p.Stage == "移除多余文件" || p.Stage == "清理多余空目录":
+				return a.tr("%s · %d/%d", a.tr(p.Stage), p.Removed+p.RemovedDirs, p.PlannedRemoveFiles+p.PlannedRemoveDirs)
+			case p.Total > 0:
+				done := destinationDoneFiles(p)
+				return fmt.Sprintf("%s · %d/%d · %s/%s", a.tr(p.Stage), done, p.Total, formatBytesHuman(p.ProcessedBytes), formatBytesHuman(p.TotalBytes))
+			case p.Stage != "":
+				return a.tr(p.Stage)
+			default:
+				return a.tr(string(r.State))
+			}
 		case syncengine.DestinationCanceled, syncengine.DestinationSkipped:
 			return a.tr(string(r.State))
 		case syncengine.DestinationIncomplete:

@@ -310,32 +310,35 @@ func TestEditorInlineOverlapHintsAndSaveDisable(t *testing.T) {
 
 func TestDiagnosticViewRetainsRootErrorAcrossLanguages(t *testing.T) {
 	task, destination := taskconfig.NewID(), taskconfig.NewID()
-	a := &application{logTask: task, logDestination: destination, historyView: appcore.RunHistoryData{Recent: []appcore.RunRecord{{ID: taskconfig.NewID(), TaskID: task, Name: "Original task", Error: "unabridged root failure", Goals: []appcore.RunGoal{{ID: destination, Name: "Original destination", State: syncengine.DestinationFailed}}}}}}
+	a := &application{historyView: appcore.RunHistoryData{Recent: []appcore.RunRecord{{ID: taskconfig.NewID(), TaskID: task, Name: "Original task", Error: "unabridged root failure", Goals: []appcore.RunGoal{{ID: destination, Name: "Original destination", State: syncengine.DestinationFailed}}}}}}
+	a.openDestinationLog(task, destination)
 	for _, choice := range languageChoices {
 		a.locale = choice.tag
-		tt := ui.NewTester(a.destinationLogView, 720, 420)
-		if !tt.HasText("unabridged root failure") || !tt.HasText(a.tr("同步日志")) {
+		tt := ui.NewTester(a.historyViewContent, 960, 620)
+		if !tt.HasText("unabridged root failure") || !tt.HasText(a.tr("近期运行记录")) || !tt.HasText(a.tr("已定位")) {
 			t.Fatal("diagnostic content lost", choice.tag, tt.Texts())
 		}
 	}
 }
 func TestDestinationLogsBoundedAndLatestFallback(t *testing.T) {
 	task, destination := taskconfig.NewID(), taskconfig.NewID()
-	a := &application{logTask: task, logDestination: destination, historyView: appcore.RunHistoryData{Latest: map[taskconfig.ID]appcore.RunRecord{}}}
+	a := &application{historyView: appcore.RunHistoryData{Latest: map[taskconfig.ID]appcore.RunRecord{}}}
 	latest := appcore.RunRecord{ID: taskconfig.NewID(), TaskID: task, Goals: []appcore.RunGoal{{ID: destination, Error: "preserve"}}}
 	a.historyView.Latest[task] = latest
-	if records := a.destinationLogRecords(); len(records) != 1 || records[0].Goals[0].Error != "preserve" {
-		t.Fatal(records)
+	a.openDestinationLog(task, destination)
+	if entries := a.historyEntries(); len(entries) != 1 || entries[0].Record.Goals[0].Error != "preserve" {
+		t.Fatal(entries)
 	}
 	for i := 0; i < 30; i++ {
 		a.historyView.Recent = append(a.historyView.Recent, appcore.RunRecord{ID: taskconfig.NewID(), TaskID: task, Goals: []appcore.RunGoal{{ID: destination}}})
 	}
-	if records := a.destinationLogRecords(); len(records) != 20 || records[0].ID != a.historyView.Recent[29].ID {
-		t.Fatal("unbounded or unordered log")
+	a.openDestinationLog(task, destination)
+	if entries := a.historyEntries(); len(entries) != 31 || entries[0].Record.ID != a.historyView.Recent[29].ID || a.historySelected != a.historyView.Recent[29].ID {
+		t.Fatal("unordered or unlocated history entries")
 	}
-	a.logDestination = taskconfig.NewID()
-	if len(a.destinationLogRecords()) != 0 {
-		t.Fatal("mixed destination logs")
+	a.openDestinationLog(taskconfig.NewID(), taskconfig.NewID())
+	if len(a.historyEntries()) != 0 {
+		t.Fatal("mixed task logs")
 	}
 }
 
