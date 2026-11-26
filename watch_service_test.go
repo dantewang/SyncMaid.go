@@ -34,11 +34,16 @@ func TestWatchDebounceTokensAndBoundedPending(t *testing.T) {
 	if w.ticket.phase != watchPending {
 		t.Fatal("duplicate ready changed pending")
 	}
-	a.pauseEditingWatch(w.task.ID)
+	a.cards.editor = true
+	a.manual.id = w.task.ID
 	a.watchReady(w, w.ticket.revision)
 	a.watchChanged(w)
-	if w.ticket.phase != watchEditing {
+	if a.liveWatch(w) {
 		t.Fatal("late event revived edited subscription")
+	}
+	a.cards.editor = false
+	if !a.liveWatch(w) {
+		t.Fatal("closing editor did not restore watch eligibility")
 	}
 }
 func TestWatchOldSubscriptionStopAndExit(t *testing.T) {

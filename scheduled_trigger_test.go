@@ -88,11 +88,13 @@ func TestScheduledDueCoalescingLateAndStale(t *testing.T) {
 	if w.ticket.phase != watchQuiet {
 		t.Fatal("stale timer delivered")
 	}
-	a.pauseEditingWatch(w.task.ID)
+	a.cards.editor = true
+	a.manual.id = w.task.ID
 	a.scheduledReady(w, w.ticket.revision, w.next)
-	if w.ticket.phase != watchEditing {
+	if a.liveWatch(w) || w.ticket.phase == watchPending {
 		t.Fatal("edited schedule revived")
 	}
+	a.cards.editor = false
 	a.stopWatches(watchesPaused)
 	a.scheduledReady(w, old, due)
 	if a.watches != nil {

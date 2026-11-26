@@ -237,8 +237,7 @@ func (a *application) startManual() {
 }
 func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.ManualTaskRequest, automatic bool) {
 	s := &a.manual
-	editingSelf := s.id == id && (a.cards.editor || s.dirty || s.phase == manualChoosing)
-	if a.isRunning() || a.configBusy() || a.sourcePreview.job != nil || (automatic && a.batch.phase == batchServing) || editingSelf {
+	if a.isRunning() || a.configBusy() || a.sourcePreview.job != nil || (automatic && a.batch.phase == batchServing) || a.editingTaskID() == id {
 		return
 	}
 	if len(q.Destinations) == 0 {

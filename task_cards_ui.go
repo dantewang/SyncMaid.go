@@ -105,13 +105,14 @@ func (a *application) closeTaskEditor() {
 		return
 	}
 	a.sourcePreview.invalidate()
+	a.cards.editor = false
 	if a.taskError != nil {
 		a.manual = manualSession{onEdit: a.manualEdited, phase: manualDraft}
+		a.syncWatches()
 	} else {
 		a.discardManual()
 		a.refreshPreviewFromSnapshot()
 	}
-	a.cards.editor = false
 	a.scrolls.taskModal = ui.ScrollState{}
 	a.scrolls.destModal = ui.ScrollState{}
 	a.scrolls.previewModal = ui.ScrollState{}

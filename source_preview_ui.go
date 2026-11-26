@@ -31,7 +31,6 @@ type sourcePreviewJob struct {
 func (a *application) manualEdited() {
 	a.sourcePreview.invalidate()
 	a.refreshPreviewFromSnapshot()
-	a.pauseEditingWatch(a.manual.id)
 }
 
 // Owned by the native UI thread. The worker owns only its cloned request.

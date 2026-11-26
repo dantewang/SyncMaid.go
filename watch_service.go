@@ -18,7 +18,6 @@ const (
 	watchArmed watchPhase = iota
 	watchQuiet
 	watchPending
-	watchEditing
 	watchFailed
 )
 
@@ -56,23 +55,29 @@ type watchedTask struct {
 	status   localizedMessage
 }
 
+// editingTaskID derives the task currently being edited or confirmed for deletion
+// from UI state, avoiding imperative pause/resume flags that can leak on cancel.
+func (a *application) editingTaskID() taskconfig.ID {
+	if a.manual.id == "" {
+		return ""
+	}
+	if a.cards.editor || a.manual.dirty || a.manual.phase == manualChoosing {
+		return a.manual.id
+	}
+	return ""
+}
+
 func (a *application) liveWatch(w *watchedTask) bool {
-	return a.watchPhase == watchesServing && a.watches[w.task.ID] == w && w.ticket.phase != watchEditing
+	return a.watchPhase == watchesServing && a.watches[w.task.ID] == w && a.editingTaskID() != w.task.ID
 }
 func (a *application) cancelWatch(w *watchedTask) {
-	w.ticket.invalidate(watchEditing)
+	w.ticket.invalidate(watchArmed)
 	if w.timer != nil {
 		w.timer.Stop()
 		w.timer = nil
 	}
 	if w.cancel != nil {
 		w.cancel()
-	}
-}
-func (a *application) pauseEditingWatch(id taskconfig.ID) {
-	if w := a.watches[id]; w != nil {
-		a.cancelWatch(w)
-		w.status = messagef("编辑中，保存或放弃后重新订阅")
 	}
 }
 func (a *application) stopWatches(phase watchServicePhase) {
@@ -113,7 +118,10 @@ func (a *application) syncWatches() {
 		}
 		keep[t.ID] = true
 		old := a.watches[t.ID]
-		if old != nil && reflect.DeepEqual(old.task, t) && old.ticket.phase != watchEditing {
+		if old != nil && reflect.DeepEqual(old.task, t) {
+			if old.schedule != nil && a.editingTaskID() != t.ID && !old.next.After(time.Now()) {
+				a.armScheduled(old, time.Now())
+			}
 			continue
 		}
 		if old != nil {
@@ -183,9 +191,6 @@ func (a *application) syncWatches() {
 			delete(a.watches, id)
 		}
 	}
-	if a.manual.dirty {
-		a.pauseEditingWatch(a.manual.id)
-	}
 	a.drainWatches()
 }
 func (a *application) watchChanged(w *watchedTask) {
@@ -222,7 +227,11 @@ func (a *application) drainWatches() {
 	if a.watchPhase != watchesServing || a.quitPending || a.isRunning() || a.configBusy() || a.tasks == nil || a.taskError != nil || a.window == nil {
 		return
 	}
+	editingID := a.editingTaskID()
 	for _, t := range a.tasks.Tasks {
+		if t.ID == editingID {
+			continue
+		}
 		w := a.watches[t.ID]
 		if w == nil || w.ticket.phase != watchPending {
 			continue
