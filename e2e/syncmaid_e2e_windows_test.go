@@ -970,3 +970,85 @@ func TestE2EExecutionProgressBannerAndHistoryAudit(t *testing.T) {
 
 	c.quitViaSettings(win.ID, "设置", "退出")
 }
+
+func TestE2EEditCascadedTaskWhileDownstreamRuns(t *testing.T) {
+	inst := newE2EInstall(t)
+	inst.seedLocale("zh-Hans")
+
+	srcA := filepath.Join(inst.workDir, "src-a")
+	midDir := filepath.Join(inst.workDir, "mid-dir")
+	dstB := filepath.Join(inst.workDir, "dst-b")
+	writeTestFile(t, filepath.Join(srcA, "upstream.txt"), "up")
+	payload := strings.Repeat("syncmaid-e2e-data-", 1792) // ~32 KB
+	const fileCount = 900
+	for i := 0; i < fileCount; i++ {
+		writeTestFile(t, filepath.Join(midDir, fmt.Sprintf("batch-%03d.dat", i)), payload)
+	}
+	if err := os.MkdirAll(dstB, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	proc := inst.start()
+	c := proc.client
+	win := c.waitWindow("SyncMaid", boolPtr(true), 15*time.Second)
+	c.idle(win.ID)
+
+	// Create upstream task A (srcA -> midDir)
+	c.press(win.ID, "button", "+ 新建任务")
+	c.setValue(win.ID, "任务名称", "UpstreamA")
+	c.setValue(win.ID, "源文件夹路径", srcA)
+	c.press(win.ID, "button", "保存任务")
+	c.waitNoText(win.ID, "保存任务", 10*time.Second)
+	c.pressAfter(win.ID, "UpstreamA", "button", "+ 添加目标")
+	c.setValue(win.ID, "目标名称", "MidTarget")
+	c.setValue(win.ID, "目标文件夹路径", midDir)
+	c.press(win.ID, "button", "保存")
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
+
+	// Create cascaded downstream task B (midDir -> dstB)
+	c.press(win.ID, "button", "+ 新建任务")
+	c.setValue(win.ID, "任务名称", "DownstreamB")
+	c.setValue(win.ID, "源文件夹路径", midDir)
+	c.press(win.ID, "button", "保存任务")
+	c.waitNoText(win.ID, "保存任务", 10*time.Second)
+	c.pressAfter(win.ID, "DownstreamB", "button", "+ 添加目标")
+	c.setValue(win.ID, "目标名称", "DstBTarget")
+	c.setValue(win.ID, "目标文件夹路径", dstB)
+	c.press(win.ID, "button", "保存")
+	c.waitNoText(win.ID, "目标文件夹路径", 10*time.Second)
+
+	// Start DownstreamB running; verify its own edit button is disabled while running.
+	c.pressAfter(win.ID, "DownstreamB", "button", "▶ 运行")
+	c.waitText(win.ID, "停止", 10*time.Second)
+	c.waitNode(win.ID, 5*time.Second, "disabled edit button on running task", func(n autoNode) bool {
+		return n.Role == "button" && n.Label == "编辑任务" && n.disabled()
+	})
+
+	// While DownstreamB is actively running, switch to UpstreamA, open editor, rename, and save.
+	c.pressContains(win.ID, "button", "UpstreamA")
+	c.waitText(win.ID, "停止", 5*time.Second)
+	c.press(win.ID, "button", "编辑任务")
+	c.setValue(win.ID, "任务名称", "UpstreamA-Edited")
+	c.press(win.ID, "button", "保存任务")
+	c.waitNoText(win.ID, "保存任务", 10*time.Second)
+	c.waitText(win.ID, "UpstreamA-Edited", 5*time.Second)
+	c.waitText(win.ID, "停止", 5*time.Second)
+
+	// Wait for DownstreamB to finish completely and verify both disk state and sync output.
+	c.waitNoText(win.ID, "停止", 45*time.Second)
+	c.pressContains(win.ID, "button", "DownstreamB")
+	c.waitText(win.ID, "全部已同步", 15*time.Second)
+
+	tasksJSON, err := os.ReadFile(filepath.Join(inst.dataDir, "tasks-go.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(tasksJSON), `"UpstreamA-Edited"`) {
+		t.Fatalf("expected tasks-go.json to persist UpstreamA-Edited, got:\n%s", string(tasksJSON))
+	}
+	if got := readTestFile(t, filepath.Join(dstB, "batch-000.dat")); got != payload {
+		t.Fatalf("downstream file content mismatch")
+	}
+
+	c.quitViaSettings(win.ID, "设置", "退出")
+}
