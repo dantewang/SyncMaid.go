@@ -70,23 +70,23 @@ func (a *application) settingsView(c *ui.Context) {
 					ui.Text(c, a.tr("无法打开数据目录：%s", a.openDataError.Error())).TextColor(porcelain.Danger)
 				}
 				porcelainPath(c, winutil.PathLabel(a.installation.Data))
-				porcelainButton(c, a.tr("打开旧版设置或记录")).Disabled(a.commonBusy || a.manual.busy() || a.languageBusy).OnClick(a.openLegacyData)
+				porcelainButton(c, a.tr("打开旧版设置或记录")).Disabled(a.commonBusy || a.configBusy() || a.languageBusy).OnClick(a.openLegacyData)
 				if a.legacyDataError != nil {
 					ui.Text(c, a.tr("无法打开旧版设置或记录：%s", a.legacyDataError.Error())).TextColor(porcelain.Danger)
 				}
 			})
 			porcelainSection(c, a.tr("任务与迁移"), func() {
 				porcelainSettingRow(c, a.tr("导入旧任务"), func() {
-					porcelainButton(c, a.tr("导入旧任务")).Disabled(!a.cardActionAllowed()).OnClick(a.beginImport)
+					porcelainButton(c, a.tr("导入旧任务")).Disabled(!a.canCreateTask()).OnClick(a.beginImport)
 				})
 				ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 				porcelainSettingRow(c, a.tr("旧正则迁移"), func() {
-					porcelainButton(c, a.tr("旧正则迁移")).Disabled(!a.cardActionAllowed() || a.manual.id == "").OnClick(a.beginRegexMigration)
+					porcelainButton(c, a.tr("旧正则迁移")).Disabled(!a.canEditTask(a.manual.id) || a.manual.id == "").OnClick(a.beginRegexMigration)
 				})
 				ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 				porcelainSettingRow(c, a.tr("重新载入"), func() {
 					ui.Row(c).Gap(8).Children(func() {
-						porcelainButton(c, a.tr("重新载入")).Disabled(a.manual.busy()).OnClick(a.reloadTasks)
+						porcelainButton(c, a.tr("重新载入")).Disabled(a.configBusy() || a.isRunning()).OnClick(a.reloadTasks)
 						porcelainButton(c, a.tr("重新载入设置")).Disabled(a.commonBusy).OnClick(a.reloadCommon)
 					})
 				})
@@ -248,7 +248,7 @@ func readLegacyWindowSettings(path string) (winutil.CommonSettings, error) {
 
 // Old diagnostics stay separate; they do not certify any Go task as complete.
 func (a *application) openLegacyData() {
-	if a.commonBusy || a.manual.busy() || a.manual.quitPending || a.languageBusy {
+	if a.commonBusy || a.configBusy() || a.quitPending || a.languageBusy {
 		return
 	}
 	a.commonBusy = true
@@ -296,7 +296,7 @@ func (a *application) openLegacyData() {
 		a.window.Update(func() {
 			a.commonBusy = false
 			a.manual.phase = previous
-			if a.manual.quitPending {
+			if a.quitPending {
 				a.finishAsyncStep(false)
 				return
 			}

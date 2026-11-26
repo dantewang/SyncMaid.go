@@ -219,7 +219,7 @@ func (a *application) drainWatches() {
 		a.advanceBatch()
 		return
 	}
-	if a.watchPhase != watchesServing || a.manual.quitPending || a.manual.busy() || a.tasks == nil || a.taskError != nil || a.window == nil {
+	if a.watchPhase != watchesServing || a.quitPending || a.isRunning() || a.configBusy() || a.tasks == nil || a.taskError != nil || a.window == nil {
 		return
 	}
 	for _, t := range a.tasks.Tasks {

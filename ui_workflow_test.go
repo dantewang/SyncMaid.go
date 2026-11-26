@@ -172,7 +172,17 @@ func TestWorkspaceBusyGuardsAndMoveCatchAllOrder(t *testing.T) {
 	if a.manual.targets[1].ID != catchAll {
 		t.Fatal("catch-all reordered ahead of rule")
 	}
-	for _, phase := range []manualPhase{manualRunning, manualSaving, manualChoosing, manualReviewWorking} {
+	a.run = activeRun{phase: runRunning, id: 1, taskID: a.manual.id}
+	a.cards.editor = true
+	a.addManualTarget()
+	a.cancelDestination(catchAll)
+	a.acceptDestination(catchAll)
+	a.removeManualTarget()
+	if len(a.manual.targets) != 2 || !a.cards.editor || a.run.phase != runRunning {
+		t.Fatal("running task guard bypass")
+	}
+	a.run = activeRun{}
+	for _, phase := range []manualPhase{manualSaving, manualChoosing, manualReviewWorking} {
 		a.manual.phase = phase
 		a.cards.editor = true
 		a.addManualTarget()

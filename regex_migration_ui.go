@@ -23,7 +23,7 @@ type regexSession struct {
 }
 
 func (a *application) beginRegexMigration() {
-	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil || a.manual.id == "" {
+	if a.configBusy() || a.isTaskRunning(a.manual.id) || a.manual.dirty || a.tasks == nil || a.taskError != nil || a.manual.id == "" {
 		return
 	}
 	t, err := a.tasks.Find(a.manual.id)

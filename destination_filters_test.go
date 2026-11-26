@@ -254,11 +254,11 @@ func TestFilterDraftBindingErrorAndReload(t *testing.T) {
 	if request.Destinations[0].ID != second || *firstProj.Groups[0].Rows[0].Pattern != "**/*.bin" || request.Destinations[1].ID != first || *secondProj.Groups[0].Rows[0].Extension != "txt" {
 		t.Fatal(request)
 	}
-	a.manual.phase = manualRunning
+	a.run = activeRun{phase: runRunning, id: 1, taskID: id}
 	before := a.manual.targets[1].Filters
 	a.setFilterMode(appcore.FilterNone)
 	a.filterEdited()
-	if !syncengine.SameFilterRules(before, a.manual.targets[1].Filters) || a.manual.phase != manualRunning {
+	if !syncengine.SameFilterRules(before, a.manual.targets[1].Filters) || a.run.phase != runRunning {
 		t.Fatal("running guard bypassed")
 	}
 }

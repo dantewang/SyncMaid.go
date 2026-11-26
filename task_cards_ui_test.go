@@ -43,10 +43,16 @@ func TestCardLayoutIdentityAndEditorGuards(t *testing.T) {
 		t.Fatal("cancel did not discard and close")
 	}
 	a.manual.dirty = false
-	for _, phase := range []manualPhase{manualRunning, manualSaving, manualReviewing, manualChoosing} {
+	a.run = activeRun{phase: runRunning, id: 1, taskID: first}
+	a.editCard(first, "")
+	if a.manual.id != second || a.canEditTask(first) || a.canStartRun() {
+		t.Fatal("running task edit or second run bypassed")
+	}
+	a.run = activeRun{}
+	for _, phase := range []manualPhase{manualSaving, manualReviewing, manualChoosing} {
 		a.manual.phase = phase
 		a.editCard(first, "")
-		if a.manual.id != second || a.cardActionAllowed() {
+		if a.manual.id != second || a.canSwitchTask() {
 			t.Fatal("busy editor bypassed", phase)
 		}
 	}
@@ -75,7 +81,7 @@ func TestCollapseActionTracksCurrentCards(t *testing.T) {
 }
 
 func TestPorcelainOverlayCannotHideMirrorOrStop(t *testing.T) {
-	a := &application{locale: "zh-Hans", historyOpen: true, cards: taskCardLayout{editor: true}, manual: manualSession{phase: manualRunning, mirrorPreview: &syncengine.MirrorPreview{Name: "Synthetic", Paths: []string{"synthetic.txt"}, Mode: taskconfig.Permanent}}}
+	a := &application{locale: "zh-Hans", historyOpen: true, cards: taskCardLayout{editor: true}, run: activeRun{phase: runRunning, id: 1, taskID: "t1"}, manual: manualSession{mirrorPreview: &syncengine.MirrorPreview{Name: "Synthetic", Paths: []string{"synthetic.txt"}, Mode: taskconfig.Permanent}}}
 	tt := ui.NewTester(a.view, 940, 620)
 	if !tt.HasText(a.tr("确认本次移除")) || !tt.HasText(a.tr("停止")) {
 		t.Fatal("navigation hid safety actions", tt.Texts())

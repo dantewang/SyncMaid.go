@@ -176,23 +176,26 @@ func TestSavedTaskSelectionAndRunningGuards(t *testing.T) {
 	if _, err = os.Stat(filepath.Join(q1.Target, "first")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("wrong target used", err)
 	}
-	a.manual.phase = manualRunning
+	a.run = activeRun{phase: runRunning, id: 1, taskID: id2}
 	a.createManual()
 	a.confirmDeleteManual()
 	a.deleteManual(id2)
-	a.newManual()
-	a.selectManual(id1)
-	a.manual.edited()
-	if a.manual.phase != manualRunning || a.manual.id != id2 || a.manual.name != "Second" {
-		t.Fatal("running task changed", a.manual)
+	a.addManualTarget()
+	if a.run.phase != runRunning || a.manual.id != id2 || a.manual.name != "Second" || a.manual.dirty {
+		t.Fatal("running task mutated", a.manual)
 	}
 	if len(a.tasks.Tasks) != 2 {
 		t.Fatal("running task removed")
 	}
+	a.selectManual(id1)
+	if a.manual.id != id1 || a.manual.name != "First" || !a.isTaskRunning(id2) {
+		t.Fatal("failed to switch to non-running task while id2 ran", a.manual)
+	}
+	a.run = activeRun{}
 	a.manual.phase = manualSaving
 	e := &mygo.QuitEvent{}
 	a.beforeQuit(e)
-	if !e.DefaultPrevented() || !a.manual.quitPending || a.manual.phase != manualSaving {
+	if !e.DefaultPrevented() || !a.quitPending || a.manual.phase != manualSaving {
 		t.Fatal("quit skipped storage work")
 	}
 }
@@ -220,10 +223,10 @@ func TestSavedTaskSaveFailureRetainsEditorAndStopsPendingQuit(t *testing.T) {
 	}
 	q := manualFixture(t)
 	id := taskconfig.NewID()
-	a := &application{tasks: l, manual: manualSession{phase: manualSaving, name: "Unsaved", source: q.Source, target: q.Target, quitPending: true}}
+	a := &application{tasks: l, quitPending: true, manual: manualSession{phase: manualSaving, name: "Unsaved", source: q.Source, target: q.Target}}
 	fault := errors.New("save fault")
 	a.finishTaskSave(nil, id, nil, fault)
-	if a.manual.name != "Unsaved" || a.manual.source != q.Source || a.manual.target != q.Target || a.manual.id != id || a.manual.quitPending || a.manual.phase != manualDraft || !errors.Is(a.taskError, fault) {
+	if a.manual.name != "Unsaved" || a.manual.source != q.Source || a.manual.target != q.Target || a.manual.id != id || a.quitPending || a.manual.phase != manualDraft || !errors.Is(a.taskError, fault) {
 		t.Fatal(a.manual, a.taskError)
 	}
 	a.createManual()

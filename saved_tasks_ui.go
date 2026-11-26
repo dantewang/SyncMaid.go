@@ -25,17 +25,17 @@ func (a *application) selectedTaskIssue() error {
 	return err
 }
 func (a *application) newManual() {
-	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
+	if a.configBusy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
 		return
 	}
 	a.sourcePreview.resetSnapshot()
 	a.scrolls.taskModal = ui.ScrollState{}
 	a.scrolls.destModal = ui.ScrollState{}
 	a.scrolls.previewModal = ui.ScrollState{}
-	a.manual = manualSession{onEdit: a.manualEdited, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft, quitPending: a.manual.quitPending}
+	a.manual = manualSession{onEdit: a.manualEdited, trigger: taskconfig.Trigger{Kind: "manual"}, quietText: "10", phase: manualDraft}
 }
 func (a *application) selectManual(id taskconfig.ID) {
-	if a.manual.busy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
+	if a.configBusy() || a.manual.dirty || a.tasks == nil || a.taskError != nil {
 		return
 	}
 	t, err := a.tasks.Find(id)
@@ -52,7 +52,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 		a.sourcePreview.resetSnapshot()
 	}
 	a.cards.navigation = id
-	s := manualSession{onEdit: a.manualEdited, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath, quitPending: a.manual.quitPending}
+	s := manualSession{onEdit: a.manualEdited, trigger: t.Trigger, quietText: "10", kind: t.Kind, phase: manualDraft, id: id, name: t.Name, source: t.SourcePath}
 	for _, d := range t.Destinations {
 		s.targets = append(s.targets, cloneManualDestination(syncengine.ManualDestination{ID: d.ID, Name: d.Name, Path: d.Target.Path, Filters: d.Filters, Strategy: d.Strategy, DeleteMode: d.DeleteMode, VerifyContents: d.VerifyContents, Flatten: d.FlattenStructure, Collision: d.CollisionPolicy, MassDeleteThreshold: d.MassDeleteThreshold, MassDeleteThresholdSet: true}))
 	}
@@ -92,7 +92,7 @@ func (a *application) selectManual(id taskconfig.ID) {
 
 func (a *application) reloadTasks() {
 	s := &a.manual
-	if s.busy() {
+	if a.configBusy() || a.isRunning() {
 		return
 	}
 	a.sourcePreview.resetSnapshot()
@@ -145,7 +145,7 @@ func (a *application) reloadTasks() {
 // failure keep the editor, block another write, and require an explicit reload.
 func (a *application) createManual() {
 	s := &a.manual
-	if s.busy() || a.tasks == nil || a.taskError != nil || a.selectedTaskIssue() != nil {
+	if s.busy() || a.isTaskRunning(s.id) || a.tasks == nil || a.taskError != nil || a.selectedTaskIssue() != nil {
 		return
 	}
 	if strings.TrimSpace(s.name) == "" {
@@ -210,8 +210,8 @@ func (a *application) finishTaskSave(next *appcore.SavedTaskLibrary, id taskconf
 	a.finishAsyncStep(false)
 }
 func (a *application) pauseQuitAfterTaskError() {
-	if a.manual.quitPending {
-		a.manual.quitPending = false
+	if a.quitPending {
+		a.quitPending = false
 		a.watchPhase = watchesPaused
 		a.manual.message = messagef("%s；退出已暂停，请先核对未保存的编辑。", a.manual.message)
 		a.lifecycle.show()
@@ -220,7 +220,7 @@ func (a *application) pauseQuitAfterTaskError() {
 
 func (a *application) confirmDeleteManual() {
 	s := &a.manual
-	if s.busy() || a.tasks == nil || a.taskError != nil || s.id == "" || a.selectedTaskIssue() != nil {
+	if s.busy() || a.isTaskRunning(s.id) || a.tasks == nil || a.taskError != nil || s.id == "" || a.selectedTaskIssue() != nil {
 		return
 	}
 	if err := a.taskDeletionIssue(); err != nil {
@@ -235,7 +235,7 @@ func (a *application) confirmDeleteManual() {
 		result, err := e2eDialogMessage(options)
 		a.window.Update(func() {
 			s.phase = previous
-			if s.quitPending {
+			if a.quitPending {
 				a.finishAsyncStep(false)
 				return
 			}
@@ -255,7 +255,7 @@ func (a *application) confirmDeleteManual() {
 }
 func (a *application) deleteManual(id taskconfig.ID) {
 	s := &a.manual
-	if s.busy() || a.tasks == nil || a.taskError != nil || s.id != id || a.selectedTaskIssue() != nil {
+	if s.busy() || a.isTaskRunning(id) || a.tasks == nil || a.taskError != nil || s.id != id || a.selectedTaskIssue() != nil {
 		return
 	}
 	if err := a.taskDeletionIssue(); err != nil {
@@ -298,8 +298,8 @@ func (a *application) taskRecovery() (*taskstore.LoadError, bool) {
 }
 
 func (a *application) taskRecoveryAllowed() bool {
-	return !a.manual.busy() && !a.manual.dirty && !a.cards.editor &&
-		!a.manual.quitPending && a.sourcePreview.job == nil && !a.hasModalOpen() &&
+	return !a.configBusy() && !a.isRunning() && !a.manual.dirty && !a.cards.editor &&
+		!a.quitPending && a.sourcePreview.job == nil && !a.hasModalOpen() &&
 		a.batch.phase == batchIdle && !a.languageBusy && !a.commonBusy
 }
 
@@ -336,7 +336,7 @@ func (a *application) confirmTaskRecovery(backup *taskstore.LoadError) {
 		result, dialogErr := e2eDialogMessage(options)
 		a.window.Update(func() {
 			s.phase = previous
-			if s.quitPending {
+			if a.quitPending {
 				a.finishAsyncStep(false)
 				return
 			}

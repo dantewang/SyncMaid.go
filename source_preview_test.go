@@ -219,12 +219,12 @@ func TestPreviewExtensionTargetsExplicitGroupAndGuards(t *testing.T) {
 		t.Fatal("chip lost draft or selected wrong group")
 	}
 	a.sourcePreview = sourcePreviewSession{phase: previewReady, result: &appcore.RoutePreview{Extensions: []appcore.PreviewExtension{{Text: "txt", Count: 2}}}}
-	a.manual.phase = manualRunning
+	a.run = activeRun{phase: runRunning, id: 1, taskID: id}
 	a.addPreviewExtension(0, "txt")
 	if len(a.manual.filterEditor.Groups[0].Rows) != 0 {
 		t.Fatal("busy chip edited")
 	}
-	a.manual.phase = manualDraft
+	a.run = activeRun{}
 	a.manual.targets[0].Strategy = taskconfig.Mirror
 	a.addPreviewExtension(0, "txt")
 	if len(a.manual.filterEditor.Groups[0].Rows) != 0 {
@@ -243,7 +243,7 @@ func TestSourcePreviewCloseAndExitCancelWithoutLosingDraft(t *testing.T) {
 		if !canceled || a.manual.source != "keep" || !a.manual.dirty {
 			t.Fatal("close lost draft")
 		}
-		if exit && !a.manual.quitPending {
+		if exit && !a.quitPending {
 			t.Fatal("exit did not wait for preview")
 		}
 	}

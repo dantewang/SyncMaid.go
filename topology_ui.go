@@ -248,7 +248,7 @@ func (a *application) topologyView(c *ui.Context) {
 					ui.Image(c, maidAvatar).Size(44, 44)
 				}
 				ui.Text(c, a.tr("暂无同步任务")).TextColor(porcelain.TextMuted)
-				ribbonInkButton(c, "+ "+a.tr("新建任务")).Disabled(!a.cardActionAllowed()).OnClick(func() {
+				ribbonInkButton(c, "+ "+a.tr("新建任务")).Disabled(!a.canCreateTask()).OnClick(func() {
 					a.topologyOpen = false
 					a.newManual()
 					a.cards.editor = true
@@ -295,7 +295,7 @@ func (a *application) topologyView(c *ui.Context) {
 							ui.Text(c, node.Title).FontSize(13).FontWeight(600).SingleLine().Ellipsis("…")
 							ui.Text(c, node.Subtitle).Font("Consolas").FontSize(12).TextColor(porcelain.TextMuted).SingleLine().Ellipsis("…")
 						})
-					}).Disabled(!a.cardActionAllowed()).OnClick(func() {
+					}).Disabled(!a.canSwitchTask()).OnClick(func() {
 						a.topologyOpen = false
 						a.historyOpen = false
 						a.settingsOpen = false

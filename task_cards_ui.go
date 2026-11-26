@@ -18,16 +18,11 @@ type taskCardLayout struct {
 	destinations bool
 	collapsed    map[taskconfig.ID]bool
 	editor       bool
-	running      taskconfig.ID
 	focus        taskconfig.ID
 }
 
-func (a *application) cardActionAllowed() bool {
-	return a.batch.phase == batchIdle && a.sourcePreview.job == nil && !a.manual.busy() && !a.manual.dirty && !a.cards.editor && a.tasks != nil && a.taskError == nil
-}
-
 func (a *application) editCard(id, destination taskconfig.ID) {
-	if !a.cardActionAllowed() {
+	if !a.canEditTask(id) {
 		return
 	}
 	a.selectManual(id)
@@ -70,7 +65,7 @@ func (a *application) openCopyDestination(id, destination taskconfig.ID) {
 }
 
 func (a *application) reorderSavedDestination(id, destination taskconfig.ID, delta int) {
-	if !a.cardActionAllowed() {
+	if !a.canEditTask(id) {
 		return
 	}
 	a.selectManual(id)
@@ -84,7 +79,7 @@ func (a *application) reorderSavedDestination(id, destination taskconfig.ID, del
 }
 
 func (a *application) deleteSavedDestination(id, destination taskconfig.ID) {
-	if !a.cardActionAllowed() {
+	if !a.canEditTask(id) {
 		return
 	}
 	a.selectManual(id)
@@ -96,7 +91,7 @@ func (a *application) deleteSavedDestination(id, destination taskconfig.ID) {
 }
 
 func (a *application) runCard(id taskconfig.ID) {
-	if !a.cardActionAllowed() {
+	if !a.canStartRun() {
 		return
 	}
 	a.selectManual(id)
@@ -106,12 +101,12 @@ func (a *application) runCard(id taskconfig.ID) {
 }
 
 func (a *application) closeTaskEditor() {
-	if a.manual.busy() {
+	if a.configBusy() {
 		return
 	}
 	a.sourcePreview.invalidate()
 	if a.taskError != nil {
-		a.manual = manualSession{onEdit: a.manualEdited, phase: manualDraft, quitPending: a.manual.quitPending}
+		a.manual = manualSession{onEdit: a.manualEdited, phase: manualDraft}
 	} else {
 		a.discardManual()
 		a.refreshPreviewFromSnapshot()
@@ -219,8 +214,8 @@ func destinationHealthColor(r syncengine.DestinationResult, exists bool) ui.Colo
 func (a *application) taskHealth(t taskconfig.Task) (string, ui.Color) {
 	id := t.ID
 	if a.liveSnapshot.Active && a.liveSnapshot.TaskID == id {
-		if a.liveSnapshot.Stopping || a.manual.phase == manualStopping {
-			return a.render(a.manual.message), porcelain.Warning
+		if a.liveSnapshot.Stopping || a.run.stopping() {
+			return a.render(a.run.status), porcelain.Warning
 		}
 		if a.liveSnapshot.WaitingConfirm {
 			return a.tr("等待删除确认"), porcelain.Warning
@@ -233,9 +228,9 @@ func (a *application) taskHealth(t taskconfig.Task) (string, ui.Color) {
 		}
 		return a.tr("正在运行…"), ribbonBlue
 	}
-	if a.cards.running == id && (a.manual.phase == manualRunning || a.manual.phase == manualChecking || a.manual.phase == manualStopping) {
-		if a.manual.phase == manualStopping {
-			return a.render(a.manual.message), porcelain.Warning
+	if a.isTaskRunning(id) {
+		if a.run.stopping() {
+			return a.render(a.run.status), porcelain.Warning
 		}
 		return a.tr("正在运行…"), porcelain.Text
 	}

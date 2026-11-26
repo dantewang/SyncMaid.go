@@ -49,7 +49,6 @@ func (a *application) manualView(c *ui.Context) {
 	c.SetTheme(&porcelain)
 	e2eConfigureView(c)
 	width, height := c.Size()
-	s := &a.manual
 	screen := a.activeScreen()
 	modalLocked := screen == screenMirrorConfirm || screen == screenImport || screen == screenRegex
 
@@ -62,7 +61,7 @@ func (a *application) manualView(c *ui.Context) {
 				})
 				ui.Box(c).Height(1).FillWidth().Background(porcelain.Border)
 			}
-			railDisabled := modalLocked || a.cards.editor || (a.manual.busy() && a.manual.phase != manualRunning && a.manual.phase != manualStopping && a.manual.phase != manualChecking)
+			railDisabled := modalLocked || a.cards.editor || a.configBusy()
 			railBtn := func(target uiScreen, glyph, label string, click func()) {
 				active := screen == target
 				btn := ui.ButtonBase(c).Label(a.tr(label)).FillWidth().Height(54).Padding(6, 2).Disabled(railDisabled)
@@ -97,7 +96,7 @@ func (a *application) manualView(c *ui.Context) {
 
 		// Main Stage
 		ui.Column(c).Grow(1).FillHeight().Gap(0).Children(func() {
-			if s.phase == manualRunning || s.phase == manualChecking || s.phase == manualStopping || a.liveSnapshot.Active {
+			if a.isRunning() || a.liveSnapshot.Active {
 				a.globalExecutionBanner(c, width)
 			}
 			switch screen {
@@ -154,15 +153,15 @@ func (a *application) tasksMasterDetailView(c *ui.Context, width float32) {
 		// Level 2 Left: Task List Column
 		ui.Column(c).Width(listW).FillHeight().Background(ribbonSidebarBg).Gap(0).Children(func() {
 			ui.Column(c).FillWidth().Padding(10).Gap(6).Children(func() {
-				ribbonInkButton(c, "+ "+a.tr("新建任务")).FillWidth().Height(32).Disabled(!a.cardActionAllowed()).OnClick(func() {
+				ribbonInkButton(c, "+ "+a.tr("新建任务")).FillWidth().Height(32).Disabled(!a.canCreateTask()).OnClick(func() {
 					a.newManual()
 					a.cards.editor = true
 					a.cards.destinations = false
 				})
 				ui.Row(c).FillWidth().Gap(6).Children(func() {
-					porcelainButton(c, a.tr("全部运行")).Grow(1).Padding(4, 6).FontSize(12).Disabled(!a.cardActionAllowed()).Tooltip(a.tr("按已保存顺序串行运行；停止会丢弃余下任务。")).OnClick(a.startBatch)
+					porcelainButton(c, a.tr("全部运行")).Grow(1).Padding(4, 6).FontSize(12).Disabled(!a.canStartRun()).Tooltip(a.tr("按已保存顺序串行运行；停止会丢弃余下任务。")).OnClick(a.startBatch)
 					if a.watchPhase == watchesPaused {
-						porcelainButton(c, a.tr("恢复自动")).Grow(1).Padding(4, 6).FontSize(12).Disabled(!a.cardActionAllowed()).OnClick(a.resumeWatches)
+						porcelainButton(c, a.tr("恢复自动")).Grow(1).Padding(4, 6).FontSize(12).Disabled(!a.canStartRun()).OnClick(a.resumeWatches)
 					} else {
 						porcelainButton(c, a.tr("暂停自动")).Grow(1).Padding(4, 6).FontSize(12).Disabled(a.watchPhase != watchesServing).OnClick(func() { a.stopWatches(watchesPaused) })
 					}
@@ -207,7 +206,7 @@ func (a *application) tasksMasterDetailView(c *ui.Context, width float32) {
 									ui.Text(c, fmt.Sprintf("%d %s", len(t.Destinations), a.tr("目标"))).FontSize(12).TextColor(porcelain.TextMuted)
 								})
 							})
-						}).Disabled(!a.cardActionAllowed()).OnClick(func() {
+						}).Disabled(!a.canSwitchTask()).OnClick(func() {
 							a.selectManual(id)
 						})
 					}
@@ -225,7 +224,7 @@ func (a *application) tasksMasterDetailView(c *ui.Context, width float32) {
 						ui.Image(c, maidAvatar).Size(48, 48)
 					}
 					ui.Text(c, a.tr("暂无同步任务")).FontSize(15).TextColor(porcelain.TextMuted)
-					ribbonInkButton(c, "+ "+a.tr("新建任务")).Disabled(!a.cardActionAllowed()).OnClick(func() {
+					ribbonInkButton(c, "+ "+a.tr("新建任务")).Disabled(!a.canCreateTask()).OnClick(func() {
 						a.newManual()
 						a.cards.editor = true
 						a.cards.destinations = false
@@ -263,7 +262,7 @@ func (a *application) taskStatusBanners(c *ui.Context) {
 	if a.watchPhase == watchesPaused {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(6, 16).Background(ribbonWarnSoft).BorderWidth(0, 0, 1, 0).BorderColor(porcelain.Border).Children(func() {
 			ui.Text(c, a.tr("自动触发已暂停")).FontSize(13).Grow(1)
-			porcelainButton(c, a.tr("恢复自动触发")).Padding(3, 10).FontSize(12).Disabled(!a.cardActionAllowed()).OnClick(a.resumeWatches)
+			porcelainButton(c, a.tr("恢复自动触发")).Padding(3, 10).FontSize(12).Disabled(!a.canStartRun()).OnClick(a.resumeWatches)
 		})
 	}
 }
@@ -295,7 +294,7 @@ func hasLegacyRegexRules(t taskconfig.Task) bool {
 func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, width float32) {
 	id := t.ID
 	now := time.Now()
-	running := id == a.cards.running && (a.manual.phase == manualRunning || a.manual.phase == manualChecking || a.manual.phase == manualStopping)
+	running := a.isTaskRunning(id)
 	status, healthColor := a.taskHealth(t)
 	result := a.results[id]
 	kindTag := "SYNC"
@@ -318,7 +317,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 						parentID := parent.ID
 						ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ " + a.tr("接力自 %s", parent.Name)).Background(ui.Transparent).Children(func() {
 							ui.Text(c, "↳ "+a.tr("接力自 %s", parent.Name)).FontSize(12).TextColor(ribbonBlue)
-						}).Disabled(!a.cardActionAllowed()).OnClick(func() { a.selectManual(parentID) })
+						}).Disabled(!a.canSwitchTask()).OnClick(func() { a.selectManual(parentID) })
 					}
 				})
 				porcelainPath(c, t.SourcePath)
@@ -339,21 +338,21 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 			})
 
 			ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(6).Children(func() {
-				porcelainButton(c, a.tr("编辑任务")).Height(32).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, "") })
+				porcelainButton(c, a.tr("编辑任务")).Height(32).Disabled(!a.canEditTask(id)).OnClick(func() { a.editCard(id, "") })
 				previewBtn := porcelainButton(c, a.tr("源预览")).Height(32)
 				if a.sourcePreview.open {
 					previewBtn = previewBtn.Background(ribbonBlueSoft).Border(1, ribbonBlue).TextColor(ribbonBlue)
 				}
-				previewBtn.Disabled(!a.cardActionAllowed() && !a.sourcePreview.open && !(editingDest && !a.manual.busy())).OnClick(func() {
-					if a.manual.id != id && a.cardActionAllowed() {
+				previewBtn.Disabled(!a.canEditTask(id) && !a.sourcePreview.open && !(editingDest && !a.configBusy())).OnClick(func() {
+					if a.manual.id != id && a.canSwitchTask() {
 						a.selectManual(id)
 					}
 					a.sourcePreview.open = !a.sourcePreview.open
 				})
 				if running {
-					ribbonDangerButton(c, "■ "+a.tr("停止")).Height(32).OnClick(a.stopManual)
+					ribbonDangerButton(c, "■ "+a.tr("停止")).Height(32).Disabled(a.run.stopping()).OnClick(a.stopManual)
 				} else {
-					porcelainPrimaryButton(c, "▶ "+a.tr("运行")).Height(32).Disabled(!a.cardActionAllowed() || len(t.Destinations) == 0).OnClick(func() { a.runCard(id) })
+					porcelainPrimaryButton(c, "▶ "+a.tr("运行")).Height(32).Disabled(!a.canStartRun() || len(t.Destinations) == 0).OnClick(func() { a.runCard(id) })
 				}
 			})
 		})
@@ -366,7 +365,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 			}).Children(func() {
 				ui.Text(c, a.tr("此任务不可运行或编辑: ")+reqErr.Error()).FontSize(12).TextColor(porcelain.Warning).Grow(1)
 				if hasLegacyRegexRules(t) {
-					porcelainButton(c, a.tr("旧正则迁移")).Padding(3, 10).FontSize(12).Disabled(!a.cardActionAllowed()).OnClick(func() {
+					porcelainButton(c, a.tr("旧正则迁移")).Padding(3, 10).FontSize(12).Disabled(!a.canEditTask(id)).OnClick(func() {
 						a.selectManual(id)
 						a.beginRegexMigration()
 					})
@@ -383,7 +382,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 			ui.Column(c).FillWidth().Padding(14, 16).Gap(8).Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 					ui.Text(c, fmt.Sprintf("%s (%d)", a.tr("目标"), len(t.Destinations))).FontSize(13).FontWeight(600).TextColor(porcelain.TextMuted).Grow(1)
-					porcelainButton(c, "+ "+a.tr("添加目标")).Disabled(!a.cardActionAllowed()).OnClick(func() { a.openAddDestination(id) })
+					porcelainButton(c, "+ "+a.tr("添加目标")).Disabled(!a.canEditTask(id)).OnClick(func() { a.openAddDestination(id) })
 				})
 				if len(t.Destinations) == 0 {
 					ui.Column(c).FillWidth().Padding(28, 16).AlignItems(ui.Center).Gap(10).Background(porcelain.Surface).Border(1, porcelain.Border).Children(func() {
@@ -391,7 +390,7 @@ func (a *application) selectedTaskDetailView(c *ui.Context, t taskconfig.Task, w
 							ui.Image(c, maidAvatar).Size(36, 36)
 						}
 						ui.Text(c, a.tr("尚未添加目标")).FontSize(14).TextColor(porcelain.TextMuted)
-						ribbonInkButton(c, "+ "+a.tr("添加目标")).Disabled(!a.cardActionAllowed()).OnClick(func() { a.openAddDestination(id) })
+						ribbonInkButton(c, "+ "+a.tr("添加目标")).Disabled(!a.canEditTask(id)).OnClick(func() { a.openAddDestination(id) })
 					})
 					return
 				}
@@ -502,7 +501,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 	if t.Kind != taskconfig.Moving || isLiveDestRunning {
 		destFrac := -1.0
 		if isLiveDestRunning {
-			destFrac = computeProgressFraction(r, a.liveSnapshot.Stopping || a.manual.phase == manualStopping)
+			destFrac = computeProgressFraction(r, a.liveSnapshot.Stopping || a.run.stopping())
 		}
 		card = card.DrawOver(func(p *ui.Painter, rc ui.Rect) {
 			if t.Kind != taskconfig.Moving {
@@ -539,7 +538,7 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 					childID := children[0].ID
 					ui.ButtonBase(c).Role(ui.RoleLink).Label("↳ " + a.tr("级联至 %s", children[0].Name)).Background(ui.Transparent).Children(func() {
 						ui.Text(c, "↳ "+a.tr("级联至 %s", children[0].Name)).FontSize(12).TextColor(ribbonBlue)
-					}).Disabled(!a.cardActionAllowed()).OnClick(func() { a.selectManual(childID) })
+					}).Disabled(!a.canSwitchTask()).OnClick(func() { a.selectManual(childID) })
 				}
 			})
 			porcelainPath(c, d.Target.Path)
@@ -561,19 +560,18 @@ func (a *application) destinationRowCard(c *ui.Context, t taskconfig.Task, d tas
 			if t.Kind == taskconfig.Moving {
 				canUp := idx > 0 && !syncengine.IsAllFileRules(d.Filters) && !syncengine.IsAllFileRules(t.Destinations[idx-1].Filters)
 				canDown := idx+1 < len(t.Destinations) && !syncengine.IsAllFileRules(d.Filters) && !syncengine.IsAllFileRules(t.Destinations[idx+1].Filters)
-				porcelainCompactButton(c, "↑").Padding(0, 8).Tooltip(a.tr("上移")).Disabled(!a.cardActionAllowed() || !canUp).OnClick(func() { a.reorderSavedDestination(id, did, -1) })
-				porcelainCompactButton(c, "↓").Padding(0, 8).Tooltip(a.tr("下移")).Disabled(!a.cardActionAllowed() || !canDown).OnClick(func() { a.reorderSavedDestination(id, did, 1) })
+				porcelainCompactButton(c, "↑").Padding(0, 8).Tooltip(a.tr("上移")).Disabled(!a.canEditTask(id) || !canUp).OnClick(func() { a.reorderSavedDestination(id, did, -1) })
+				porcelainCompactButton(c, "↓").Padding(0, 8).Tooltip(a.tr("下移")).Disabled(!a.canEditTask(id) || !canDown).OnClick(func() { a.reorderSavedDestination(id, did, 1) })
 			}
-			porcelainCompactButton(c, a.tr("编辑")).Tooltip(a.tr("编辑目标") + " " + d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.editCard(id, did) })
-			porcelainCompactButton(c, a.tr("删除")).Tooltip(a.tr("移除目标（仅配置）") + " " + d.Name).Disabled(!a.cardActionAllowed()).OnClick(func() { a.deleteSavedDestination(id, did) })
+			porcelainCompactButton(c, a.tr("编辑")).Tooltip(a.tr("编辑目标") + " " + d.Name).Disabled(!a.canEditTask(id)).OnClick(func() { a.editCard(id, did) })
+			porcelainCompactButton(c, a.tr("删除")).Tooltip(a.tr("移除目标（仅配置）") + " " + d.Name).Disabled(!a.canEditTask(id)).OnClick(func() { a.deleteSavedDestination(id, did) })
 		})
 	})
 }
 
 func (a *application) globalExecutionBanner(c *ui.Context, width float32) {
-	s := &a.manual
 	snap := a.liveSnapshot
-	stopping := s.phase == manualStopping || snap.Stopping
+	stopping := a.run.stopping() || snap.Stopping
 	isWarn := stopping || snap.WaitingConfirm
 
 	bg := ribbonBlueSoft
@@ -592,14 +590,14 @@ func (a *application) globalExecutionBanner(c *ui.Context, width float32) {
 		if snap.TaskID == "" {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(8, 16).Children(func() {
 				activity := a.render(a.watchActivity)
-				if s.phase == manualStopping {
-					activity = a.render(s.message)
+				if a.run.stopping() {
+					activity = a.render(a.run.status)
 				}
 				ui.Text(c, activity).FontSize(12).Grow(1)
 				if a.batch.phase == batchServing {
 					ui.Text(c, a.tr("批次余下 %d 项", len(a.batch.pending))).FontSize(12).TextColor(porcelain.TextMuted)
 				}
-				ribbonDangerButton(c, a.tr("停止")).Padding(3, 10).FontSize(12).Disabled(s.phase == manualStopping).OnClick(a.stopManual)
+				ribbonDangerButton(c, a.tr("停止")).Padding(3, 10).FontSize(12).Disabled(a.run.stopping()).OnClick(a.stopManual)
 			})
 			return
 		}

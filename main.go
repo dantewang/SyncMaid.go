@@ -77,6 +77,8 @@ type application struct {
 	installation       winutil.Installation
 	lifecycle          lifecycle
 	manual             manualSession
+	run                activeRun
+	quitPending        bool
 	liveTracker        *liveRunTracker
 	liveSnapshot       liveRunSnapshot
 	liveTickerStop     chan struct{}

@@ -199,7 +199,7 @@ func TestLegacyImportCancelAndFailedSaveKeepLibrary(t *testing.T) {
 }
 
 func TestCancelImportHonorsPendingQuit(t *testing.T) {
-	a := &application{importPreview: &appcore.LegacyImport{}, importPrevious: manualReady, manual: manualSession{phase: manualImporting, quitPending: true}}
+	a := &application{quitPending: true, importPreview: &appcore.LegacyImport{}, importPrevious: manualReady, manual: manualSession{phase: manualImporting}}
 	quits := 0
 	a.lifecycle.ready(&recordedWindow{}, func() { quits++ }, nil)
 	a.cancelImport()

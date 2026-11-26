@@ -34,7 +34,7 @@ func TestBatchOrderGateFailureAndSingleOwner(t *testing.T) {
 			t.Fatal("batch used automatic execution")
 		}
 		ran = append(ran, id)
-		a.manual.phase = manualRunning
+		a.run = activeRun{phase: runRunning, id: 1, taskID: id}
 		if len(ran) == 2 && q.Destinations[0].Strategy != taskconfig.Mirror {
 			t.Fatal("Mirror confirmation contract lost")
 		}
@@ -47,27 +47,27 @@ func TestBatchOrderGateFailureAndSingleOwner(t *testing.T) {
 	if len(ran) != 1 {
 		t.Fatal("parallel dispatch")
 	}
-	if a.cardActionAllowed() {
+	if a.canStartRun() {
 		t.Fatal("ordinary actions bypassed batch owner")
 	}
-	a.manual.phase = manualFinished
+	a.run = activeRun{}
 	a.advanceBatchUsing(start)
 	if len(ran) != 2 || ran[1] != l.Tasks[2].ID || a.results[l.Tasks[1].ID].message.key == "" {
 		t.Fatal("failure swallowed or order changed", ran)
 	}
-	a.manual.phase = manualFinished
+	a.run = activeRun{}
 	a.advanceBatchUsing(start)
 	if a.batch.phase != batchIdle {
 		t.Fatal("batch not released")
 	}
 }
 func TestBatchStopAndDirtyPreviewGuards(t *testing.T) {
-	a := &application{manual: manualSession{phase: manualRunning, cancel: func() {}}, batch: manualBatch{phase: batchServing, pending: []taskconfig.ID{"later"}}}
+	a := &application{run: activeRun{phase: runRunning, id: 1, taskID: "t1", cancel: func() {}}, batch: manualBatch{phase: batchServing, pending: []taskconfig.ID{"later"}}}
 	a.stopManual()
-	if a.batch.phase != batchIdle || len(a.batch.pending) != 0 || a.manual.phase != manualStopping {
+	if a.batch.phase != batchIdle || len(a.batch.pending) != 0 || !a.run.stopping() {
 		t.Fatal("stop retained queue")
 	}
-	a.manual.phase = manualFinished
+	a.run = activeRun{}
 	a.batch.begin([]taskconfig.ID{"x"})
 	a.manual.dirty = true
 	a.advanceBatchUsing(func(taskconfig.ID, string, syncengine.ManualTaskRequest, bool) { t.Fatal("dirty batch dispatched") })
@@ -75,10 +75,10 @@ func TestBatchStopAndDirtyPreviewGuards(t *testing.T) {
 		t.Fatal("dirty batch retained")
 	}
 	a.manual.dirty = false
-	a.manual.phase = manualRunning
+	a.run = activeRun{phase: runRunning, id: 2, taskID: "t2", cancel: func() {}}
 	a.batch.begin([]taskconfig.ID{"later"})
 	a.requestQuit()
-	if a.batch.phase != batchIdle || !a.manual.quitPending || a.manual.phase != manualStopping {
+	if a.batch.phase != batchIdle || !a.quitPending || !a.run.stopping() {
 		t.Fatal("exit retained batch")
 	}
 }
@@ -102,7 +102,7 @@ func TestBatchRejectsPreviewsAndAutomaticEntry(t *testing.T) {
 	}
 	a := &application{batch: manualBatch{phase: batchServing}, manual: manualSession{phase: manualFinished}}
 	a.startTaskRun("automatic", "Automatic", syncengine.ManualTaskRequest{}, true)
-	if a.manual.phase != manualFinished || a.cards.running != "" {
+	if a.manual.phase != manualFinished || a.isRunning() {
 		t.Fatal("automatic entry bypassed batch")
 	}
 }

@@ -46,7 +46,7 @@ func (b *manualBatch) next() (taskconfig.ID, bool) {
 }
 
 func (a *application) startBatch() {
-	if !a.cardActionAllowed() || a.hasModalOpen() || a.manual.quitPending {
+	if !a.canStartRun() || a.hasModalOpen() || a.quitPending {
 		return
 	}
 	a.batch.begin(taskIDs(a.tasks.Tasks))
@@ -54,10 +54,10 @@ func (a *application) startBatch() {
 }
 func (a *application) advanceBatch() { a.advanceBatchUsing(a.startTaskRun) }
 func (a *application) advanceBatchUsing(start func(taskconfig.ID, string, syncengine.ManualTaskRequest, bool)) {
-	if a.batch.phase != batchServing || a.manual.busy() || a.hasModalOpen() {
+	if a.batch.phase != batchServing || a.isRunning() || a.configBusy() || a.hasModalOpen() {
 		return
 	}
-	if a.manual.quitPending || a.manual.dirty || a.taskError != nil || a.tasks == nil {
+	if a.quitPending || a.manual.dirty || a.taskError != nil || a.tasks == nil {
 		a.batch.clear()
 		return
 	}

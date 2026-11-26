@@ -226,7 +226,7 @@ func reflectEqualTrigger(a, b taskconfig.Trigger) bool {
 }
 
 func (a *application) startSourcePreview() {
-	if a.manual.busy() || a.manual.quitPending || a.batch.phase != batchIdle || a.tasks == nil || a.taskError != nil || a.sourcePreview.job != nil {
+	if a.configBusy() || a.isTaskRunning(a.manual.id) || a.quitPending || a.batch.phase != batchIdle || a.tasks == nil || a.taskError != nil || a.sourcePreview.job != nil {
 		return
 	}
 	s := &a.sourcePreview
@@ -347,7 +347,7 @@ func (a *application) sourcePreviewView(c *ui.Context) {
 			if p.phase != previewIdle {
 				label = "刷新预览"
 			}
-			porcelainButton(c, a.tr(label)).Disabled(a.manual.busy() || a.manual.quitPending || p.job != nil || a.taskError != nil).OnClick(a.startSourcePreview)
+			porcelainButton(c, a.tr(label)).Disabled(a.configBusy() || a.isTaskRunning(a.manual.id) || a.quitPending || p.job != nil || a.taskError != nil).OnClick(a.startSourcePreview)
 			if p.job != nil {
 				porcelainButton(c, a.tr("取消预览")).Disabled(p.phase == previewStopping).OnClick(p.invalidate)
 			}
@@ -399,7 +399,7 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 					if p.phase != previewIdle {
 						btnLabel = a.tr("刷新")
 					}
-					porcelainCompactButton(c, btnLabel).Disabled(a.manual.busy() || a.manual.quitPending || a.taskError != nil).OnClick(a.startSourcePreview)
+					porcelainCompactButton(c, btnLabel).Disabled(a.configBusy() || a.isTaskRunning(a.manual.id) || a.quitPending || a.taskError != nil).OnClick(a.startSourcePreview)
 				}
 			})
 			if p.phase == previewReady && p.result != nil && !p.result.EmptyRoot && p.result.SourceFiles > 0 {
@@ -426,7 +426,7 @@ func (a *application) sourcePreviewTaskPanel(c *ui.Context) {
 		if p.phase == previewIdle {
 			ui.Column(c).Grow(1).FillWidth().AlignItems(ui.Center).Justify(ui.Center).Padding(16).Gap(8).Children(func() {
 				ui.Text(c, a.tr("按需只读扫描源目录")).FontSize(12).TextColor(porcelain.TextMuted)
-				ribbonInkButton(c, a.tr("扫描源目录")).Disabled(a.manual.busy() || a.manual.quitPending || a.taskError != nil).OnClick(a.startSourcePreview)
+				ribbonInkButton(c, a.tr("扫描源目录")).Disabled(a.configBusy() || a.isTaskRunning(a.manual.id) || a.quitPending || a.taskError != nil).OnClick(a.startSourcePreview)
 			})
 			return
 		}

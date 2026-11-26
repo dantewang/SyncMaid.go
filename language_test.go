@@ -33,9 +33,9 @@ func TestLanguageCatalogLoadsInMyGoI18n(t *testing.T) {
 
 func TestLanguageChangeKeepsDraftAndConfirmation(t *testing.T) {
 	reply := make(chan error, 1)
-	a := &application{locale: "en", settingsOpen: true, manual: manualSession{
+	a := &application{locale: "en", settingsOpen: true, run: activeRun{phase: runRunning, id: 1, taskID: "t1"}, manual: manualSession{
 		name: "完成", source: `C:\任务\原样`, cronText: "*/5 * * * *", dirty: true,
-		phase: manualRunning, targetName: "Settings", mirrorReply: reply,
+		phase: manualDraft, targetName: "Settings", mirrorReply: reply,
 		mirrorPreview: &syncengine.MirrorPreview{Name: "任务名", Paths: []string{"保持.txt"}, Mode: taskconfig.Permanent},
 		message:       messagef("任务存在失败或未执行目标: %s", "原始诊断"),
 	}}
@@ -47,7 +47,7 @@ func TestLanguageChangeKeepsDraftAndConfirmation(t *testing.T) {
 		if !tt.HasText(wants[choice.tag]) {
 			t.Fatalf("%s: %v", choice.tag, tt.Texts())
 		}
-		if a.manual.name != before.name || a.manual.source != before.source || a.manual.cronText != before.cronText || !a.manual.dirty || a.manual.phase != manualRunning || a.manual.mirrorReply != reply || a.manual.mirrorPreview != before.mirrorPreview {
+		if a.manual.name != before.name || a.manual.source != before.source || a.manual.cronText != before.cronText || !a.manual.dirty || a.run.phase != runRunning || a.manual.mirrorReply != reply || a.manual.mirrorPreview != before.mirrorPreview {
 			t.Fatal("locale changed task/confirmation state")
 		}
 		if got := a.render(a.manual.message); !strings.HasSuffix(got, "原始诊断") || strings.Contains(got, "%!") {

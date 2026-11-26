@@ -141,7 +141,7 @@ func (s *manualSession) selectTarget(id taskconfig.ID) {
 	}
 }
 func (a *application) targetEditAllowed() bool {
-	return a.batch.phase == batchIdle && !a.manual.busy() && a.tasks != nil && a.taskError == nil && a.selectedTaskIssue() == nil
+	return a.batch.phase == batchIdle && !a.configBusy() && !a.isTaskRunning(a.manual.id) && a.tasks != nil && a.taskError == nil && a.selectedTaskIssue() == nil
 }
 func (a *application) addManualTarget() {
 	if !a.targetEditAllowed() {
@@ -232,7 +232,7 @@ func (a *application) discardManual() {
 
 func (a *application) destinationWorkspaceView(c *ui.Context) {
 	s := &a.manual
-	locked := s.busy() || a.tasks == nil || a.selectedTaskIssue() != nil
+	locked := s.busy() || a.isTaskRunning(s.id) || a.tasks == nil || a.selectedTaskIssue() != nil
 	_, hasDestOverlap := a.destinationOverlapMessage(s.targetID, s.target)
 
 	ui.Column(c).Grow(1).Shrink(1).MinHeight(0).FillWidth().Gap(0).Children(func() {
@@ -312,7 +312,12 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 				}
 				porcelainIcon(c, "up", a.tr("上移")).Border(0, ui.Transparent).Disabled(locked || !s.canMoveTarget(i, -1)).OnClick(func() { a.moveManualTarget(id, -1) })
 				porcelainIcon(c, "⌄", a.tr("下移")).Border(0, ui.Transparent).Disabled(locked || !s.canMoveTarget(i, 1)).OnClick(func() { a.moveManualTarget(id, 1) })
-				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")).Border(0, ui.Transparent).Disabled(locked).OnClick(func() { s.selectTarget(id); a.confirmRemoveManualTarget() })
+				porcelainIcon(c, "⌫", a.tr("移除目标（仅配置）")).Border(0, ui.Transparent).Disabled(locked).OnClick(func() {
+					if a.targetEditAllowed() {
+						s.selectTarget(id)
+						a.confirmRemoveManualTarget()
+					}
+				})
 			})
 			a.sourcePreviewTargetView(c, id)
 			if id != s.targetID || a.cards.targetHidden == id {
@@ -326,7 +331,7 @@ func (a *application) manualTargetsView(c *ui.Context, locked bool) {
 }
 
 func (a *application) toggleDestinationEditor(id taskconfig.ID) {
-	if a.manual.busy() {
+	if !a.targetEditAllowed() {
 		return
 	}
 	if a.manual.targetID == id && a.cards.targetHidden != id {
@@ -528,7 +533,7 @@ func (a *application) confirmRemoveManualTarget() {
 	runDialog(a, func() (mygo.MessageResult, error) {
 		return e2eDialogMessage(options)
 	}, func(answer mygo.MessageResult, err error) {
-		if !s.quitPending && err == nil && answer.Button == 1 && s.targetID == id {
+		if !a.quitPending && err == nil && answer.Button == 1 && s.targetID == id {
 			a.removeManualTarget()
 			if autoSave && a.manual.dirty {
 				a.createManual()

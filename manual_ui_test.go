@@ -16,21 +16,21 @@ import (
 func TestManualSessionStopAndQuit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	a := &application{manual: manualSession{phase: manualRunning, cancel: cancel}}
-	a.manual.edited()
-	if a.manual.phase != manualRunning {
-		t.Fatal("edit bypassed running guard")
+	id := taskconfig.NewID()
+	a := &application{run: activeRun{phase: runRunning, id: 1, taskID: id, cancel: cancel}, manual: manualSession{id: id}}
+	if a.canEditTask(id) {
+		t.Fatal("running task remained editable")
 	}
 	a.requestQuit()
-	if !a.manual.quitPending || a.manual.phase != manualStopping || ctx.Err() != context.Canceled {
-		t.Fatal(a.manual.phase, ctx.Err())
+	if !a.quitPending || !a.run.stopping() || ctx.Err() != context.Canceled {
+		t.Fatal(a.run.phase, ctx.Err())
 	}
 	// Closing to tray retains a running worker; only Exit cancels it.
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	b := &application{manual: manualSession{phase: manualRunning, cancel: cancel2}}
+	b := &application{run: activeRun{phase: runRunning, id: 2, taskID: id, cancel: cancel2}}
 	b.lifecycle.ready(&recordedWindow{}, func() {}, func() {})
-	if !b.lifecycle.closeRequested() || ctx2.Err() != nil || b.manual.phase != manualRunning {
+	if !b.lifecycle.closeRequested() || ctx2.Err() != nil || b.run.phase != runRunning {
 		t.Fatal("hide canceled work")
 	}
 }
@@ -109,7 +109,7 @@ func TestMovePersistenceAndGuards(t *testing.T) {
 	if a.manual.kind != taskconfig.Moving {
 		t.Fatal("saved kind changed")
 	}
-	a.manual.phase = manualRunning
+	a.run = activeRun{phase: runRunning, id: 1, taskID: id}
 	a.setMoveFlatten(false)
 	if !a.manual.targets[0].Flatten {
 		t.Fatal("running edit")

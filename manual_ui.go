@@ -18,10 +18,7 @@ type manualPhase uint8
 const (
 	manualDraft manualPhase = iota
 	manualChoosing
-	manualChecking
 	manualReady
-	manualRunning
-	manualStopping
 	manualFinished
 	manualLoading
 	manualSaving
@@ -29,6 +26,28 @@ const (
 	manualReviewing
 	manualReviewWorking
 )
+
+type runPhase uint8
+
+const (
+	runIdle runPhase = iota
+	runRunning
+	runStopping
+)
+
+// activeRun tracks the single background sync/move execution independently of
+// manualSession's configuration draft and modal state.
+type activeRun struct {
+	phase  runPhase
+	id     uint64
+	taskID taskconfig.ID
+	cancel context.CancelFunc
+	status localizedMessage
+}
+
+func (r activeRun) active() bool              { return r.phase != runIdle }
+func (r activeRun) stopping() bool            { return r.phase == runStopping }
+func (r activeRun) owns(id taskconfig.ID) bool { return r.active() && id != "" && r.taskID == id }
 
 // All session state belongs to the native main thread. Workers only receive
 // immutable requests and post value copies. Persistence also runs off-thread.
@@ -41,10 +60,8 @@ type manualSession struct {
 	phase                   manualPhase
 	source, target          string
 	request                 syncengine.ManualTaskRequest
-	cancel                  context.CancelFunc
 	progress                syncengine.TransferProgress
 	message                 localizedMessage
-	quitPending             bool
 	id                      taskconfig.ID
 	name                    string
 	targets                 []syncengine.ManualDestination
@@ -73,8 +90,9 @@ type savedTaskResult struct {
 	destinations   syncengine.MultipleResult
 }
 
+// busy reports configuration/dialog/modal work that blocks switching or mutating drafts.
 func (s *manualSession) busy() bool {
-	return s.phase == manualChecking || s.phase == manualRunning || s.phase == manualStopping || s.phase == manualChoosing || s.phase == manualLoading || s.phase == manualSaving || s.phase == manualImporting || s.phase == manualReviewing || s.phase == manualReviewWorking
+	return s.phase == manualChoosing || s.phase == manualLoading || s.phase == manualSaving || s.phase == manualImporting || s.phase == manualReviewing || s.phase == manualReviewWorking
 }
 func (s *manualSession) edited() {
 	if s.busy() {
@@ -91,9 +109,21 @@ func (s *manualSession) edited() {
 	s.destinationResults = nil
 }
 
+func (a *application) configBusy() bool                 { return a.manual.busy() }
+func (a *application) isRunning() bool                  { return a.run.active() }
+func (a *application) isTaskRunning(id taskconfig.ID) bool { return a.run.owns(id) }
+
+func (a *application) canSwitchTask() bool {
+	return a.batch.phase == batchIdle && a.sourcePreview.job == nil && !a.configBusy() && !a.manual.dirty && !a.cards.editor && a.tasks != nil && a.taskError == nil
+}
+
+func (a *application) canCreateTask() bool                 { return a.canSwitchTask() }
+func (a *application) canEditTask(id taskconfig.ID) bool   { return a.canSwitchTask() && !a.isTaskRunning(id) }
+func (a *application) canStartRun() bool                   { return a.canSwitchTask() && !a.isRunning() }
+
 func (a *application) taskEditorView(c *ui.Context, modalWidth float32) {
 	s := &a.manual
-	locked := s.busy() || a.tasks == nil || a.selectedTaskIssue() != nil
+	locked := s.busy() || a.isTaskRunning(s.id) || a.tasks == nil || a.selectedTaskIssue() != nil
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(0, 0, 10, 0).Children(func() {
 		heading := "编辑任务"
 		if s.id == "" {
@@ -161,7 +191,7 @@ func runDialog[T any](a *application, prompt func() (T, error), onDone func(T, e
 }
 
 func (a *application) finishAsyncStep(drainWatches bool) {
-	if a.manual.quitPending {
+	if a.quitPending {
 		a.requestQuit()
 		return
 	}
@@ -176,7 +206,7 @@ func (a *application) hasModalOpen() bool {
 
 func (a *application) chooseFolder(source bool) {
 	s := &a.manual
-	if s.busy() || a.tasks == nil || a.selectedTaskIssue() != nil {
+	if !a.targetEditAllowed() {
 		return
 	}
 	title := a.tr("选择文件夹")
@@ -200,14 +230,15 @@ func (a *application) chooseFolder(source bool) {
 }
 func (a *application) startManual() {
 	s := &a.manual
-	if a.tasks == nil || a.taskError != nil || a.selectedTaskIssue() != nil || s.dirty || (s.phase != manualReady && s.phase != manualFinished) {
+	if a.isRunning() || a.configBusy() || a.tasks == nil || a.taskError != nil || a.selectedTaskIssue() != nil || s.dirty || (s.phase != manualReady && s.phase != manualFinished) {
 		return
 	}
 	a.startTaskRun(s.id, s.name, s.request, false)
 }
 func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.ManualTaskRequest, automatic bool) {
 	s := &a.manual
-	if s.busy() || a.sourcePreview.job != nil || (automatic && a.batch.phase == batchServing) {
+	editingSelf := s.id == id && (a.cards.editor || s.dirty || s.phase == manualChoosing)
+	if a.isRunning() || a.configBusy() || a.sourcePreview.job != nil || (automatic && a.batch.phase == batchServing) || editingSelf {
 		return
 	}
 	if len(q.Destinations) == 0 {
@@ -216,13 +247,12 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 		}
 		msg := messagef("无目标，未执行文件操作。")
 		a.results[id] = savedTaskResult{message: msg}
-		if s.id == id && !s.dirty {
+		if s.id == id && !s.dirty && !a.cards.editor {
 			s.phase = manualFinished
 			s.message = msg
 		}
 		return
 	}
-	a.cards.running = id
 	a.sourcePreview.invalidate()
 	if !automatic {
 		if w := a.watches[id]; w != nil {
@@ -235,16 +265,20 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 			}
 		}
 	}
-	previous := s.phase
-	showResult := s.id == id && !s.dirty
+	showResult := s.id == id && !s.dirty && !a.cards.editor
 	ctx, cancel := context.WithCancel(context.Background())
-	s.cancel = cancel
-	s.phase = manualRunning
-	a.watchActivity = messagef("%s: 正在运行", name)
+	a.run.id++
+	runID := a.run.id
+	a.run = activeRun{
+		phase:  runRunning,
+		id:     runID,
+		taskID: id,
+		cancel: cancel,
+		status: messagef("%s: 正在运行", name),
+	}
+	a.watchActivity = a.run.status
 	if showResult {
 		s.message = messagef("正在运行…")
-	}
-	if showResult {
 		s.progress = syncengine.TransferProgress{}
 		s.destinationResults = syncengine.InitialDestinationResults(q)
 	}
@@ -269,14 +303,14 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 					return
 				case <-ticker.C:
 					a.window.Update(func() {
-						if a.liveTracker != tracker {
+						if a.liveTracker != tracker || a.run.id != runID {
 							return
 						}
 						a.liveSnapshot = tracker.Snapshot(time.Now())
-						if showResult && a.cards.running == id && s.id == id && a.liveSnapshot.CurrentDestID != "" {
+						if a.manual.id == id && !a.manual.dirty && !a.cards.editor && a.liveSnapshot.CurrentDestID != "" {
 							if res, ok := a.liveSnapshot.Results[a.liveSnapshot.CurrentDestID]; ok {
-								s.destinationResults[a.liveSnapshot.CurrentDestID] = res
-								s.progress = res.Progress
+								a.manual.destinationResults[a.liveSnapshot.CurrentDestID] = res
+								a.manual.progress = res.Progress
 							}
 						}
 					})
@@ -299,17 +333,17 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 			}
 			if a.window != nil {
 				a.window.Update(func() {
-					if a.liveTracker != tracker {
+					if a.liveTracker != tracker || a.run.id != runID {
 						return
 					}
 					a.liveSnapshot = tracker.Snapshot(time.Now())
-					if !showResult || a.cards.running != id || s.id != id {
+					if a.manual.id != id || a.manual.dirty || a.cards.editor {
 						return
 					}
-					s.destinationResults[r.ID] = r
-					s.progress = r.Progress
+					a.manual.destinationResults[r.ID] = r
+					a.manual.progress = r.Progress
 					if r.State != syncengine.DestinationRunning {
-						s.progress.Stage = string(r.State)
+						a.manual.progress.Stage = string(r.State)
 					}
 				})
 			}
@@ -333,10 +367,13 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 				tracker.Finish(results, err, recordEnd.Outcome, time.Now())
 				a.liveSnapshot = tracker.Snapshot(time.Now())
 			}
+			if a.run.id != runID {
+				return
+			}
+			a.run = activeRun{phase: runIdle, id: runID}
 			if errors.Is(err, context.Canceled) {
 				a.batch.clear()
 			}
-			s.cancel = nil
 			a.historyError = historyErr
 			if historyView.Version == 1 {
 				a.historyView = historyView
@@ -352,28 +389,39 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 			if w := a.watches[id]; w != nil && w.ticket.phase == watchArmed {
 				w.status = message
 			}
-			if !showResult {
-				a.results[id] = savedTaskResult{outcome: recordEnd.Outcome, message: message, destinations: results, started: recordEnd.Started, ended: recordEnd.Ended}
-				s.phase = previous
-				a.finishAsyncStep(true)
-				return
-			}
-			s.destinationResults = results
-			s.phase = manualFinished
-			switch {
-			case err == nil:
-				s.message = messagef("全部目标同步完成")
-			case errors.Is(err, context.Canceled):
-				s.message = messagef("任务已停止；已完成目标不回滚。详情: %s", appcore.HistoryText(err.Error(), appcore.HistoryErrorBytes))
-			default:
-				s.message = messagef("任务存在失败或未执行目标: %s", appcore.HistoryText(err.Error(), appcore.HistoryErrorBytes))
-			}
 			if err != nil {
 				slog.Warn("multiple-sync-ended", "error", err, "targets", len(q.Destinations))
 			}
-			if id != "" {
-				a.results[id] = savedTaskResult{outcome: recordEnd.Outcome, message: s.message, progress: s.progress, destinations: s.destinationResults, started: recordEnd.Started, ended: recordEnd.Ended}
+			taskExists := id != "" && a.tasks != nil
+			if taskExists {
+				if _, findErr := a.tasks.Find(id); findErr != nil {
+					taskExists = false
+				}
 			}
+			uiMsg := message
+			switch {
+			case err == nil:
+				uiMsg = messagef("全部目标同步完成")
+			case errors.Is(err, context.Canceled):
+				uiMsg = messagef("任务已停止；已完成目标不回滚。详情: %s", appcore.HistoryText(err.Error(), appcore.HistoryErrorBytes))
+			default:
+				uiMsg = messagef("任务存在失败或未执行目标: %s", appcore.HistoryText(err.Error(), appcore.HistoryErrorBytes))
+			}
+			if a.manual.id != id || a.manual.dirty || a.cards.editor || a.configBusy() {
+				if taskExists {
+					a.results[id] = savedTaskResult{outcome: recordEnd.Outcome, message: uiMsg, destinations: results, started: recordEnd.Started, ended: recordEnd.Ended}
+				}
+				a.syncWatches()
+				a.finishAsyncStep(true)
+				return
+			}
+			a.manual.destinationResults = results
+			a.manual.phase = manualFinished
+			a.manual.message = uiMsg
+			if taskExists {
+				a.results[id] = savedTaskResult{outcome: recordEnd.Outcome, message: a.manual.message, progress: a.manual.progress, destinations: a.manual.destinationResults, started: recordEnd.Started, ended: recordEnd.Ended}
+			}
+			a.syncWatches()
 			a.finishAsyncStep(true)
 		})
 	}()
@@ -381,24 +429,28 @@ func (a *application) startTaskRun(id taskconfig.ID, name string, q syncengine.M
 func (a *application) stopManual() {
 	a.batch.clear()
 	a.stopWatches(watchesPaused)
-	s := &a.manual
-	if s.phase != manualRunning && s.phase != manualChecking {
+	if a.run.phase != runRunning {
 		return
 	}
-	s.phase = manualStopping
-	s.message = messagef("正在停止并清理临时文件…")
+	a.run.phase = runStopping
+	a.run.status = messagef("正在停止并清理临时文件…")
+	if a.manual.id == a.run.taskID && !a.manual.dirty && !a.cards.editor {
+		a.manual.message = a.run.status
+	}
 	if a.liveTracker != nil {
 		a.liveTracker.MarkStopping(time.Now())
 		a.liveSnapshot = a.liveTracker.Snapshot(time.Now())
 	}
-	s.cancel()
+	if a.run.cancel != nil {
+		a.run.cancel()
+	}
 }
 func (a *application) tryPrepareQuit(showStatus bool) bool {
 	a.batch.clear()
 	a.stopWatches(watchesStopped)
 	a.sourcePreview.invalidate()
 	if a.sourcePreview.job != nil {
-		a.manual.quitPending = true
+		a.quitPending = true
 		return false
 	}
 	if a.manual.phase == manualReviewing {
@@ -408,8 +460,8 @@ func (a *application) tryPrepareQuit(showStatus bool) bool {
 		a.discardImportPreview()
 	}
 	s := &a.manual
-	if a.languageBusy || a.commonBusy || s.busy() {
-		s.quitPending = true
+	if a.languageBusy || a.commonBusy || a.configBusy() || a.isRunning() {
+		a.quitPending = true
 		if showStatus {
 			if s.phase == manualChoosing {
 				s.message = messagef("请关闭当前对话框以退出。")

@@ -163,15 +163,14 @@ func TestMultipleEditorGuardsAndExplicitDiscard(t *testing.T) {
 	if a.manual.dirty || a.manual.name != "Task" {
 		t.Fatal(a.manual)
 	}
-	a.manual.phase = manualRunning
+	a.run = activeRun{phase: runRunning, id: 1, taskID: id}
 	before := append([]syncengine.ManualDestination(nil), a.manual.targets...)
 	selected := a.manual.targetID
 	a.addManualTarget()
 	a.removeManualTarget()
 	a.moveManualTarget(before[1].ID, -1)
-	a.manual.selectTarget(before[1].ID)
-	a.discardManual()
-	if len(a.manual.targets) != len(before) || a.manual.targets[0].ID != before[0].ID || a.manual.targetID != selected || a.manual.phase != manualRunning {
+	a.toggleDestinationEditor(before[1].ID)
+	if len(a.manual.targets) != len(before) || a.manual.targets[0].ID != before[0].ID || a.manual.targetID != selected || a.run.phase != runRunning {
 		t.Fatal(a.manual)
 	}
 }

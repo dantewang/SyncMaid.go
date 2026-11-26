@@ -401,7 +401,7 @@ func TestGlobalExecutionBannerStatesAndDrawer(t *testing.T) {
 
 	a := &application{
 		locale: "zh-Hans",
-		manual: manualSession{phase: manualRunning},
+		run:    activeRun{phase: runRunning, id: 1, taskID: taskID},
 		liveSnapshot: liveRunSnapshot{
 			Active:           true,
 			TaskID:           taskID,

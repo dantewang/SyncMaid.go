@@ -49,7 +49,7 @@ func TestCommonCloseAndBusyQuit(t *testing.T) {
 		quits := 0
 		canceled := false
 		reply := make(chan error, 1)
-		a := &application{commonValue: winutil.CommonSettings{CloseToTray: hide}, manual: manualSession{phase: manualRunning, cancel: func() { canceled = true }, mirrorReply: reply, mirrorPreview: &syncengine.MirrorPreview{}}}
+		a := &application{commonValue: winutil.CommonSettings{CloseToTray: hide}, run: activeRun{phase: runRunning, id: 1, taskID: "t1", cancel: func() { canceled = true }}, manual: manualSession{mirrorReply: reply, mirrorPreview: &syncengine.MirrorPreview{}}}
 		a.lifecycle.ready(w, func() { quits++ }, nil)
 		a.closeWindow()
 		select {
@@ -68,7 +68,7 @@ func TestCommonCloseAndBusyQuit(t *testing.T) {
 				t.Fatal("hiding canceled run")
 			}
 		} else {
-			if !canceled || !a.manual.quitPending || a.manual.phase != manualStopping || quits != 0 {
+			if !canceled || !a.quitPending || !a.run.stopping() || quits != 0 {
 				t.Fatal("close did not wait for run cleanup")
 			}
 		}

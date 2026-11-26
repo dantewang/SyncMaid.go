@@ -15,7 +15,7 @@ func watchTrigger(seconds int32) taskconfig.Trigger {
 }
 func TestWatchDebounceTokensAndBoundedPending(t *testing.T) {
 	w := &watchedTask{task: taskconfig.Task{ID: taskconfig.NewID(), Trigger: watchTrigger(10)}}
-	a := application{watches: map[taskconfig.ID]*watchedTask{w.task.ID: w}, manual: manualSession{phase: manualRunning}}
+	a := application{watches: map[taskconfig.ID]*watchedTask{w.task.ID: w}, run: activeRun{phase: runRunning, id: 1, taskID: "other"}}
 	defer a.stopWatches(watchesStopped)
 	a.watchChanged(w)
 	old := w.ticket.revision

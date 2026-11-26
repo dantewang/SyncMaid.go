@@ -8,7 +8,7 @@ import (
 
 func (a *application) beginImport() {
 	s := &a.manual
-	if s.busy() || s.dirty || a.tasks == nil || a.taskError != nil {
+	if s.busy() || s.dirty || a.cards.editor || a.tasks == nil || a.taskError != nil {
 		return
 	}
 	previous := s.phase
@@ -26,7 +26,7 @@ func (a *application) beginImport() {
 		}
 		return out, err
 	}, func(res importChoice, err error) {
-		if s.quitPending {
+		if a.quitPending {
 			return
 		}
 		if err != nil {

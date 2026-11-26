@@ -64,7 +64,7 @@ func TestScheduledDueCoalescingLateAndStale(t *testing.T) {
 		t.Fatal(e)
 	}
 	w := &watchedTask{task: taskconfig.Task{ID: taskconfig.NewID()}, schedule: schedule}
-	a := application{watches: map[taskconfig.ID]*watchedTask{w.task.ID: w}, manual: manualSession{phase: manualRunning}}
+	a := application{watches: map[taskconfig.ID]*watchedTask{w.task.ID: w}, run: activeRun{phase: runRunning, id: 1, taskID: "other"}}
 	defer a.stopWatches(watchesStopped)
 	a.armScheduled(w, now)
 	revision := w.ticket.revision
