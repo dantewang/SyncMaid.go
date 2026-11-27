@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test -count=1 ./...
+
+      - name: Build Windows portable executable
+        run: go tool mygo build -platform windows/amd64 -skip-installer
+
+  pr-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Conventional Commit PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [[ ! "$PR_TITLE" =~ ^(feat|fix|perf|refactor|docs|test|chore|ci|build|style|revert)(\([a-zA-Z0-9_.,/-]+\))?!?:[[:space:]].+ ]]; then
+            echo "PR title must follow Conventional Commits (e.g. 'feat(ui): ...' or 'fix(sync): ...')."
+            echo "Got: $PR_TITLE"
+            exit 1
+          fi

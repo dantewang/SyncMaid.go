@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify tag matches mygo.json version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $bare = $tag -replace '^v', ''
+          $mygo = Get-Content -LiteralPath mygo.json -Raw | ConvertFrom-Json
+          if ($mygo.version -ne $bare) {
+            throw "Tag $tag does not match mygo.json version '$($mygo.version)'."
+          }
+          "VERSION=$bare" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          if ($bare -match '-') {
+            "PRERELEASE=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          } else {
+            "PRERELEASE=false" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
+
+      - name: Run go vet and tests
+        shell: pwsh
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -count=1 ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build and package portable release
+        shell: pwsh
+        run: |
+          $shortSha = (& git rev-parse --short=7 HEAD).Trim()
+          $buildDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          & .\scripts\package-portable.ps1 -Version $env:VERSION -Commit $shortSha -BuildDate $buildDate -OutDir dist
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $args = @(
+            'release', 'create', $env:TAG,
+            "dist/SyncMaid-$($env:TAG)-windows-amd64.zip",
+            'dist/SHA256SUMS.txt',
+            '--verify-tag',
+            '--title', $env:TAG,
+            '--generate-notes'
+          )
+          if ($env:PRERELEASE -eq 'true') {
+            $args += '--prerelease'
+          }
+          & gh @args
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

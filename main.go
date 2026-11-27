@@ -136,6 +136,8 @@ func run() (result error) {
 		defer func() { result = errors.Join(result, activation.Close()) }()
 	}
 	mygo.App.SetName(install.Key)
+	mygo.App.SetVersion(appBuild.Version)
+	slog.Info("application-starting", "version", appBuild.Display(), "commit", appBuild.Commit, "built", appBuild.BuildDate)
 	// These MyGo paths are Go filesystem I/O inputs (locale_file.go and
 	// window_state.go), not Shell/UI labels. Preserve extended-length semantics.
 	mygo.App.SetPath(mygo.PathUserData, install.Data)

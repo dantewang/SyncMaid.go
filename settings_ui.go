@@ -9,19 +9,25 @@ import (
 	"path/filepath"
 	"strings"
 	"syncmaid/internal/atomicfile"
+	"syncmaid/internal/buildinfo"
 	"syncmaid/internal/winutil"
 )
 
 //go:embed mygo.json
 var appMetadata []byte
 
-var appVersion = func() string {
+func embeddedAppVersion() string {
 	var metadata struct{ Version string }
 	if err := json.Unmarshal(appMetadata, &metadata); err != nil {
 		panic(err)
 	}
 	return metadata.Version
-}()
+}
+
+var (
+	appBuild   = buildinfo.Resolve(embeddedAppVersion())
+	appVersion = appBuild.Display()
+)
 
 func porcelainSection(c *ui.Context, title string, content func()) {
 	ui.Column(c).FillWidth().Gap(2).Children(func() {

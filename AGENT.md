@@ -30,3 +30,18 @@ SyncMaid.go 是 Windows 优先的单向文件同步项目。当前原生窗口�
 源预览只读克隆后的当前草稿，UI线程持有请求身份与取消；编辑、关闭、切任务及退出使旧结果失效。扫描和所有规则准备成功才显示整份归属，预览不续签正则确认或授予文件操作许可。目标扩展名快捷项明确落在所在组，只改草稿。
 
 任务sheet只编辑任务字段，可零目标保存；取消/X/Escape/背景统一丢弃本次草稿关闭。目标workspace按ID持有每行原值（新行为nil），接受后保留workspace修改，行取消仅恢复该行；整个workspace取消恢复持久任务。任务与目标编辑弹窗实时提示路径重叠并禁用保存，保存复核直接点名冲突任务；运行入口仍做词法重叠及可达别名对象重叠复核，对照任务不可达时不连坐健康任务，单目标不可用由后续 `OpenMultiplePlan` 做隔离报错。零目标不登记Watch/Scheduled且运行no-op，不把它当空源或删除授权。
+
+## 版本与发布规范
+
+- **版本单一真源与注入入口**：可分发版本号由 `mygo.json` 的 `version` 字段（无 `v` 前缀 SemVer，如 `0.1.0`）与发布标签 `vX.Y.Z` 保持一致。程序运行时统一通过 `internal/buildinfo` 获取版本与构建元数据（`MYGO_LDFLAGS` 优先，本地开发回退 `mygo.json` + Go VCS 信息），禁止再手写解析或新增第三方版本管理依赖。
+- **Conventional Commits 与 SemVer 算版规则**：所有提交必须使用规范类型前缀：
+  - **Major（`X+1.0.0`）**：仅限**必须用户手动介入的破坏性变更**（例如配置/数据格式不向后兼容需手动迁移、默认安全语义发生破坏性变化等），在提交主题使用 `type!:` 或正文使用 `BREAKING CHANGE:`；
+  - **Minor（`X.Y+1.0`）**：`feat:`（向后兼容的新增功能或用户可见能力增强）；
+  - **Patch（`X.Y.Z+1`）**：`fix:` / `perf:`（缺陷修复或性能优化）；
+  - **不递增版本**：`refactor:`、`docs:`、`test:`、`chore:`、`ci:`、`build:`、`style:`、`revert:`。
+- **日常开发约束**：日常功能或修复开发期间，**禁止**擅自修改 `mygo.json` 的 `version` 或创建发布 Tag。
+- **手动触发发版的 Agent 标准流程**：发版仅在用户明确要求发布新版本时执行，Agent 应按以下步骤完成（尽量减少人工介入）：
+  1. 检查当前位于 `master`、工作区干净且已与远端同步；
+  2. 运行 `powershell -ExecutionPolicy Bypass -File scripts/bump-version.ps1 -DryRun`，并结合自上一 `v*.*.*` 标签以来的提交与实际代码改动，核实是否存在必须用户手动介入的破坏性变更（如存在但提交未标 `!:`，先向用户说明确认并显式指定 `-Version`）；
+  3. 确认目标版本号后，执行 `powershell -ExecutionPolicy Bypass -File scripts/bump-version.ps1 -Push`（如需人工指定版本则附加 `-Version X.Y.Z`）：脚本会自动更新 `mygo.json`、运行 `go vet ./...` 与 `go test -count=1 ./...`、创建 `chore(release): vX.Y.Z` 提交、打附注标签 `vX.Y.Z` 并推送 `master` 与新标签；
+  4. 新标签推送后，仅由 `.github/workflows/release.yml` 自动完成复验、注入构建元数据、打包 `SyncMaid-vX.Y.Z-windows-amd64.zip` 与 `SHA256SUMS.txt` 并发布 GitHub Release。
