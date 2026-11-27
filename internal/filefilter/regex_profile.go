@@ -22,7 +22,7 @@ type RegexProfile string
 // No dot-segment cleanup, uppercase preprocessing or Unicode normalization is
 // applied. Empty pattern is deliberately constant-none, unlike regexp's empty
 // expression; other empty-matching expressions retain their Go meaning.
-const GoRegexpV1 RegexProfile = "go-regexp-1.27.3-ucd17-v1"
+const GoRegexpV1 RegexProfile = "go-regexp-1.27.4-ucd17-v1"
 const (
 	MaxRegexPatternBytes        = 8 << 10
 	MaxRegexProgramInstructions = 4096
@@ -96,7 +96,7 @@ func specDigest(s RegexSpec) [32]byte {
 	return sha256.Sum256(b)
 }
 func checkRegexVersion(profile RegexProfile, engine, table string) error {
-	if profile != GoRegexpV1 || engine != "go1.27.3" || table != "17.0.0" {
+	if profile != GoRegexpV1 || engine != "go1.27.4" || table != "17.0.0" {
 		return fmt.Errorf("%w: profile=%q Go=%q Unicode=%q", ErrRegexProfile, profile, engine, table)
 	}
 	return nil

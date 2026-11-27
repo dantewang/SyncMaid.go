@@ -126,7 +126,7 @@ func TestRegexPreviewAndErrors(t *testing.T) {
 	for _, c := range []struct {
 		p             RegexProfile
 		engine, table string
-	}{{"future", "go1.27.3", "17.0.0"}, {GoRegexpV1, "go1.28.0", "17.0.0"}, {GoRegexpV1, "go1.27.3", "16.0.0"}} {
+	}{{"future", "go1.27.4", "17.0.0"}, {GoRegexpV1, "go1.27.3", "17.0.0"}, {GoRegexpV1, "go1.28.0", "17.0.0"}, {GoRegexpV1, "go1.27.4", "16.0.0"}} {
 		if !errors.Is(checkRegexVersion(c.p, c.engine, c.table), ErrRegexProfile) {
 			t.Fatal(c)
 		}
