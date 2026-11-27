@@ -23,7 +23,7 @@ SyncMaid 基于 Go 与 [MyGo](https://github.com/egoist/mygo) 原生 Windows 界
 ## 环境要求
 
 - Windows 10 或更高版本（本应用仅支持 Windows）
-- Go 1.27.3 或更高版本（[`go.mod`](go.mod) 已声明 `tool github.com/egoist/mygo/cmd/mygo` v0.8.3）
+- Go 1.27.4 或更高版本（[`go.mod`](go.mod) 已声明 `tool github.com/egoist/mygo/cmd/mygo` v0.10.0）
 - `CGO_ENABLED=0`（纯 Go 原生构建，无需安装 C 编译器或 MSVC）
 
 ## 构建与运行

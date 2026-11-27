@@ -28,7 +28,7 @@ whole app is a folder you can move without leaving anything behind on the host m
 ## Requirements
 
 - Windows 10 or later (the app is Windows-only)
-- Go 1.27.3 or later (`go.mod` also declares `tool github.com/egoist/mygo/cmd/mygo` v0.8.3)
+- Go 1.27.4 or later (`go.mod` also declares `tool github.com/egoist/mygo/cmd/mygo` v0.10.0)
 - `CGO_ENABLED=0` (pure-Go native Win32/MyGo build; no C compiler required)
 
 ## Build & Run
