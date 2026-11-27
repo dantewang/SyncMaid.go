@@ -80,7 +80,10 @@ func TestInstallationResolvesDirectoryAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, err := InstallationForExecutable(filepath.Join(alias, "app.exe"))
-	if err != nil || first != second {
+	if err != nil || first.Directory != second.Directory || first.Data != second.Data || first.Key != second.Key {
 		t.Fatalf("alias creates duplicate Installation: %+v %+v %v", first, second, err)
+	}
+	if wantLegacy := filepath.Join(alias, "Data"); second.LegacyData != wantLegacy {
+		t.Fatalf("alias LegacyData = %q, want %q", second.LegacyData, wantLegacy)
 	}
 }
